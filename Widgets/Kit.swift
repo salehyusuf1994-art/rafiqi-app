@@ -1,0 +1,715 @@
+import SwiftUI
+import WidgetKit
+import AppIntents
+import UIKit
+
+// MARK: - الألوان والثوابت
+
+/// لون الخط الأساسي: أبيض صافٍ، ثم يُضرب في لون الويدجت المختار فيظهر اللون نفسه تمامًا
+/// (كان رماديًا فاتحًا #d6d5d1 فيختلف عن الأرقام البيضاء ويظهر بدرجتين)
+let TXT = Color.white
+/// الخط الثانوي: الأبيض نفسه بشفافية (لا لون مختلف)، فيبقى بنفس الدرجة في كل أوضاع الشاشة
+let DIM = Color.white.opacity(0.68)
+let PX: CGFloat = 3              // بكسل لكل نقطة في صور الخط
+let LINE_UP: CGFloat = 213       // ارتفاع شريط السطر فوق خط الأساس (بكسل)
+let LINE_DN: CGFloat = 110
+let YEAR_UP: CGFloat = 117
+let GAP_PX: CGFloat = 22
+/// علامة النسبة المئوية حسب اللغة والأرقام
+var PCT: String { Lang.isEN || Settings.westernDigits ? "%" : "٪" }
+
+// MARK: - صور خط الثلث
+
+enum Calli {
+    static let dir: URL = Bundle.main.bundleURL.appendingPathComponent("Calli")
+    private static var cache: [String: UIImage] = [:]
+
+    private static let lock = NSLock()
+
+    /// الأشهر الميلادية بأسمائها الشامية (كانون الثاني، شباط…) إن اختيرت
+    static func resolve(_ n: String) -> String {
+        guard Settings.shamiMonths, n.hasPrefix("gm"), n.dropFirst(2).first?.isNumber == true else { return n }
+        return "gs" + n.dropFirst(2)
+    }
+
+    /// صورة الثلث الأصلية كما هي
+    static func png(_ name: String) -> UIImage? {
+        let n = resolve(name)
+        lock.lock(); let c = cache[n]; lock.unlock()
+        if let c { return c }
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent(n + ".png")),
+              let img = UIImage(data: data, scale: 3) else { return nil }
+        lock.lock(); cache[n] = img; lock.unlock()
+        return img
+    }
+
+    /// صورة الثلث (مع أسماء الأشهر الشامية إن اختيرت)
+    static func ui(_ n: String) -> UIImage? {
+        if Lang.isEN, let alt = AltWord.image(n, font: .readex) { return alt }
+        if Settings.westernDigits, isNumeric(n), let alt = AltWord.image(n, font: .thuluth) { return alt }
+        return png(n)
+    }
+
+    /// صور الأرقام (تُرسم بالأرقام الإنجليزية إن اختيرت)
+    static func isNumeric(_ n: String) -> Bool {
+        for p in ["pn", "dg", "bn", "wm", "hy", "gy"] where n.hasPrefix(p) {
+            return n.dropFirst(2).first.map { $0.isNumber || $0 == "l" } ?? false
+        }
+        return false
+    }
+
+    /// الصورة بالخط المختار
+    static func img(_ n: String, _ font: WFont) -> UIImage? {
+        if font == .thuluth { return ui(n) }
+        if Lang.isEN { return AltWord.image(n, font: font.latin ? font : .readex) ?? ui(n) }
+        return AltWord.image(n, font: font) ?? ui(n)
+    }
+
+    /// المقاس بالنقاط عند المقياس 1 (= البكسل ÷ 3) — ثابت مهما كان الخط عشان التنسيق
+    static func size(_ n: String) -> CGSize { png(n)?.size ?? CGSize(width: 1, height: 1) }
+}
+
+struct CImg: View {
+    let name: String
+    let s: CGFloat
+    var opacity: Double = 1
+    @Environment(\.wfont) private var wf
+    var body: some View {
+        if let u = Calli.img(name, wf) {
+            let b = Calli.size(name)
+            // قالب (شكل الحرف فقط) بلون الخط نفسه: يطابق الأرقام والنصوص في كل الأوضاع،
+            // وفي الشاشة الشفافة/الملوّنة يعامله النظام مثل النص لا مثل صورة باهتة
+            Image(uiImage: u).renderingMode(.template).resizable().interpolation(.high)
+                .foregroundStyle(TXT)
+                .frame(width: b.width * s, height: b.height * s)
+                .opacity(opacity)
+        } else {
+            Color.clear.frame(width: 1, height: 1)
+        }
+    }
+}
+
+/// صورة خط تملأ المكان (اسم اليوم الكبير، اسم الصلاة داخل الحلقة)
+struct CArt: View {
+    let name: String
+    @Environment(\.wfont) private var wf
+    var body: some View {
+        if let u = Calli.img(name, wf) {
+            Image(uiImage: u).renderingMode(.template).resizable().interpolation(.high).scaledToFit()
+                .foregroundStyle(TXT)
+        }
+    }
+}
+
+extension View {
+    /// بداية الحلقة من الأعلى مع عقارب الساعة. الاتجاه العربي يعكس زاوية التدوير
+    /// فتبدأ الحلقة من الأسفل، لذلك نثبّت الاتجاه هنا.
+    func ringStart() -> some View {
+        rotationEffect(.degrees(-90)).environment(\.layoutDirection, .leftToRight)
+    }
+}
+
+func wOf(_ n: String, _ s: CGFloat) -> CGFloat { Calli.size(n).width * s }
+func hOf(_ n: String, _ s: CGFloat) -> CGFloat { Calli.size(n).height * s }
+func fitS(_ n: String, _ maxW: CGFloat, _ maxH: CGFloat) -> CGFloat {
+    min(maxW / wOf(n, 1), maxH / hOf(n, 1))
+}
+func Fit(_ n: String, _ maxW: CGFloat, _ maxH: CGFloat, _ op: Double = 1) -> CImg {
+    CImg(name: n, s: fitS(n, maxW, maxH), opacity: op)
+}
+func lineWidth(_ names: [String], _ gapPx: CGFloat = GAP_PX, _ s: CGFloat) -> CGFloat {
+    names.reduce(0) { $0 + wOf($1, s) } + gapPx * s / PX * CGFloat(max(0, names.count - 1))
+}
+
+/// سطر خط بترتيب القراءة العربية (أول عنصر يمين)
+struct CLine: View {
+    let names: [String]
+    let s: CGFloat
+    var gapPx: CGFloat = GAP_PX
+    var body: some View {
+        HStack(spacing: gapPx * s / PX) {
+            ForEach(Array(names.enumerated()), id: \.offset) { _, n in CImg(name: n, s: s) }
+        }
+    }
+}
+
+// MARK: - الأرقام والعدّادات (خط Hilal Digits)
+
+func digitFont(_ size: CGFloat, bold: Bool, _ font: WFont = .thuluth) -> Font {
+    if let ps = font.digitsPS { return .custom(ps, fixedSize: size * 0.96) }
+    return .custom(bold ? "HilalDigits-Bold" : "HilalDigits-Regular", fixedSize: size)
+}
+
+struct Digits: View {
+    let text: String
+    let size: CGFloat
+    var color: Color = TXT
+    var bold: Bool = false
+    /// يشيل الفراغ الكبير فوق وتحت الأرقام (سطر الخط أطول بكثير من الأرقام نفسها)
+    var tight: Bool = false
+    @Environment(\.wfont) private var wf
+    var body: some View {
+        Text(text).font(digitFont(size, bold: bold, wf)).foregroundStyle(color).lineLimit(1)
+            // في الويدجت: الأرقام تتدحرج بنعومة عند كل تحديث بدل أن تقفز
+            .contentTransition(.numericText())
+            .fixedSize()
+            .frame(height: tight ? size * 0.8 : nil)
+    }
+}
+
+/// عدّاد تنازلي يقف عند الصفر
+/// ساعات:دقائق ثابتة — لوضع «الشاشة دائمًا» حيث يخفي النظام الثواني بشرطات
+func hmText(_ seconds: TimeInterval) -> String {
+    let s = max(0, Int(seconds.rounded(.down)))
+    return "\(ar(s / 3600)):" + ar((s % 3600) / 60).leftPad2
+}
+extension String {
+    /// يضيف صفرًا عربيًا إن كان رقمًا واحدًا
+    var leftPad2: String { count < 2 ? ar("0") + self : self }
+}
+
+struct CountDown: View {
+    let to: Date
+    let size: CGFloat
+    var color: Color = .white
+    var width: CGFloat = 150
+    /// تاريخ مدخل الويدجت — يُستخدم لعرض ثابت في وضع الشاشة الخافتة
+    var at: Date? = nil
+    @Environment(\.isLuminanceReduced) private var dim
+    @Environment(\.wfont) private var wf
+    var body: some View {
+        let now = Date()
+        Group {
+            if dim, let at {
+                Text(hmText(to.timeIntervalSince(at)))
+            } else {
+                Text(timerInterval: now...max(now, to), countsDown: true)
+            }
+        }
+        .font(digitFont(size, bold: true, wf)).foregroundStyle(color)
+        .multilineTextAlignment(.center).frame(width: width)
+        .environment(\.layoutDirection, .leftToRight)
+    }
+}
+
+/// عدّاد تصاعدي (كم مضى)
+struct CountUp: View {
+    let from: Date
+    let size: CGFloat
+    var color: Color = TXT
+    var width: CGFloat = 150
+    var at: Date? = nil
+    @Environment(\.isLuminanceReduced) private var dim
+    @Environment(\.wfont) private var wf
+    var body: some View {
+        Group {
+            if dim, let at {
+                Text(hmText(at.timeIntervalSince(from)))
+            } else {
+                Text(timerInterval: from...from.addingTimeInterval(2 * 86400), countsDown: false)
+            }
+        }
+            .font(digitFont(size, bold: true, wf)).foregroundStyle(color)
+            .multilineTextAlignment(.center).frame(width: width)
+            .environment(\.layoutDirection, .leftToRight)
+    }
+}
+
+// MARK: - إعداد الويدجت (المكان + اللون + التقويم)
+
+enum PlaceOpt: String, AppEnum {
+    case tr, tl, mr, ml, br, bl
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "المكان"
+    static let caseDisplayRepresentations: [PlaceOpt: DisplayRepresentation] = [
+        .tr: "الأعلى — يمين", .tl: "الأعلى — يسار",
+        .mr: "الوسط — يمين", .ml: "الوسط — يسار",
+        .br: "الأسفل — يمين", .bl: "الأسفل — يسار",
+    ]
+}
+
+enum TintOpt: String, AppEnum {
+    case app, white, glass, gold, silver, beige, sky, mint, rose, black
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "لون الخط"
+    static let caseDisplayRepresentations: [TintOpt: DisplayRepresentation] = [
+        .app: "حسب إعدادات التطبيق", .white: "أبيض", .glass: "زجاجي", .gold: "ذهبي", .silver: "فضي", .beige: "بيج",
+        .sky: "سماوي", .mint: "أخضر", .rose: "وردي", .black: "أسود",
+    ]
+}
+
+enum CalOpt: String, AppEnum {
+    case hijri, gregorian
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "التقويم"
+    static let caseDisplayRepresentations: [CalOpt: DisplayRepresentation] = [.hijri: "هجري", .gregorian: "ميلادي"]
+}
+
+protocol Positioned {
+    var place: PlaceOpt { get }
+    var tint: TintOpt { get }
+    var isGregorian: Bool { get }
+    var bgOpt: BgOpt { get }
+    var fontOpt: FontOpt { get }
+    var mediaOpt: String { get }
+    var sportOpt: String { get }
+    /// ويدجت رفيقي بالمقاس: الويدجت المختارة من «تعديل الأداة»
+    var designID: String? { get }
+}
+extension Positioned {
+    var mediaOpt: String { "" }
+    var sportOpt: String { "" }
+    var designID: String? { nil }
+}
+
+struct PosIntent: WidgetConfigurationIntent, Positioned {
+    static let title: LocalizedStringResource = "إعداد الويدجت"
+    static let description = IntentDescription("حدّد موضع الويدجت لتطابق الخلفية (يكفي تحديد الصف للحجم المتوسط)، واختر لون الخط.")
+    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
+    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
+    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
+    @Parameter(title: "الخط", default: .app) var font: FontOpt
+    var isGregorian: Bool { false }
+    var bgOpt: BgOpt { bg }
+    var fontOpt: FontOpt { font }
+    init() {}
+}
+
+struct DatePosIntent: WidgetConfigurationIntent, Positioned {
+    static let title: LocalizedStringResource = "إعداد الويدجت"
+    static let description = IntentDescription("اختر التقويم، وحدّد موضع الويدجت لتطابق الخلفية (يكفي تحديد الصف للحجم المتوسط)، واختر لون الخط.")
+    @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
+    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
+    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
+    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
+    @Parameter(title: "الخط", default: .app) var font: FontOpt
+    var isGregorian: Bool { calendar == .gregorian }
+    var bgOpt: BgOpt { bg }
+    var fontOpt: FontOpt { font }
+    init() {}
+}
+
+// MARK: - المدخلات والجدولة
+
+struct HEntry: TimelineEntry {
+    let date: Date
+    let slot: Slot
+    let size: CGSize
+    var tint: Color
+    let greg: Bool
+    var weather: WeatherData? = nil
+    var preview = false
+    /// معروض داخل التطبيق (معرض الويدجتات)
+    var inApp = false
+    var family: WidgetFamily? = nil
+    /// تصميم الويدجت: الخلفية والخط والزخرفة
+    var style = WStyle()
+    /// معرّف الويدجت (للتصاميم الخاصة بكل نوع)
+    var kind = ""
+    /// مصدر ويدجت الوسائط (فارغ = الشغّال حاليًا)
+    var media = ""
+    /// بيانات المباريات (لويدجت المباريات)
+    var sports: SportsData? = nil
+    /// وضع المعايرة ما يطلع في معرض الويدجتات
+    var calibrating: Bool { !preview && !inApp && Backdrop.calibrating(at: date) }
+}
+
+enum Sched { case day, prayer, minute, weather, media, sports }
+
+struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelineProvider {
+    let sched: Sched
+    var kind = ""
+
+    /// الويدجت المعروضة: المختارة في «تعديل الأداة»، وإلا الافتراضية
+    private func design(_ c: I?) -> String { c?.designID ?? kind }
+    private func schedule(_ c: I?) -> Sched { c?.designID.map { Catalog.info($0).sched } ?? sched }
+
+    private func make(_ d: Date, _ c: I?, _ ctx: Context, _ w: WeatherData? = nil) -> HEntry {
+        let kind = design(c)
+        let slot = Slot.of(place: c?.place.rawValue ?? "mr", medium: ctx.family == .systemMedium,
+                           large: ctx.family == .systemLarge)
+        var st = Styles.get(kind)
+        if let b = c?.bgOpt.kind { st.bg = b }
+        if let f = c?.fontOpt.font { st.font = f }
+        let tintKey = c?.tint.rawValue ?? "app"
+        let tint = tintKey == "app" ? (st.tint.map { Palette.color($0) } ?? Tint.appColor) : Tint.color(tintKey)
+        var e = HEntry(date: d, slot: slot, size: ctx.displaySize, tint: tint,
+                       greg: c?.isGregorian ?? false, weather: w, preview: ctx.isPreview, family: ctx.family)
+        e.style = st
+        e.kind = kind
+        e.media = c?.mediaOpt ?? ""
+        return e
+    }
+
+    func placeholder(in context: Context) -> HEntry {
+        var e = make(Date(), nil, context, Weather.cached())
+        if sched == .sports { e.sports = SportsStore.current() }
+        return e
+    }
+
+    func snapshot(for configuration: I, in context: Context) async -> HEntry {
+        let sched = schedule(configuration)
+        let w = sched == .weather ? await Weather.load() : nil
+        var e = make(Date(), configuration, context, w)
+        if sched == .sports {
+            // معرض إضافة الويدجت: البيانات المحفوظة أو التجريبية بلا انتظار
+            e.sports = context.isPreview ? SportsStore.current()
+                                         : await SportsTimeline.data(league: configuration.sportOpt, fetch: true)
+        }
+        return e
+    }
+
+    func timeline(for configuration: I, in context: Context) async -> Timeline<HEntry> {
+        let sched = schedule(configuration), kind = design(configuration)
+        await LocationSync.refreshIfNeeded(inWidget: true)
+        await Notify.refreshIfStale()
+        let now = Date()
+        func e(_ d: Date, _ w: WeatherData? = nil) -> HEntry { make(d, configuration, context, w) }
+        // في الوضع التلقائي نعيد الحساب كل ٤٥ دقيقة عشان لو تنقّلت
+        let cap = now.addingTimeInterval(45 * 60)
+        func pol(_ p: TimelineReloadPolicy, _ end: Date) -> TimelineReloadPolicy {
+            Settings.isAuto && end > cap ? .after(cap) : p
+        }
+        let first = e(now)
+        Backdrop.noteSeen(slot: first.slot, size: context.displaySize)
+
+        // وضع المعايرة: لون ثابت لين ينتهي الوقت
+        if Backdrop.calibrating(at: now) {
+            return Timeline(entries: [first, e(Backdrop.calibUntil.addingTimeInterval(1))], policy: .atEnd)
+        }
+
+        let midnight = Cal.nextMidnight(after: now)
+        switch sched {
+        case .day:
+            return Timeline(entries: [first, e(midnight.addingTimeInterval(5))], policy: pol(.atEnd, midnight))
+        case .prayer:
+            var dates = [now] + Prayer.boundaries(from: now).map { $0.addingTimeInterval(1) }
+            if !dates.contains(where: { abs($0.timeIntervalSince(midnight)) < 60 }) { dates.append(midnight.addingTimeInterval(5)) }
+            dates.sort()
+            return Timeline(entries: dates.map { e($0) }, policy: pol(.after(dates.last ?? midnight), dates.last ?? midnight))
+        case .minute:
+            // ساعات الإطار تعرض الطقس أيضًا
+            let w: WeatherData? = (kind == "hilal.tickbox" || kind == "hilal.tickm") ? await Weather.load() : nil
+            let start = Cal.gregCal.dateInterval(of: .minute, for: now)?.start ?? now
+            let entries = (0..<60).map { e(start.addingTimeInterval(Double($0) * 60), w) }
+            return Timeline(entries: entries, policy: .atEnd)
+        case .media:
+            // يحدّثها التطبيق عند كل تغيير في التشغيل؛ وأثناء تشغيل مقطع له مدة: مدخل كل ٣٠ ثانية لتتقدّم الحلقات والموجة
+            let np = NowPlaying.display(for: configuration.mediaOpt)
+            if np.playing && np.duration > 0 {
+                let left = max(0, np.duration - np.elapsed(at: now))
+                let n = min(60, Int(left / 30))
+                let entries = (0...n).map { e(now.addingTimeInterval(Double($0) * 30)) }
+                return Timeline(entries: entries, policy: .after(now.addingTimeInterval(min(3600, left + 5))))
+            }
+            return Timeline(entries: [first], policy: .after(now.addingTimeInterval(3600)))
+        case .sports:
+            let data = await SportsTimeline.data(league: configuration.sportOpt, fetch: true)
+            let plan = SportsTimeline.plan(data, now: now)
+            let entries: [HEntry] = plan.dates.map { d in
+                var x = e(d)
+                x.sports = data
+                return x
+            }
+            return Timeline(entries: entries, policy: .after(plan.refresh))
+        case .weather:
+            let w = await Weather.load()
+            // مدخلات عند تغيّر الصلاة خلال نصف الساعة (لويدجت الطقس التي تعرض الصلاة القادمة)
+            let marks = Prayer.boundaries(from: now, hours: 0.5).map { $0.addingTimeInterval(1) }
+            return Timeline(entries: [e(now, w)] + marks.map { e($0, w) }, policy: .after(now.addingTimeInterval(30 * 60)))
+        }
+    }
+}
+
+// MARK: - الخلفية والإطار
+
+struct WidgetBG: View {
+    let entry: HEntry
+
+    /// صورة الخلفية المقصوصة لمكان الويدجت — داخل التطبيق لا صورة: لوح زجاجي (مثل معاينات Glassify)
+    private var wall: UIImage? {
+        entry.inApp ? nil : Backdrop.image(slot: entry.slot, size: entry.size)
+    }
+
+    @ViewBuilder private func wallView(blur: CGFloat = 0) -> some View {
+        if let img = wall {
+            if #available(iOS 18.0, *) {
+                Image(uiImage: img).resizable().widgetAccentedRenderingMode(.fullColor).scaledToFill()
+                    .blur(radius: blur, opaque: true)
+            } else {
+                Image(uiImage: img).resizable().scaledToFill().blur(radius: blur, opaque: true)
+            }
+        } else {
+            GlassPanel()
+        }
+    }
+
+    var body: some View {
+        let st = entry.style
+        let k = st.strength
+        if entry.calibrating {
+            entry.slot.calibColor
+        } else {
+            switch st.bg {
+            case .clear:
+                wallView()
+            case .glass:
+                ZStack {
+                    wallView(blur: 10 + 14 * k)
+                    LinearGradient(colors: [Color.white.opacity(0.10 + 0.14 * k), Color.white.opacity(0.03 + 0.05 * k)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    ContainerRelativeShape().strokeBorder(Color.white.opacity(0.10 + 0.2 * k), lineWidth: 1)
+                }
+            case .dark:
+                ZStack {
+                    wallView(blur: 6 * k)
+                    Color.black.opacity(0.25 + 0.55 * k)
+                }
+            case .color:
+                ZStack {
+                    wallView()
+                    Palette.color(st.color).opacity(0.35 + 0.65 * k)
+                }
+            case .gradient:
+                ZStack {
+                    wallView()
+                    LinearGradient(colors: Palette.gradient(st.grad), startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .opacity(0.35 + 0.65 * k)
+                }
+            }
+        }
+    }
+}
+
+/// لوح زجاجي مدخّن (رمادي فحمي، أفتح قليلًا من الأعلى، بحافة لامعة رفيعة) — معاينات التطبيق،
+/// وخلفية الويدجت إن لم تُضبط مطابقة الخلفية بعد
+struct GlassPanel: View {
+    var corner: CGFloat? = nil
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.19, green: 0.19, blue: 0.21), Color(red: 0.10, green: 0.10, blue: 0.11)],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0)],
+                           center: UnitPoint(x: 0.25, y: 0), startRadius: 0, endRadius: 320)
+            rim
+        }
+    }
+    @ViewBuilder private var rim: some View {
+        let g = LinearGradient(colors: [Color.white.opacity(0.30), Color.white.opacity(0.06)], startPoint: .top, endPoint: .bottom)
+        if let corner {
+            RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(g, lineWidth: 1)
+        } else {
+            ContainerRelativeShape().strokeBorder(g, lineWidth: 1)
+        }
+    }
+}
+
+/// غلاف كل ويدجت: اتجاه عربي + لون الخط + الخلفية المقصوصة.
+/// الخلفية مرسومة داخل المحتوى نفسه (مثل سكربت ويدجت) عشان iOS ما يستبدلها بالزجاج في الوضع الداكن.
+struct Root<Content: View>: View {
+    let entry: HEntry
+    @ViewBuilder let content: () -> Content
+    /// وضع الشاشة الرئيسية «ملوّن» أو «شفاف» (iOS 18 وما بعده): النظام يرسم الزجاج ويلوّن المحتوى بنفسه
+    @Environment(\.widgetRenderingMode) private var renderingMode
+    var body: some View {
+        let ok = entry.size.width > 10 && entry.size.height > 10
+        let W: CGFloat? = ok ? entry.size.width : nil, H: CGFloat? = ok ? entry.size.height : nil
+        let accented = renderingMode == .accented && !entry.inApp
+        ZStack {
+            // في الوضع الملوّن/الشفاف لا نرسم صورة الخلفية: لا تطابق الشاشة هناك، والنظام يضع زجاجه
+            if !accented {
+                WidgetBG(entry: entry)
+                    .frame(width: W, height: H)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+            if !entry.calibrating {
+                ZStack {
+                    DecoView(kind: entry.style.deco, opacity: entry.style.decoOpacity)
+                    content()
+                }
+                .modifier(TintInk(tint: entry.tint, accented: accented))
+                .widgetAccentable(accented)
+                .frame(width: W, height: H)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .environment(\.layoutDirection, Lang.dir)
+                .environment(\.wfont, entry.style.font)
+            }
+        }
+        .frame(width: W, height: H)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+        .containerBackground(for: .widget) { WidgetBG(entry: entry) }
+        .widgetURL(entry.kind.isEmpty || entry.inApp ? nil : URL(string: "miqat://edit/" + entry.kind))
+    }
+}
+
+/// لون خط الويدجت: لون عادي بالضرب، أو «زجاجي» بلمعة وحافة
+struct TintInk: ViewModifier {
+    let tint: Color
+    var accented = false
+    @ViewBuilder func body(content: Content) -> some View {
+        if Tint.isGlass(tint) && !accented {
+            content.modifier(GlassInk())
+        } else {
+            content.colorMultiply(tint)
+        }
+    }
+}
+
+/// خط زجاجي مثل أرقام ساعة شاشة القفل: أزرق رمادي فاتح، ولمعة من الأعلى، وحافة داكنة رفيعة، وتوهّج خفيف
+struct GlassInk: ViewModifier {
+    // مطابق لنموذج ساعة شاشة القفل الذي أرسلته (قيس من الصورة نفسها):
+    // تعبئة أزرق رمادي شبه شفافة، وحافة ضوء رفيعة داخل كل حرف من كل الجهات،
+    // وخط داكن رفيع حوله. بلا تدرّج على الويدجت، فكل الحروف بنفس الدرجة،
+    // ولا يغيّر حجم الخط ولا عرضه ولا نوعه — اللون واللمسة فقط.
+    func body(content: Content) -> some View {
+        content
+            .colorMultiply(Tint.glassColor)
+            .opacity(0.86)
+            .overlay {
+                // الحافة الداخلية = الحرف ناقص نسخة مموّهة منه
+                ZStack {
+                    content
+                    content.blur(radius: 0.9).blendMode(.destinationOut)
+                }
+                .compositingGroup()
+                .opacity(0.75)
+                .allowsHitTesting(false)
+            }
+            .shadow(color: Color.black.opacity(0.55), radius: 0.5)
+    }
+}
+
+/// اسم المدينة: المدينة المنورة بصورة الثلث المزخرفة، وأي مدينة ثانية بخط الثلث نفسه
+struct CityLabel: View {
+    let maxW: CGFloat
+    let maxH: CGFloat
+    @Environment(\.wfont) private var wf
+    var body: some View {
+        if Settings.isMedina && wf == .thuluth {
+            Fit("city_t", maxW, maxH)
+        } else if !Settings.placeName.isEmpty {
+            Text(Settings.placeName)
+                .font(.custom(wf.ps, size: maxH * (wf == .thuluth ? 0.95 : 0.7)))
+                .foregroundStyle(TXT)
+                .lineLimit(1).minimumScaleFactor(0.4)
+                .frame(maxWidth: maxW, maxHeight: maxH)
+        }
+    }
+}
+
+// MARK: - الطقس (Open-Meteo)
+
+struct WDay: Codable {
+    let t: Double        // بداية اليوم (يونكس)
+    let code: Int
+    let hi: Double
+    let lo: Double
+    var rain: Int? = nil // احتمال المطر ٪
+}
+
+struct WeatherData: Codable {
+    let t: Double
+    let temp: Double
+    let code: Int
+    let day: Int
+    let hi: Double?
+    let lo: Double?
+    var la: Double? = nil
+    var lo2: Double? = nil
+    var humidity: Int? = nil
+    var wind: Double? = nil      // كم/س
+    var feels: Double? = nil
+    var sunrise: Double? = nil
+    var sunset: Double? = nil
+    var rain: Int? = nil
+    var days: [WDay]? = nil
+}
+
+enum Weather {
+    static func cached() -> WeatherData? {
+        guard let d = AppGroup.defaults.data(forKey: "wx") else { return nil }
+        return try? JSONDecoder().decode(WeatherData.self, from: d)
+    }
+
+    private static func num(_ x: Any?) -> Double? { (x as? NSNumber)?.doubleValue }
+    private static func nums(_ x: Any?) -> [Double] { ((x as? [Any]) ?? []).map { num($0) ?? 0 } }
+
+    static func load() async -> WeatherData? {
+        let c = cached()
+        if let c, c.days != nil, Date().timeIntervalSince1970 - c.t < 20 * 60,
+           abs((c.la ?? Settings.lat) - Settings.lat) < 0.05, abs((c.lo2 ?? Settings.lng) - Settings.lng) < 0.05 { return c }
+        let s = "https://api.open-meteo.com/v1/forecast?latitude=\(Settings.lat)&longitude=\(Settings.lng)"
+            + "&current=temperature_2m,apparent_temperature,weather_code,is_day,relative_humidity_2m,wind_speed_10m"
+            + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max"
+            + "&forecast_days=7&timezone=auto&timeformat=unixtime"
+        guard let url = URL(string: s) else { return c }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 8
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            guard let j = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let cur = j["current"] as? [String: Any],
+                  let temp = num(cur["temperature_2m"]) else { return c }
+            let daily = j["daily"] as? [String: Any]
+            let times = nums(daily?["time"]), codes = nums(daily?["weather_code"])
+            let his = nums(daily?["temperature_2m_max"]), los = nums(daily?["temperature_2m_min"])
+            let rains = nums(daily?["precipitation_probability_max"])
+            var days: [WDay] = []
+            for i in 0..<times.count where i < codes.count && i < his.count && i < los.count {
+                days.append(WDay(t: times[i], code: Int(codes[i]), hi: his[i], lo: los[i], rain: i < rains.count ? Int(rains[i]) : nil))
+            }
+            var w = WeatherData(t: Date().timeIntervalSince1970, temp: temp,
+                                code: Int(num(cur["weather_code"]) ?? 2), day: Int(num(cur["is_day"]) ?? 1),
+                                hi: his.first, lo: los.first, la: Settings.lat, lo2: Settings.lng)
+            w.humidity = num(cur["relative_humidity_2m"]).map { Int($0.rounded()) }
+            w.wind = num(cur["wind_speed_10m"])
+            w.feels = num(cur["apparent_temperature"])
+            w.sunrise = nums(daily?["sunrise"]).first
+            w.sunset = nums(daily?["sunset"]).first
+            w.rain = rains.first.map { Int($0) }
+            w.days = days
+            if let d = try? JSONEncoder().encode(w) { AppGroup.defaults.set(d, forKey: "wx") }
+            return w
+        } catch {
+            return c
+        }
+    }
+
+    /// سرعة الرياح حسب الوحدة المختارة
+    static func windText(_ w: WeatherData?) -> String {
+        guard let v = w?.wind else { return "--" }
+        return Settings.windMS ? ar(Int((v / 3.6).rounded())) + " " + L("م/ث") : ar(Int(v.rounded())) + " " + L("كم/س")
+    }
+
+    static func iconFor(code: Int, day: Bool = true) -> String {
+        let k = key(code)
+        if k == "clear" || k == "partly" { return "ic_\(k)_\(day ? "d" : "n")" }
+        return "ic_\(k)"
+    }
+
+    static func key(_ code: Int) -> String {
+        switch code {
+        case 0, 1: return "clear"
+        case 2: return "partly"
+        case 3: return "cloudy"
+        case 45, 48: return "fog"
+        case 51...57: return "drizzle"
+        case 61...67, 80...82: return "rain"
+        case 71...77, 85, 86: return "snow"
+        case 95...: return "thunder"
+        default: return "partly"
+        }
+    }
+
+    static func icon(_ w: WeatherData?) -> String {
+        guard let w else { return "ic_partly_d" }
+        let k = key(w.code)
+        if k == "clear" || k == "partly" { return "ic_\(k)_\(w.day == 1 ? "d" : "n")" }
+        return "ic_\(k)"
+    }
+
+    static func word(_ w: WeatherData?) -> String { "wx_\(w.map { key($0.code) } ?? "partly")_t" }
+
+    static func deg(_ v: Double?) -> String {
+        v.map { ar(Int((Settings.fahrenheit ? $0 * 9 / 5 + 32 : $0).rounded())) + "°" } ?? "--"
+    }
+}

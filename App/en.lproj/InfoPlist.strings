@@ -1,0 +1,6 @@
+"CFBundleDisplayName" = "Rafiqi";
+"CFBundleName" = "Rafiqi";
+"NSPhotoLibraryUsageDescription" = "Rafiqi reads your latest screenshot to match the widget background with your wallpaper.";
+"NSLocationWhenInUseUsageDescription" = "Rafiqi uses your location to calculate accurate prayer times, weather and the Qibla direction wherever you are.";
+"NSAppleMusicUsageDescription" = "Rafiqi needs Apple Music access to show the track name and control playback from widgets.";
+"NSAlarmKitUsageDescription" = "Rafiqi uses alarms to play the full adhan when prayer time begins, even when your phone is silent.";

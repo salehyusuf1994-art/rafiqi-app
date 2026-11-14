@@ -1,0 +1,228 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: [".github/workflows/voices*.yml", "ci/voices*.py", ".github/workflows/transcribe.yml", "ci/transcribe.py", "ci/inbox/**"]
+  workflow_dispatch:
+    inputs:
+      shots:
+        description: "App screenshots (simulator) — costs ~3 extra minutes"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Release CURRENT_PROJECT_VERSION=$((100 + ${{ github.run_number }})) \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*(deprecated|unused)|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/Hilal.app
+
+      - name: Show errors
+        if: failure()
+        run: grep -E "error:" -A3 build.log | head -200 || true
+
+      - name: Ad-hoc sign with entitlements (so AltServer keeps the App Group)
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Hilal.app
+          codesign -f -s - --entitlements Widgets/HilalWidgets.entitlements "$APP/PlugIns/HilalWidgets.appex"
+          codesign -f -s - --entitlements App/Hilal.entitlements "$APP"
+          { codesign -d --entitlements - "$APP/PlugIns/HilalWidgets.appex"; codesign -d --entitlements - "$APP"; } > sign.txt 2>&1 || true
+          cat sign.txt
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Hilal.app Payload/
+          zip -qry Hilal.ipa Payload
+          ls -la Hilal.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Hilal-ipa
+          path: Hilal.ipa
+
+      - name: Check audio streams
+        if: always()
+        continue-on-error: true
+        run: |
+          for u in https://stream.radiojar.com/0tpy1h0kxtzuv https://backup.qurango.net/radio/athkar_sabah https://backup.qurango.net/radio/athkar_masa \
+                   https://backup.qurango.net/radio/mix https://backup.qurango.net/radio/mukhtasartafsir https://backup.qurango.net/radio/roqiah \
+                   https://backup.qurango.net/radio/saud_alshuraim https://backup.qurango.net/radio/saad_alghamdi https://backup.qurango.net/radio/ahmad_alajmy \
+                   https://cdn.mp3quran.net/audio/mishary-alafasy/r1/001.mp3 https://cdn.mp3quran.net/audio/maher-muaiqly/r1/001.mp3 \
+                   https://cdn.mp3quran.net/audio/muhammad-minshawi/r1/001.mp3 https://cdn.mp3quran.net/audio/bandar-baleela/r1/001.mp3 \
+                   https://cdn.mp3quran.net/audio/mahmoud-husary/r1/001.mp3 https://cdn.mp3quran.net/audio/idrees-abkar/r1/001.mp3 \
+                   https://cdn.mp3quran.net/audio/khalid-jalil/r1/001.mp3; do
+            r=$(curl -sL -o /dev/null -r 0-2047 --max-time 12 -w "%{http_code} %{content_type}" "$u" || echo "fail")
+            echo "$r  $u" | tee -a streams.txt
+          done
+          curl -s --max-time 15 "https://de1.api.radio-browser.info/json/stations/search?countrycode=TN&limit=5&hidebroken=true&order=clickcount&reverse=true" | head -c 600 >> streams.txt || true
+
+      - name: Check TV streams
+        if: always()
+        continue-on-error: true
+        run: |
+          grep -o 'urls: \["[^"]*"' Widgets/TV.swift | sed 's/urls: \["//; s/"$//' | while read u; do
+            printf "%s %s\n" "$(curl -s -o /dev/null -m 8 -w '%{http_code}' "$u")" "$u"
+          done > tv.txt || true
+          cat tv.txt
+
+      - name: Check sports data (ESPN)
+        if: always()
+        continue-on-error: true
+        run: |
+          D=$(TZ=Asia/Riyadh date +%Y%m); D2=""
+          B=https://site.api.espn.com/apis/site/v2/sports/soccer
+          for u in "$B/ksa.1/scoreboard?dates=$D&limit=300" "$B/ksa.1/scoreboard" "$B/ksa.1/teams/929" "$B/ksa.1/teams/929/schedule" \
+                   "https://site.api.espn.com/apis/v2/sports/soccer/ksa.1/standings" "$B/ksa.1/statistics" "$B/ksa.1/teams" \
+                   "$B/ksa.kings.cup/scoreboard?dates=$D" "$B/afc.champions/scoreboard?dates=$D" "$B/uefa.champions/scoreboard?dates=$D" \
+                   "$B/eng.1/scoreboard?dates=$D"; do
+            curl -s --max-time 20 "$u" -o resp.json -w "%{http_code} " | tee -a sports.txt
+            python3 - "$u" >> sports.txt <<'PY' || echo "parse fail $u" >> sports.txt
+          import json,sys
+          u=sys.argv[1]
+          try: j=json.load(open('resp.json'))
+          except Exception as e: print('BAD JSON',u); sys.exit()
+          ev=j.get('events') or []
+          t=j.get('team') or {}
+          ch=j.get('children') or []
+          st=j.get('stats') or []
+          info=[f"events={len(ev)}"]
+          if ev: info.append(f"first={ev[0].get('date')} {ev[0].get('name')} last={ev[-1].get('date')} {ev[-1].get('name')}")
+          if t: info.append(f"team={t.get('displayName')} next={[e.get('date') for e in t.get('nextEvent',[])]}")
+          if ch: info.append(f"table={len(ch[0].get('standings',{}).get('entries',[]))}")
+          if st: info.append(f"stats={[s.get('name') for s in st]} leaders={len(st[0].get('leaders',[]))}")
+          sp=j.get('sports')
+          if sp: info.append(f"teams={len(sp[0]['leagues'][0].get('teams',[]))}")
+          print(' '.join(info), '|', u)
+          PY
+          done
+          # المصدر الثاني (LiveScore): المراحل والمباريات والترتيب، وروابط الشعارات
+          LS=https://prod-public-api.livescore.com/v1/api/app
+          for p in egypt/premier-league united-arab-emirates/uae-league qatar/qatar-stars-league morocco/botola-pro tunisia/ligue-i \
+                   algeria/ligue-1-2025 kuwait/premier-league iraq/iraq-stars-league jordan/pro-league oman/professional-league \
+                   egypt/cup united-arab-emirates/presidents-cup intl/fifa-arab-cup-group-a; do
+            curl -s --max-time 20 "$LS/stage/soccer/$p/0?MD=1" -o resp.json -w "%{http_code} " | tee -a sports.txt
+            python3 - "$p" >> sports.txt <<'PY' || echo "parse fail $p" >> sports.txt
+          import json,sys
+          try: s=(json.load(open('resp.json')).get('Stages') or [{}])[0]
+          except Exception: print('BAD JSON',sys.argv[1]); sys.exit()
+          ev=s.get('Events') or []
+          lt=(s.get('LeagueTable') or {}).get('L') or []
+          rows=len(((lt[0].get('Tables') or [{}])[0].get('team') or [])) if lt else 0
+          eps=sorted({e.get('Eps') for e in ev if e.get('Eps')})
+          img=next((t.get('Img') for e in ev for t in e.get('T1',[]) if t.get('Img')),'')
+          print(f"LS {sys.argv[1]} snm={s.get('Snm')} events={len(ev)} table={rows} eps={eps} img={img}")
+          PY
+          done
+          IMG=$(grep -o "img=enet/[0-9]*\.png" sports.txt | head -1 | cut -d= -f2)
+          [ -n "$IMG" ] && curl -s -o /dev/null --max-time 15 -w "logo %{http_code} %{content_type} https://lsm-static-prod.livescore.com/medium/$IMG\n" "https://lsm-static-prod.livescore.com/medium/$IMG" | tee -a sports.txt
+          cat sports.txt
+
+      - name: App screenshots (simulator)
+        if: inputs.shots || contains(github.event.head_commit.message, '[shots]')
+        continue-on-error: true
+        timeout-minutes: 12
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']]
+          p=[x for x in c if x['name']=='iPhone 17 Pro Max'] or [x for x in c if 'Pro Max' in x['name']] or c
+          print(p[-1]['udid'])")
+          echo "sim: $UDID"; xcrun simctl list devices | grep "$UDID"
+          set -o pipefail
+          xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Debug -destination "id=$UDID" \
+            -derivedDataPath simbuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build > sim.log 2>&1 || { grep -E "error:" sim.log | head -50; exit 1; }
+          APP=simbuild/Build/Products/Debug-iphonesimulator/Hilal.app
+          xcrun simctl boot $UDID || true
+          xcrun simctl bootstatus $UDID -b
+          xcrun simctl status_bar $UDID override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 || true
+          xcrun simctl install $UDID $APP
+          G=$(xcrun simctl get_app_container $UDID app.hilal.widgets group.app.hilal.widgets) && cp ci/demo_wall.jpg "$G/wall.jpg" && echo "wallpaper -> $G" || echo "no group container"
+          mkdir -p shots
+          L() { xcrun simctl terminate $UDID app.hilal.widgets || true; SIMCTL_CHILD_TZ=Asia/Riyadh xcrun simctl launch $UDID app.hilal.widgets -shot "$1" "${@:3}" -AppleLanguages "(ar)" -AppleLocale ar_SA; sleep $2; }
+          S() { xcrun simctl io $UDID screenshot "shots/$1.png"; }
+          L render 45
+          DATA=$(xcrun simctl get_app_container $UDID app.hilal.widgets data)
+          cp "$DATA"/Documents/gallery_*.png shots/ || echo "no rendered gallery"
+          L home 10; S 1_home
+          L gallery 8; S 2_gallery_all
+          L gallery 8 -filter "الصلاة"; S 3_gallery_prayer
+          L gallery 8 -filter "الساعة"; S 4_gallery_clock
+          L gallery 8 -filter "شاشة القفل"; S 4b_gallery_lock
+          L gallery 8 -filter "القرآن"; S 4c_gallery_quran
+          L detail 9 -wid hilal.prevnext; S 5_detail_prevnext
+          L detail 9 -wid hilal.both; S 6_detail_both
+          L detail 9 -wid hilal.prings; S 6b_detail_rings
+          L settings 8; S 7_settings
+          L style 9; S 7b_general_design
+          L detail 9 -wid hilal.dayprayers; S 6c_detail_dayprayers
+          L detail 9 -wid hilal.tickm; S 6d_detail_tickm
+          L settings2 9; S 8_settings_location
+          L settings3 9; S 8a_settings_date
+          L notify 9; S 8b_notify_center
+          L media 9; S 8d_media
+          L media3 9; S 8f_quran_surahs
+          L media2 9; S 8g_radio
+          L media4 14; S 8h_radio_browse
+          L media5 12; S 8i_tv
+          L gallery 9 -filter "القنوات"; S 4e_gallery_tv
+          L sports 15; S 8e_sports
+          L qibla 8; S 1b_qibla
+          L calendar 8; S 1c_calendar
+          L calendar2 8; S 1d_calendar_converter
+          L gallery 9 -filter "المباريات"; S 4d_gallery_sports
+          L detail 10 -wid hilal.s.matcht; S 6e_detail_sports
+          L notifyd 9; S 8c_notify_detail
+          L cities 9; S 9_cities
+          L detail 9 -wid lock.next; S 5b_detail_lock
+          ls -la shots
+
+      - name: Publish output branch
+        if: always()
+        run: |
+          mkdir -p out && cd out
+          git init -q -b out
+          cp ../build.log . 2>/dev/null || echo "no log" > build.log
+          grep -E "error:|warning:" build.log | sort -u > problems.txt || true
+          cp ../sign.txt . 2>/dev/null || true
+          cp ../streams.txt . 2>/dev/null || true
+          cp ../tv.txt . 2>/dev/null || true
+          cp ../sports.txt . 2>/dev/null || true
+          cp ../Hilal.ipa . 2>/dev/null || true
+          cp -R ../shots . 2>/dev/null || true
+          grep -E "error:" ../sim.log > sim_errors.txt 2>/dev/null || true
+          xcodebuild -version > xcode.txt
+          echo "${{ job.status }}" > status.txt
+          git add -A
+          git -c user.name=ci -c user.email=ci@example.com commit -qm "build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
