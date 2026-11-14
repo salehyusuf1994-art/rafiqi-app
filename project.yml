@@ -70,3 +70,24 @@ targets:
         INFOPLIST_FILE: Widgets/Info.plist
         CODE_SIGN_ENTITLEMENTS: Widgets/HilalWidgets.entitlements
         SKIP_INSTALL: "YES"
+  HilalUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Hilal
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.hilal.widgets.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Hilal
+schemes:
+  Hilal:
+    build:
+      targets:
+        Hilal: all
+        HilalWidgets: all
+    test:
+      targets:
+        - HilalUITests
