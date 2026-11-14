@@ -10,6 +10,14 @@ import UserNotifications
 struct HilalApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     init() {
+        // اختبار الواجهة: قناة مضافة تجريبية (نسخة من رابط قناة القرآن)
+        if ProcessInfo.processInfo.arguments.contains("-seedTV"), TVChannels.custom.isEmpty,
+           let q = TVChannels.all.first(where: { $0.name == "قناة القرآن الكريم" }) {
+            TVChannels.addCustom([TVChannel(id: "custom.test", name: "تجربة مضافة", cat: q.cat,
+                                            urls: [q.urls[0] + (q.urls[0].contains("?") ? "&" : "?") + "t=1"],
+                                            logo: q.logo, source: "قائمة تجربة")])
+            if !TVChannels.favorites.contains("custom.test") { TVChannels.toggle("custom.test") }
+        }
         // أوامر ويدجت الوسائط وشاشة القفل تُنفَّذ هنا حتى لو فُتح التطبيق في الخلفية
         AudioPlayer.shared.configure()
         // المتابعة المباشرة للمباريات (تبدأ من الويدجت حتى والتطبيق في الخلفية)

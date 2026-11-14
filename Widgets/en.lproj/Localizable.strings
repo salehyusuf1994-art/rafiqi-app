@@ -1018,7 +1018,7 @@
 "هذا رابط قائمة M3U فيها عدة قنوات، وليس بث قناة واحدة." = "This is an M3U list with several channels, not a single stream.";
 "🔒 تعني أن للقناة ترويسات ستُحفظ معها. القنوات المعلّمة ⚠️ محمية بتشفير DRM أو بصيغة DASH ولا تعمل على الآيفون." = "🔒 means the channel has headers that will be saved with it. Channels marked ⚠️ use DRM or DASH and don’t play on iPhone.";
 "%@ قناة — حذف قناة أو قائمة كاملة" = "%@ channels — delete one or a whole list";
-"اسحب القناة لليسار لحذفها أو تعديلها، أو اضغط «تحديد» لحذف عدة قنوات معًا. القنوات الأساسية في التطبيق لا تتأثر." = "Swipe a channel to delete or edit it, or tap “Select” to delete several at once. The app’s built-in channels aren’t affected.";
+"اضغط على القناة لتشغيلها. اسحبها لليسار لحذفها أو تعديلها، أو اضغط «تحديد» لحذف عدة قنوات معًا. القنوات الأساسية في التطبيق لا تتأثر." = "Tap a channel to play it. Swipe it to delete or edit it, or tap “Select” to delete several at once. The app’s built-in channels aren’t affected.";
 "القنوات المضافة" = "Added channels";
 "تأكيد الحذف" = "Confirm deletion";
 "تحديد" = "Select";

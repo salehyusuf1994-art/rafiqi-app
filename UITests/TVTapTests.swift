@@ -29,4 +29,46 @@ final class TVTapTests: XCTestCase {
         print("TVTEST player shown:", close)
         XCTAssertTrue(close, "player did not open")
     }
+
+    private func playerShown(_ app: XCUIApplication) -> Bool {
+        app.buttons["xmark"].exists || app.images["xmark"].exists || app.staticTexts["القناة غير متاحة الآن"].exists
+    }
+
+    private func closePlayer(_ app: XCUIApplication) {
+        let x = app.buttons["xmark"].firstMatch
+        if x.exists { x.tap() } else if app.images["xmark"].exists { app.images["xmark"].firstMatch.tap() }
+        sleep(2)
+    }
+
+    /// قناة مضافة: من قائمة القنوات، ثم من شاشة «القنوات المضافة»
+    func testCustomChannelOpensPlayer() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-shot", "media5", "-seedTV"]
+        app.launch()
+        sleep(6)
+        // ١) من القائمة الرئيسية
+        let card = app.staticTexts["تجربة مضافة"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5), "custom channel card missing")
+        card.tap()
+        sleep(5)
+        shot(app, "3_custom_from_list")
+        let a = playerShown(app)
+        print("TVTEST custom list player shown:", a)
+        XCTAssertTrue(a, "custom channel from list did not open")
+        closePlayer(app)
+        // ٢) من «القنوات المضافة»
+        var tile = app.staticTexts["القنوات المضافة"].firstMatch
+        for _ in 0..<8 where !(tile.exists && tile.isHittable) { app.swipeUp(); sleep(1); tile = app.staticTexts["القنوات المضافة"].firstMatch }
+        tile.tap()
+        sleep(3)
+        shot(app, "4_custom_sheet")
+        let row = app.staticTexts["تجربة مضافة"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "row missing in sheet")
+        row.tap()
+        sleep(6)
+        shot(app, "5_custom_from_sheet")
+        let b = playerShown(app)
+        print("TVTEST custom sheet player shown:", b)
+        XCTAssertTrue(b, "custom channel from sheet did not open")
+    }
 }

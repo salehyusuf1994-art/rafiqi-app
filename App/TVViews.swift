@@ -23,15 +23,16 @@ final class TVRouter: ObservableObject {
             hosting = nil
             h.dismiss(animated: open == nil) { [weak self] in self?.presentIfNeeded(tries: 0) }
         } else {
-            presentIfNeeded(tries: 0)
+            // بعد دورة واحدة: لو طُلبت القناة من ورقة تُغلق في نفس اللحظة نعرض بعد إغلاقها لا فوقها
+            DispatchQueue.main.async { [weak self] in self?.presentIfNeeded(tries: 0) }
         }
     }
 
     private func presentIfNeeded(tries: Int) {
         guard let c = open, hosting == nil else { return }
-        guard let top = Self.topController(), !top.isBeingDismissed, !top.isBeingPresented else {
+        guard let top = Self.topController() else {
             // ورقة تُغلق الآن (مثل «القنوات المضافة» ← مشاهدة): ننتظر قليلًا ثم نعرض
-            if tries < 20 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.presentIfNeeded(tries: tries + 1) } }
+            if tries < 30 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.presentIfNeeded(tries: tries + 1) } }
             return
         }
         let vc = UIHostingController(rootView: TVPlayerScreen(channel: c, onClose: { TVRouter.shared.close() })
@@ -49,7 +50,11 @@ final class TVRouter: ObservableObject {
         let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         let window = scene?.keyWindow ?? scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
         var vc = window?.rootViewController
-        while let p = vc?.presentedViewController, !p.isBeingDismissed { vc = p }
+        while let p = vc?.presentedViewController {
+            // ورقة تُفتح أو تُغلق الآن: ننتظر انتهاء حركتها
+            if p.isBeingDismissed || p.isBeingPresented { return nil }
+            vc = p
+        }
         return vc
     }
 

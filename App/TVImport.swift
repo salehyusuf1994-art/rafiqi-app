@@ -659,21 +659,14 @@ struct CustomChannelsView: View {
                     let items = list.filter { $0.source == src }
                     Section {
                         ForEach(items) { c in
-                            HStack(spacing: 12) {
-                                TVLogo(channel: c, width: 52, height: 32)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(verbatim: c.name).foregroundStyle(.white).lineLimit(1)
-                                    Text(verbatim: c.cat.title).font(.caption).foregroundStyle(Theme.sub)
-                                }
-                                Spacer(minLength: 0)
-                            }
+                            row(c)
                             .tag(c.id)
                             .swipeActions {
                                 Button(role: .destructive) { remove([c.id]) } label: { Label("حذف", systemImage: "trash") }
                                 Button { editing = c } label: { Label("تعديل", systemImage: "pencil") }.tint(.blue)
                             }
                             .contextMenu {
-                                Button { TVRouter.shared.open = c; dismiss() } label: { Label("مشاهدة", systemImage: "play.fill") }
+                                Button { watch(c) } label: { Label("مشاهدة", systemImage: "play.fill") }
                                 Button { editing = c } label: { Label("تعديل القناة", systemImage: "pencil") }
                                 Button(role: .destructive) { remove([c.id]) } label: { Label("حذف القناة", systemImage: "trash") }
                             }
@@ -702,7 +695,7 @@ struct CustomChannelsView: View {
                             Label("حذف كل القنوات المضافة", systemImage: "trash.fill").foregroundStyle(.red)
                         }
                     } footer: {
-                        Text("اسحب القناة لليسار لحذفها أو تعديلها، أو اضغط «تحديد» لحذف عدة قنوات معًا. القنوات الأساسية في التطبيق لا تتأثر.")
+                        Text("اضغط على القناة لتشغيلها. اسحبها لليسار لحذفها أو تعديلها، أو اضغط «تحديد» لحذف عدة قنوات معًا. القنوات الأساسية في التطبيق لا تتأثر.")
                     }
                 }
             }
@@ -741,6 +734,33 @@ struct CustomChannelsView: View {
             }
             .sheet(item: $editing, onDismiss: { list = TVChannels.custom }) { c in AddTVSheet(editing: c) }
         }
+    }
+
+    /// الضغط على القناة يشغّلها (وفي وضع «تحديد» يحددها فقط)
+    @ViewBuilder private func row(_ c: TVChannel) -> some View {
+        let content = HStack(spacing: 12) {
+            TVLogo(channel: c, width: 52, height: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: c.name).foregroundStyle(.white).lineLimit(1)
+                Text(verbatim: c.cat.title).font(.caption).foregroundStyle(Theme.sub)
+            }
+            Spacer(minLength: 0)
+            if !editMode.isEditing {
+                Image(systemName: "play.circle.fill").font(.title3).foregroundStyle(Theme.gold)
+            }
+        }
+        .contentShape(Rectangle())
+        if editMode.isEditing {
+            content
+        } else {
+            Button { watch(c) } label: { content }.buttonStyle(.plain)
+        }
+    }
+
+    private func watch(_ c: TVChannel) {
+        NSLog("TVDBG custom watch %@", c.name)
+        dismiss()
+        TVRouter.shared.open = c
     }
 
     private func confirmTitle(_ c: Confirm) -> String {
