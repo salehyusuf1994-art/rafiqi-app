@@ -486,6 +486,17 @@ extension Settings {
 enum Lang {
     static let isEN: Bool = (Bundle.main.preferredLocalizations.first ?? "ar").hasPrefix("en")
     static var dir: LayoutDirection { isEN ? .leftToRight : .rightToLeft }
+    /// لغة أرقام العدّادات والمؤقتات (يرسمها النظام): تتبع إعداد «الأرقام الإنجليزية» لا لغة الجوال،
+    /// فلا تختلط أرقام العدّاد بأرقام بقية الويدجت
+    static var digits: Locale {
+        // بلا منطقة (ar لا ar_SA) حتى لا يتحوّل التقويم الافتراضي إلى الهجري في منتقيات التاريخ
+        Locale(identifier: isEN ? "en_US" : (Settings.westernDigits ? "ar@numbers=latn" : "ar@numbers=arab"))
+    }
+}
+
+extension View {
+    /// أرقام العدّادات بنفس أرقام التطبيق (عربية أو إنجليزية حسب الإعداد)
+    func digitsLocale() -> some View { environment(\.locale, Lang.digits) }
 }
 
 /// نص مترجم (المفتاح هو النص العربي نفسه)

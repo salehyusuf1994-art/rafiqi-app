@@ -44,6 +44,7 @@ struct HilalApp: App {
         WindowGroup {
             ContentView()
                 .environment(\.layoutDirection, Lang.dir)
+                .digitsLocale()
                 .preferredColorScheme(.dark)
         }
     }

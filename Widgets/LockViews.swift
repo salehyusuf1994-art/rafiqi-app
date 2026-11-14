@@ -17,6 +17,7 @@ struct LockRoot<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environment(\.layoutDirection, Lang.dir)
             .environment(\.wfont, Styles.lockFont)
+            .digitsLocale()
             .containerBackground(for: .widget) {
                 if circle { AccessoryWidgetBackground() } else { Color.clear }
             }

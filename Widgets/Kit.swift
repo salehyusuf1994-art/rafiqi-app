@@ -189,6 +189,7 @@ struct CountDown: View {
         .font(digitFont(size, bold: true, wf)).foregroundStyle(color)
         .multilineTextAlignment(.center).frame(width: width)
         .environment(\.layoutDirection, .leftToRight)
+        .digitsLocale()
     }
 }
 
@@ -212,6 +213,7 @@ struct CountUp: View {
             .font(digitFont(size, bold: true, wf)).foregroundStyle(color)
             .multilineTextAlignment(.center).frame(width: width)
             .environment(\.layoutDirection, .leftToRight)
+            .digitsLocale()
     }
 }
 
@@ -534,6 +536,7 @@ struct Root<Content: View>: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .environment(\.layoutDirection, Lang.dir)
                 .environment(\.wfont, entry.style.font)
+                .digitsLocale()
             }
         }
         .frame(width: W, height: H)
