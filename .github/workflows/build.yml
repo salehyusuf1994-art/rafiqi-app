@@ -38,7 +38,7 @@ jobs:
       - name: Build (unsigned)
         run: |
           set -o pipefail
-          xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Release CURRENT_PROJECT_VERSION=$((100 + ${{ github.run_number }})) \
+          xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Release CURRENT_PROJECT_VERSION=$((300 + ${{ github.run_number }})) \
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
@@ -84,6 +84,21 @@ jobs:
             echo "$r  $u" | tee -a streams.txt
           done
           curl -s --max-time 15 "https://de1.api.radio-browser.info/json/stations/search?countrycode=TN&limit=5&hidebroken=true&order=clickcount&reverse=true" | head -c 600 >> streams.txt || true
+
+      - name: Check radio stations (built-in + official + backups)
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 ci/streams.py Widgets/Media.swift | while IFS=$'\t' read -r name url; do
+            r=$(curl -sL -A "VLC/3.0.20 LibVLC/3.0.20" -r 0-8191 --max-time 10 -o /tmp/s.bin -w "%{http_code} %{content_type}" "$url" 2>/dev/null)
+            n=$(wc -c < /tmp/s.bin 2>/dev/null || echo 0)
+            ok=FAIL
+            if [ "$n" -gt 400 ]; then
+              if head -c 8 /tmp/s.bin | grep -q "#EXTM3U"; then ok=OK-HLS; else ok=OK; fi
+            fi
+            printf "%-7s %-28s %6s  %s  %s\n" "$ok" "$r" "$n" "$name" "$url" | tee -a radios.txt
+            rm -f /tmp/s.bin
+          done
 
       - name: Check TV streams
         if: always()
@@ -220,6 +235,7 @@ jobs:
           grep -E "error:|warning:" build.log | sort -u > problems.txt || true
           cp ../sign.txt . 2>/dev/null || true
           cp ../streams.txt . 2>/dev/null || true
+          cp ../radios.txt . 2>/dev/null || true
           cp ../tv.txt . 2>/dev/null || true
           cp ../sports.txt . 2>/dev/null || true
           cp ../Hilal.ipa . 2>/dev/null || true
