@@ -122,7 +122,8 @@ func Fit(_ n: String, _ maxW: CGFloat, _ maxH: CGFloat, _ op: Double = 1) -> CIm
 func PrName(_ key: PKey, _ maxW: CGFloat, _ maxH: CGFloat, _ op: Double = 1) -> CImg {
     let n = "pr_\(key.rawValue)_t"
     if key == .midnight { return Fit(n, maxW * 1.3, maxH, op) }
-    let s = ["fajr", "sunrise", "dhuhr", "jumuah", "asr", "maghrib", "isha"].map { fitS("pr_\($0)_t", maxW, maxH) }.min() ?? fitS(n, maxW, maxH)
+    // سماحة ٢٥٪ في الارتفاع: «الظهر» أطول الأسماء بحركاته، فلا يصغّر الباقي كثيرًا بسببه
+    let s = ["fajr", "sunrise", "dhuhr", "jumuah", "asr", "maghrib", "isha"].map { fitS("pr_\($0)_t", maxW, maxH * 1.25) }.min() ?? fitS(n, maxW, maxH)
     return CImg(name: n, s: s, opacity: op)
 }
 

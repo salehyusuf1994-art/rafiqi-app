@@ -485,7 +485,7 @@ struct HijriMonthsView: View {
         let h = Cal.dmy(entry.date, greg: false)
         let mi = Cal.monthInfo(entry.date, greg: false)
         // مقياس واحد لكل الأشهر (أصغر مقياس يتسع له أطولها) بدل أن يكبر الاسم القصير ويصغر الطويل
-        let ms = (1...12).map { fitS("hm\($0)_t", 76, 28) }.min() ?? 0.2
+        let ms = (1...12).map { fitS("hm\($0)_t", 84, 34) }.min() ?? 0.2
         Root(entry: entry) {
             VStack(spacing: 6) {
                 HStack(spacing: 8) {
