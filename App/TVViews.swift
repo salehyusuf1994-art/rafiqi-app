@@ -9,11 +9,48 @@ import MediaPlayer
 @MainActor
 final class TVRouter: ObservableObject {
     static let shared = TVRouter()
+    /// تعيين قناة يفتح المشغّل بملء الشاشة، وتعيين nil يغلقه.
+    /// العرض عبر UIKit مباشرة: عرض SwiftUI (fullScreenCover) على جذر التبويبات لم يكن يظهر إطلاقًا.
     @Published var open: TVChannel? {
-        didSet {
-            let root = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow?.rootViewController
-            NSLog("TVDBG open=%@ presented=%@", open?.name ?? "nil", String(describing: root?.presentedViewController))
+        didSet { if open?.id != oldValue?.id || (open != nil && hosting == nil) { sync() } }
+    }
+    private weak var hosting: UIViewController?
+
+    func close() { open = nil }
+
+    private func sync() {
+        if let h = hosting {
+            hosting = nil
+            h.dismiss(animated: open == nil) { [weak self] in self?.presentIfNeeded(tries: 0) }
+        } else {
+            presentIfNeeded(tries: 0)
         }
+    }
+
+    private func presentIfNeeded(tries: Int) {
+        guard let c = open, hosting == nil else { return }
+        guard let top = Self.topController(), !top.isBeingDismissed, !top.isBeingPresented else {
+            // ورقة تُغلق الآن (مثل «القنوات المضافة» ← مشاهدة): ننتظر قليلًا ثم نعرض
+            if tries < 20 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.presentIfNeeded(tries: tries + 1) } }
+            return
+        }
+        let vc = UIHostingController(rootView: TVPlayerScreen(channel: c, onClose: { TVRouter.shared.close() })
+            .environment(\.layoutDirection, Lang.dir).digitsLocale())
+        vc.modalPresentationStyle = .fullScreen
+        vc.overrideUserInterfaceStyle = .dark
+        vc.view.backgroundColor = .black
+        hosting = vc
+        top.present(vc, animated: true)
+        NSLog("TVDBG presented %@ from %@", c.name, String(describing: type(of: top)))
+    }
+
+    private static func topController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        let window = scene?.keyWindow ?? scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+        var vc = window?.rootViewController
+        while let p = vc?.presentedViewController, !p.isBeingDismissed { vc = p }
+        return vc
     }
 
     func show(id: String) {
@@ -228,8 +265,12 @@ struct TVPlayerScreen: View {
     @StateObject private var tv: TVPlayback
     @Environment(\.dismiss) private var dismiss
     @State private var favs = TVChannels.favorites
+    private let onClose: (() -> Void)?
 
-    @MainActor init(channel: TVChannel) { _tv = StateObject(wrappedValue: TVPlayback(channel)) }
+    @MainActor init(channel: TVChannel, onClose: (() -> Void)? = nil) {
+        _tv = StateObject(wrappedValue: TVPlayback(channel))
+        self.onClose = onClose
+    }
 
     var body: some View {
         GeometryReader { g in
@@ -289,7 +330,7 @@ struct TVPlayerScreen: View {
     }
 
     private var closeButton: some View {
-        Button { dismiss() } label: {
+        Button { if let onClose { onClose() } else { dismiss() } } label: {
             Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                 .frame(width: 38, height: 38).background(Circle().fill(.ultraThinMaterial))
         }

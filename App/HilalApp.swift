@@ -179,8 +179,6 @@ struct ContentView: View {
         .onChange(of: phase) { _, p in
             if p == .active { SportsLive.shared.appBecameActive(); tvRouter.checkPending() }
         }
-        // بث القنوات بملء الشاشة (من التبويب أو الويدجت أو الرابط)
-        .fullScreenCover(item: $tvRouter.open) { c in TVPlayerScreen(channel: c) }
         .task {
             TVBridge.open = { id in TVRouter.shared.show(id: id) }
             tvRouter.checkPending()
