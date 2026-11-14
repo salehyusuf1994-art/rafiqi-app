@@ -90,7 +90,7 @@ jobs:
         continue-on-error: true
         run: |
           python3 ci/streams.py Widgets/Media.swift | while IFS=$'\t' read -r name url; do
-            r=$(curl -sL -A "VLC/3.0.20 LibVLC/3.0.20" -r 0-8191 --max-time 10 -o /tmp/s.bin -w "%{http_code} %{content_type}" "$url" 2>/dev/null)
+            r=$(curl -sL -A "VLC/3.0.20 LibVLC/3.0.20" -r 0-8191 --max-time 10 -o /tmp/s.bin -w "%{http_code} %{content_type}" "$url" 2>/dev/null || true)
             n=$(wc -c < /tmp/s.bin 2>/dev/null || echo 0)
             ok=FAIL
             if [ "$n" -gt 400 ]; then
