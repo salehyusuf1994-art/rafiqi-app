@@ -544,7 +544,9 @@ struct Root<Content: View>: View {
                     DecoView(kind: entry.style.deco, opacity: entry.style.decoOpacity)
                     content()
                 }
+                .environment(\.untintIcons, !accented)
                 .modifier(TintInk(tint: entry.tint, accented: accented))
+                .overlayPreferenceValue(UntintedIcons.self) { UntintedOverlay(items: $0) }
                 .widgetAccentable(accented)
                 .frame(width: W, height: H)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

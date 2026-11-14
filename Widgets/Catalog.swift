@@ -40,7 +40,7 @@ enum Catalog {
         w("hilal.hmonths", "التاريخ", "الأشهر الهجرية", "الأشهر الهجرية الاثنا عشر مع تمييز الشهر الحالي وتقدّمه", [.systemMedium], .day) { HijriMonthsView(entry: $0) },
         w("hilal.ramadan", "التاريخ", "رمضان", "الأيام الباقية على رمضان، وفي رمضان: رقم اليوم والعدّ للإفطار", [.systemSmall], .prayer) { RamadanView(entry: $0) },
         w("hilal.daym", "التاريخ", "اسم اليوم الكبير", "اسم اليوم بخط كبير يملأ الويدجت، وتحته التاريخان", [.systemMedium], .day) { DayNameMView(entry: $0) },
-        w("hilal.triplenames", "التاريخ", "التقويم الثلاثي بالأسماء", "الشهر الميلادي، واسم اليوم، والشهر الهجري في سطر واحد", [.systemMedium], .day) { TripleNamesView(entry: $0) },
+        w("hilal.triplenames", "التاريخ", "التقويم الثلاثي بالأسماء", "الشهر الهجري، واسم اليوم، والشهر الميلادي في سطر واحد", [.systemMedium], .day) { TripleNamesView(entry: $0) },
         w("hilal.dual", "التاريخ", "التقويم المزدوج", "الشهر الميلادي ورقمه، والرقم الهجري وشهره في سطر واحد", [.systemMedium], .day) { DualDateView(entry: $0) },
         w("hilal.monthdate", "التاريخ", "اسم الشهر والتاريخ", "اسم الشهر بخط كبير، وتحته التاريخ بالأرقام", [.systemSmall], .day, cal: true) { MonthDateView(entry: $0) },
         w("hilal.monthm", "التاريخ", "الشهر ورقم اليوم الكبير", "اسم الشهر فوق رقم اليوم الكبير الباهت، وتحتهما التاريخان", [.systemMedium], .day, cal: true) { MonthGhostMView(entry: $0) },
@@ -59,7 +59,7 @@ enum Catalog {
         w("hilal.lastthird", "الصلاة", "الثلث الأخير من الليل", "وقت بداية الثلث الأخير مع العدّ له، وقوس الليل من المغرب إلى الفجر", [.systemSmall], .prayer) { LastThirdView(entry: $0) },
         w("hilal.dayprayers", "الصلاة", "اليوم والصلاة", "التاريخان، واسم اليوم بخط كبير، وأوقات الصلوات، والمتبقي على الصلاة القادمة", [.systemMedium], .prayer) { DayPrayersMView(entry: $0) },
         w("hilal.daydots", "الصلاة", "اليوم والصلوات بالنقاط", "اسم اليوم والوقت خلفه، والصلوات في عمودين بالنقاط", [.systemMedium], .minute) { DayDotsView(entry: $0) },
-        w("hilal.tripleprayer", "الصلاة", "التقويم الثلاثي والصلاة", "الشهر الميلادي واليوم والشهر الهجري، وتحتها أوقات الصلوات", [.systemMedium], .prayer) { TriplePrayerView(entry: $0) },
+        w("hilal.tripleprayer", "الصلاة", "التقويم الثلاثي والصلاة", "الشهر الهجري واليوم والشهر الميلادي، وتحتها أوقات الصلوات", [.systemMedium], .prayer) { TriplePrayerView(entry: $0) },
         w("hilal.pcaps2", "الصلاة", "كبسولات الصلاة بالأيقونات", "كبسولة لكل وقت بأيقونته، والقادمة مضيئة", [.systemMedium], .prayer) { PrayerIconCapsView(entry: $0) },
         // ── الساعة ──
         w("hilal.aclock", "الساعة", "ساعة عقارب مع اسم اليوم", "عقارب متحركة، واسم اليوم بخط الثلث خلفها", [.systemSmall], .minute) { AnalogClockView(entry: $0, numerals: false) },

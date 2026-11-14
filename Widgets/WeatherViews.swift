@@ -21,8 +21,64 @@ struct WxIcon: View {
     let size: CGFloat
     var body: some View {
         if let u = Calli.ui(Weather.icon(w)) {
-            SImage(img: u).frame(width: size, height: size)
+            WxImage(img: u).frame(width: size, height: size)
         }
+    }
+}
+
+// MARK: - أيقونات الطقس بألوانها الطبيعية دائمًا
+// لون الخط (ذهبي، زجاجي…) يُطبَّق على الويدجت كلها بالضرب، فكانت الشمس تصير زيتونية مع الزجاجي.
+// الأيقونة هنا تترك مكانها فارغًا وتُبلّغ موضعها، ويرسمها Root فوق الطبقة الملوّنة بألوانها.
+
+struct UntintedIcon {
+    let anchor: Anchor<CGRect>
+    let image: UIImage
+}
+
+struct UntintedIcons: PreferenceKey {
+    static var defaultValue: [UntintedIcon] = []
+    static func reduce(value: inout [UntintedIcon], nextValue: () -> [UntintedIcon]) { value += nextValue() }
+}
+
+private struct UntintKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    /// داخل Root (غير الوضع الملوّن/الشفاف للنظام): الأيقونات تُرسم خارج طبقة اللون
+    var untintIcons: Bool {
+        get { self[UntintKey.self] }
+        set { self[UntintKey.self] = newValue }
+    }
+}
+
+struct WxImage: View {
+    let img: UIImage
+    @Environment(\.untintIcons) private var untint
+    var body: some View {
+        if untint {
+            Color.clear
+                .anchorPreference(key: UntintedIcons.self, value: .bounds) { [UntintedIcon(anchor: $0, image: img)] }
+        } else {
+            SImage(img: img)
+        }
+    }
+}
+
+/// يرسم الأيقونات المُبلَّغ عنها فوق الطبقة الملوّنة (مرة واحدة لكل موضع)
+struct UntintedOverlay: View {
+    let items: [UntintedIcon]
+    var body: some View {
+        GeometryReader { g in
+            let rects = items.map { g[$0.anchor] }
+            ForEach(Array(items.enumerated()), id: \.offset) { i, it in
+                let r = rects[i]
+                // نفس الأيقونة قد تتكرر (اللمعة الزجاجية تنسخ المحتوى): نرسم أول نسخة فقط
+                if !rects[..<i].contains(where: { abs($0.midX - r.midX) < 0.5 && abs($0.midY - r.midY) < 0.5 }) {
+                    Image(uiImage: it.image).resizable().scaledToFit()
+                        .frame(width: r.width, height: r.height)
+                        .position(x: r.midX, y: r.midY)
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

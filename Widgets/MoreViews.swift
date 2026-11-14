@@ -353,8 +353,10 @@ struct DayTwoDatesView: View {
             VStack(spacing: 4) {
                 Fit("wd\(Cal.weekday(entry.date))_t", 142, 56)
                 Rectangle().fill(Color.white.opacity(0.25)).frame(width: 70, height: 1)
-                CLine(names: hl, s: min(0.5, 140 / lineWidth(hl, GAP_PX, 1)))
-                CLine(names: gl, s: min(0.42, 128 / lineWidth(gl, GAP_PX, 1)))
+                // السطران بالحجم نفسه (مثل نسخة السنة): أكبر مقياس يتسع له أطولهما
+                let ds = min(0.5, 140 / lineWidth(hl, GAP_PX, 1), 140 / lineWidth(gl, GAP_PX, 1))
+                CLine(names: hl, s: ds)
+                CLine(names: gl, s: ds)
             }
         }
     }
@@ -752,7 +754,7 @@ struct WeatherWeekView: View {
                         VStack(spacing: 4) {
                             Fit(i == 0 ? "lbl_today_t" : "wd\(Cal.weekday(date))_t", 50, 20, i == 0 ? 1 : 0.85)
                             if let u = Calli.ui(Weather.iconFor(code: d.code)) {
-                                SImage(img: u).frame(width: 26, height: 26)
+                                WxImage(img: u).frame(width: 26, height: 26)
                             }
                             Digits(text: Weather.deg(d.hi), size: 14, color: .white, bold: true)
                             Digits(text: Weather.deg(d.lo), size: 13, color: DIM)

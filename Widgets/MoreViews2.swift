@@ -99,7 +99,7 @@ struct WxRows: View {
                         .frame(width: 62, alignment: .leading)
                     Spacer(minLength: 0)
                     if let u = Calli.ui(Weather.iconFor(code: d.code)) {
-                        SImage(img: u).frame(width: 20, height: 20)
+                        WxImage(img: u).frame(width: 20, height: 20)
                     }
                     Digits(text: Weather.deg(d.hi), size: 14, color: .white, bold: true).frame(width: 34)
                     Digits(text: Weather.deg(d.lo), size: 13, color: DIM).frame(width: 30)
@@ -247,7 +247,7 @@ struct DayWeatherView: View {
                         VStack(spacing: 2) {
                             Fit("wd\(Cal.weekday(Date(timeIntervalSince1970: d.t)))_t", 52, 16, 0.85)
                             if let u = Calli.ui(Weather.iconFor(code: d.code)) {
-                                SImage(img: u).frame(width: 18, height: 18)
+                                WxImage(img: u).frame(width: 18, height: 18)
                             }
                             Fit("wx_\(Weather.key(d.code))_t", 58, 14, 0.75)
                         }
@@ -369,11 +369,11 @@ struct TriplePrayerView: View {
         Root(entry: entry) {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
-                    Fit("gm\(g.m)_t", 96, 44)
+                    Fit("hm\(h.m)_t", 104, 44)
                     Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 44)
                     Fit("wd\(Cal.weekday(entry.date))_t", 104, 50)
                     Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 44)
-                    Fit("hm\(h.m)_t", 104, 44)
+                    Fit("gm\(g.m)_t", 96, 44)
                 }
                 PrayerRowCapsule(date: entry.date, note: true)
             }
@@ -554,11 +554,12 @@ struct TripleNamesView: View {
         let h = Cal.dmy(entry.date, greg: false), g = Cal.dmy(entry.date, greg: true)
         Root(entry: entry) {
             HStack(spacing: 10) {
-                Fit("gm\(g.m)_t", 104, 52)
+                // الهجري يمينًا والميلادي يسارًا — مثل «التقويم الثلاثي»
+                Fit("hm\(h.m)_t", 112, 52)
                 Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 52)
                 Fit("wd\(Cal.weekday(entry.date))_t", 112, 60)
                 Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 52)
-                Fit("hm\(h.m)_t", 112, 52)
+                Fit("gm\(g.m)_t", 104, 52)
             }
         }
     }

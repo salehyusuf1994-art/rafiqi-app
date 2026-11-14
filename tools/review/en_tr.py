@@ -344,7 +344,7 @@ T.update({
 "اليوم والصلوات بالنقاط": "Day & Dotted Prayers",
 "اسم اليوم والوقت خلفه، والصلوات في عمودين بالنقاط": "Weekday over the time, with prayers in two dotted columns",
 "التقويم الثلاثي والصلاة": "Triple Calendar & Prayers",
-"الشهر الميلادي واليوم والشهر الهجري، وتحتها أوقات الصلوات": "Gregorian month, weekday and Hijri month, with prayer times below",
+"الشهر الهجري واليوم والشهر الميلادي، وتحتها أوقات الصلوات": "Hijri month, weekday and Gregorian month, with prayer times below",
 "كبسولات الصلاة بالأيقونات": "Prayer Icon Capsules",
 "كبسولة لكل وقت بأيقونته، والقادمة مضيئة": "A capsule per time with its icon; the next one is lit",
 "اليوم والساعة والصلاة": "Day, Clock & Prayers",
@@ -369,7 +369,7 @@ T.update({
 "حلقات الصلوات (سطر واحد)": "Prayer Rings (one row)",
 "حلقات الصلوات الخمس بأيقوناتها في سطر واحد": "The five prayer rings with icons in one row",
 "التقويم الثلاثي بالأسماء": "Triple Calendar (names)",
-"الشهر الميلادي، واسم اليوم، والشهر الهجري في سطر واحد": "Gregorian month, weekday and Hijri month in one row",
+"الشهر الهجري، واسم اليوم، والشهر الميلادي في سطر واحد": "Hijri month, weekday and Gregorian month in one row",
 "ساعة الإطار المتدرّجة": "Fading Frame Clock",
 "الساعة كبيرة والدقائق باهتة تحتها داخل إطار العلامات": "Large hour with fading minutes below, inside the tick frame",
 })
