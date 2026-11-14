@@ -93,9 +93,8 @@ jobs:
             r=$(curl -sL -A "VLC/3.0.20 LibVLC/3.0.20" -r 0-8191 --max-time 10 -o /tmp/s.bin -w "%{http_code} %{content_type}" "$url" 2>/dev/null || true)
             n=$(wc -c < /tmp/s.bin 2>/dev/null || echo 0)
             ok=FAIL
-            if [ "$n" -gt 400 ]; then
-              if head -c 8 /tmp/s.bin | grep -q "#EXTM3U"; then ok=OK-HLS; else ok=OK; fi
-            fi
+            if head -c 8 /tmp/s.bin 2>/dev/null | grep -q "#EXTM3U"; then ok=OK-HLS
+            elif [ "$n" -gt 400 ]; then ok=OK; fi
             printf "%-7s %-28s %6s  %s  %s\n" "$ok" "$r" "$n" "$name" "$url" | tee -a radios.txt
             rm -f /tmp/s.bin
           done

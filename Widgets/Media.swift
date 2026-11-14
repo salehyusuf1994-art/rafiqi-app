@@ -207,25 +207,24 @@ struct Station: Codable, Identifiable, Hashable {
 enum OfficialRadio {
     private static let kwik = "https://live.kwikmotion.com/"
     private static let rtt = "http://rtstream.tanitweb.com/"
-    private static let edge = "http://streamedge.radiotunisienne.com:1936/rlive/"
     private static let rtn = "https://radio.radiotunisienne.tn/"
 
     private static func s(_ name: String, _ cc: String, _ url: String, _ alts: [String] = []) -> Station {
         Station(name: name, url: url, country: cc, alts: alts.isEmpty ? nil : alts)
     }
 
+    // كل الروابط هنا مُختبرة من خادم البناء (تصل إلى مقاطع البث فعلًا) — ١٤ نوفمبر ٢٠٢٦
     static let byCountry: [String: [Station]] = [
         // هيئة الإذاعة والتلفزيون السعودية
         "SA": [
             s("إذاعة القرآن الكريم", "SA", "https://stream.radiojar.com/0tpy1h0kxtzuv",
-              [kwik + "sbrksaquranradiolive/srpksaquranradio/playlist.m3u8", "http://n01.radiojar.com/0tpy1h0kxtzuv"]),
+              ["http://n01.radiojar.com/0tpy1h0kxtzuv", kwik + "sbrksaquranradiolive/srpksaquranradio/playlist.m3u8"]),
             s("إذاعة الرياض", "SA", kwik + "sbrksariyadhradiolive/ksariyadhradio/chunks.m3u8",
-              [kwik + "sbrksariyadhradiolive/srpksariyadhradio/playlist.m3u8", "http://live3.almgrat.com:8042/stream"]),
+              [kwik + "sbrksariyadhradiolive/srpksariyadhradio/playlist.m3u8"]),
             s("إذاعة جدة", "SA", kwik + "sbrksajeddahradiolive/ksajeddahradio/chunks.m3u8",
-              [kwik + "sbrksajeddahradiolive/srpksajeddahradio/chunks.m3u8", "http://live3.almgrat.com:8273/stream"]),
-            s("إذاعة نداء الإسلام", "SA", kwik + "sbrksanedaradiolive/srpksanedaradio/playlist.m3u8",
-              [kwik + "sbrksanedaradiolive/ksanedaradio/chunks.m3u8", "https://stream.radiojar.com/59096z743d0uv",
-               "http://87.98.130.255:8348/stream"]),
+              [kwik + "sbrksajeddahradiolive/srpksajeddahradio/chunks.m3u8"]),
+            s("إذاعة نداء الإسلام", "SA", kwik + "sbrksanedaradiolive/ksanedaradio/chunks.m3u8",
+              [kwik + "sbrksanedaradiolive/srpksanedaradio/playlist.m3u8"]),
             s("إذاعة السعودية", "SA", kwik + "sbrksasaudiaradiolive/ksasaudiaradio/chunks.m3u8",
               [kwik + "sbrksasaudiaradiolive/srpksasaudiaradio/playlist.m3u8"]),
             s("إذاعة خزامى", "SA", kwik + "sbrksakhuzamaradiolive/khuzama/chunks.m3u8",
@@ -233,18 +232,16 @@ enum OfficialRadio {
         ],
         // الإذاعة التونسية
         "TN": [
-            s("الإذاعة الوطنية", "TN", rtt + "nationale", [edge + "streamnat/streamnat/playlist.m3u8", rtn + "nationale"]),
-            s("إذاعة RTCI", "TN", rtt + "rtci", [edge + "streamrtc/streamrtc/playlist.m3u8", rtn + "rtci"]),
-            s("إذاعة الشباب", "TN", rtt + "jeunes", [edge + "streamjeu/streamjeu/playlist.m3u8", rtn + "jeunes"]),
-            s("إذاعة تونس الثقافية", "TN", rtt + "culturelle", [edge + "streamcul/streamcul/playlist.m3u8", rtn + "culturelle"]),
-            s("إذاعة الزيتونة", "TN", rtn + "radiozaitouna", ["https://stream.radiozitouna.tn/radio/8030/radio.mp3", rtt + "zitouna"]),
-            s("إذاعة بانوراما", "TN", rtt + "panorama", [rtn + "panorama", edge + "streampan/streampan/playlist.m3u8"]),
-            s("إذاعة صفاقس", "TN", rtt + "sfax", [edge + "streamsfa/streamsfa/playlist.m3u8", rtn + "sfax"]),
-            s("إذاعة المنستير", "TN", rtt + "monastir", [rtn + "monastir", edge + "streammon/streammon/playlist.m3u8"]),
-            s("إذاعة الكاف", "TN", rtt + "kef", [edge + "streamkef/streamkef/playlist.m3u8", rtn + "kef"]),
-            s("إذاعة قفصة", "TN", rtt + "gafsa", [edge + "streamgaf/streamgaf/playlist.m3u8", rtn + "gafsa"]),
-            s("إذاعة تطاوين", "TN", rtt + "tataouine", [edge + "streamtat/streamtat/playlist.m3u8", rtn + "tataouine"]),
-            s("إذاعة القصرين", "TN", rtt + "kasserine", [rtn + "kasserine", edge + "streamkas/streamkas/playlist.m3u8"]),
+            s("الإذاعة الوطنية", "TN", rtn + "nationale", [rtt + "nationale"]),
+            s("إذاعة RTCI", "TN", rtn + "rtci", [rtt + "rtci"]),
+            s("إذاعة الشباب", "TN", rtn + "jeunes", [rtt + "jeunes"]),
+            s("إذاعة تونس الثقافية", "TN", rtn + "culturelle", [rtt + "culturelle"]),
+            s("إذاعة الزيتونة", "TN", rtn + "radiozaitouna"),
+            s("إذاعة صفاقس", "TN", rtn + "sfax", [rtt + "sfax"]),
+            s("إذاعة المنستير", "TN", rtn + "monastir", [rtt + "monastir"]),
+            s("إذاعة الكاف", "TN", rtn + "kef", [rtt + "kef"]),
+            s("إذاعة قفصة", "TN", rtn + "gafsa", [rtt + "gafsa"]),
+            s("إذاعة تطاوين", "TN", rtn + "tataouine", [rtt + "tataouine"]),
         ],
     ]
 
