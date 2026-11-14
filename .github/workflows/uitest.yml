@@ -33,6 +33,9 @@ jobs:
             -derivedDataPath uibuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
             -only-testing:HilalUITests/TVTapTests > ui.log 2>&1 || true
           grep -E "TVTEST|error:|Test Case|passed|failed" ui.log | head -80
+          xcrun simctl spawn $UDID log show --last 15m --style compact --predicate 'eventMessage CONTAINS "TVDBG" OR eventMessage CONTAINS[c] "attempt to present" OR eventMessage CONTAINS[c] "presentation"' > applog.txt 2>&1 || true
+          grep -E "TVDBG|present" applog.txt | head -40
+          mkdir -p uiout && cp applog.txt uiout/ || true
           mkdir -p uiout && cp -R ~/uitest/* uiout/ 2>/dev/null || true
           cp ui.log uiout/ ; ls uiout
       - name: Publish

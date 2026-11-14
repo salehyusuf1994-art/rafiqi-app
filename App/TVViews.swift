@@ -9,7 +9,12 @@ import MediaPlayer
 @MainActor
 final class TVRouter: ObservableObject {
     static let shared = TVRouter()
-    @Published var open: TVChannel?
+    @Published var open: TVChannel? {
+        didSet {
+            let root = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow?.rootViewController
+            NSLog("TVDBG open=%@ presented=%@", open?.name ?? "nil", String(describing: root?.presentedViewController))
+        }
+    }
 
     func show(id: String) {
         guard let c = TVChannels.channel(id) else { return }
@@ -248,6 +253,7 @@ struct TVPlayerScreen: View {
         }
         .environment(\.colorScheme, .dark)
         .onAppear {
+            NSLog("TVDBG player appear")
             tv.start()
             OrientationLock.allowLandscape(true)
         }
@@ -506,7 +512,7 @@ struct TVSections: View {
 
     private func card(_ c: TVChannel, width: CGFloat, height: CGFloat) -> some View {
         let fav = favs.contains(c.id)
-        return Button { TVRouter.shared.open = c } label: {
+        return Button { NSLog("TVDBG tap %@", c.name); TVRouter.shared.open = c } label: {
             VStack(spacing: 6) {
                 TVLogo(channel: c, width: width, height: height)
                     .overlay(alignment: .topTrailing) {
