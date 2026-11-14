@@ -78,6 +78,8 @@ struct UntintedOverlay: View {
                 }
             }
         }
+        // المواضع محسوبة من اليسار: في الاتجاه العربي يعكس SwiftUI قيمة position فتنزاح الأيقونة لمكان خطأ
+        .environment(\.layoutDirection, .leftToRight)
         .allowsHitTesting(false)
     }
 }
