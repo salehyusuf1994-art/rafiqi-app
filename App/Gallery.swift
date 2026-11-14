@@ -616,4 +616,59 @@ enum GalleryShots {
         }
         Styles.global = saved
     }
+
+    /// مصفوفة المراجعة: كل ويدجت × كل مقاس × كل خط (أبيض)، ثم الألوان والتاريخ الميلادي — بلا خلفية
+    @MainActor
+    static func matrix(weather: WeatherData?) {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let dir = docs.appendingPathComponent("matrix")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        RenderDebug.bare = true
+        defer { RenderDebug.bare = false }
+        let sports = SportsStore.current()
+        let tints: [(String, Color)] = [("white", .white), ("gold", Tint.color("gold")), ("glass", Tint.glassColor)]
+        func fam(_ f: WidgetFamily) -> String {
+            switch f {
+            case .systemSmall: return "s"
+            case .systemMedium: return "m"
+            case .systemLarge: return "l"
+            case .accessoryRectangular: return "ar"
+            case .accessoryCircular: return "ac"
+            case .accessoryInline: return "ai"
+            default: return "x"
+            }
+        }
+        func shot(_ info: WInfo, _ f: WidgetFamily, font: WFont, tint: (String, Color), greg: Bool) {
+            let size = WidgetPreview.size(f)
+            let slot: Slot = f == .systemMedium ? .mm : f == .systemLarge ? .lt : .mr
+            var e = HEntry(date: Date(), slot: slot, size: size, tint: tint.1, greg: greg,
+                           weather: weather, preview: true, inApp: false, family: f)
+            var st = WStyle(); st.font = font
+            e.style = st
+            e.kind = info.id
+            if info.group == "المباريات" { e.sports = sports }
+            let lock = Catalog.isLock(f)
+            let view = info.render(e)
+                .frame(width: size.width, height: size.height)
+                .foregroundStyle(lock ? Color.white : Color.primary)
+                .environment(\.colorScheme, .dark)
+            let r = ImageRenderer(content: view)
+            r.scale = 2
+            r.isOpaque = false
+            let name = "\(info.id)__\(fam(f))__\(font.rawValue)__\(tint.0)\(greg ? "__greg" : "").png"
+            if let png = r.uiImage?.pngData() { try? png.write(to: dir.appendingPathComponent(name)) }
+        }
+        for info in Catalog.all {
+            for f in info.families {
+                if Catalog.isLock(f) {
+                    shot(info, f, font: .thuluth, tint: tints[0], greg: false)
+                    continue
+                }
+                for font in WFont.allCases { shot(info, f, font: font, tint: tints[0], greg: false) }
+                for t in tints.dropFirst() { shot(info, f, font: .thuluth, tint: t, greg: false) }
+                if info.hasCalendar { shot(info, f, font: .thuluth, tint: tints[0], greg: true) }
+            }
+        }
+        try? "done".write(to: dir.appendingPathComponent("_done.txt"), atomically: true, encoding: .utf8)
+    }
 }

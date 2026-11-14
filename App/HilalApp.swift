@@ -188,6 +188,7 @@ struct ContentView: View {
             Backdrop.screenPt = CGSize(width: 440, height: 956)
             if Backdrop.hasWallpaper { Backdrop.regenerate() }
             if SHOT == "render" { GalleryShots.render(weather: await Weather.load()) }
+            if SHOT == "matrix" { GalleryShots.matrix(weather: await Weather.load()) }
         }
     }
 }

@@ -503,6 +503,9 @@ struct GlassPanel: View {
 
 /// غلاف كل ويدجت: اتجاه عربي + لون الخط + الخلفية المقصوصة.
 /// الخلفية مرسومة داخل المحتوى نفسه (مثل سكربت ويدجت) عشان iOS ما يستبدلها بالزجاج في الوضع الداكن.
+/// للمراجعة الآلية فقط (CI): رسم المحتوى بلا خلفية لقياس الهوامش
+enum RenderDebug { static var bare = false }
+
 struct Root<Content: View>: View {
     let entry: HEntry
     @ViewBuilder let content: () -> Content
@@ -514,7 +517,7 @@ struct Root<Content: View>: View {
         let accented = renderingMode == .accented && !entry.inApp
         ZStack {
             // في الوضع الملوّن/الشفاف لا نرسم صورة الخلفية: لا تطابق الشاشة هناك، والنظام يضع زجاجه
-            if !accented {
+            if !accented && !RenderDebug.bare {
                 WidgetBG(entry: entry)
                     .frame(width: W, height: H)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -536,7 +539,7 @@ struct Root<Content: View>: View {
         .frame(width: W, height: H)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .containerBackground(for: .widget) { WidgetBG(entry: entry) }
+        .containerBackground(for: .widget) { if RenderDebug.bare { Color.clear } else { WidgetBG(entry: entry) } }
         .widgetURL(entry.kind.isEmpty || entry.inApp ? nil : URL(string: "miqat://edit/" + entry.kind))
     }
 }
