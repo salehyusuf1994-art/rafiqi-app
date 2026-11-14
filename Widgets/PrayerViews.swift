@@ -50,9 +50,9 @@ struct PrayerRow: View {
             ForEach(Array(times.enumerated()), id: \.offset) { _, p in
                 let on = p.key == nextKey
                 VStack(spacing: dots ? -2 : -6) {
-                    if dots { Circle().fill(on ? TXT : Color(white: 0.55)).frame(width: on ? 9 : 5, height: on ? 9 : 5) }
+                    if dots { Circle().fill(on ? TXT : Color.white.opacity(0.55)).frame(width: on ? 9 : 5, height: on ? 9 : 5) }
                     CImg(name: "pr_\(p.key.rawValue)", s: 0.31, opacity: on ? 1 : 0.72)
-                    Digits(text: hm12(p.time), size: 14, color: on ? .white : Color(white: 0.72), bold: on)
+                    Digits(text: hm12(p.time), size: 14, color: on ? .white : Color.white.opacity(0.72), bold: on)
                 }
                 .frame(width: 56, height: dots ? 66 : 58)
             }
@@ -151,7 +151,8 @@ struct ComboView: View {
         let st = Prayer.state(at: entry.date)
         let h = Cal.dmy(entry.date, greg: false), g = Cal.dmy(entry.date, greg: true)
         let hn = ["pn\(h.d)", "hm\(h.m)"], gn = ["pn\(g.d)", "gm\(g.m)"]
-        let s = min(0.42, 165 / lineWidth(hn, GAP_PX, 1), 165 / lineWidth(gn, GAP_PX, 1))
+        // كان المحتوى أطول من الويدجت فيلتصق شريط اليوم بالحافة السفلى ويُقصّ: رأس أقصر قليلًا
+        let s = min(0.36, 165 / lineWidth(hn, GAP_PX, 1), 165 / lineWidth(gn, GAP_PX, 1))
         Root(entry: entry) {
             VStack(spacing: 2) {
                 HStack(spacing: 0) {
@@ -159,7 +160,7 @@ struct ComboView: View {
                     Spacer(minLength: 0)
                     VStack(spacing: -6) { CLine(names: gn, s: s); CImg(name: "gy\(clampY(g.y, 2020, 2050))", s: s * 0.75) }
                 }
-                .frame(width: 350, height: 74)
+                .frame(width: 350, height: 62)
                 HStack(spacing: 8) {
                     Rectangle().fill(Color.white.opacity(0.25)).frame(width: 92, height: 1)
                     CountDown(to: st.next.time, size: 20, color: .white, width: 120)

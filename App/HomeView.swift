@@ -218,7 +218,7 @@ struct PointLabel: View {
     let p: PTime
     var body: some View {
         VStack(spacing: 0) {
-            Fit("pr_\(p.key.rawValue)_t", p.key == .midnight ? 78 : 58, 24, 0.95)
+            PrName(p.key, 58, 24, 0.95)
             Digits(text: hm12(p.time), size: 14, color: .white.opacity(0.8))
         }
     }

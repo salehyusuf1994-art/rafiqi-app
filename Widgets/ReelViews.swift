@@ -41,7 +41,7 @@ struct ReelLogo: View {
         let r = corner ?? size * 0.28
         ZStack {
             if let img = LogoCache.image(url) {
-                RoundedRectangle(cornerRadius: r, style: .continuous).fill(Color.white)
+                RoundedRectangle(cornerRadius: r, style: .continuous).fill(LogoCache.tile(for: url, image: img))
                 SImage(img: img).padding(size * 0.1)
             } else {
                 RoundedRectangle(cornerRadius: r, style: .continuous)
@@ -87,8 +87,8 @@ struct RadioTunerView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 5) {
-                        Circle().fill(np.playing ? Color.red : TXT.opacity(0.5)).frame(width: 6, height: 6)
-                        Text(Lang.isEN ? "LIVE" : "مباشر").font(.system(size: 10, weight: .bold)).foregroundStyle(TXT.opacity(0.8))
+                        Circle().fill(np.playing ? Color.red : TXT.opacity(0.42)).frame(width: 6, height: 6)
+                        Text(Lang.isEN ? "LIVE" : "مباشر").font(.system(size: 10, weight: .bold)).foregroundStyle(TXT.opacity(0.67))
                     }
                     MTitle(text: np.title, size: 18)
                     MSub(text: np.subtitle, size: 11)
@@ -117,7 +117,7 @@ struct RadioTunerView: View {
                             .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
                                 .fill(Color.white.opacity(s.url == cur ? 0.18 : 0.07)))
                             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                .stroke(s.url == cur ? TXT.opacity(0.6) : Color.white.opacity(0.10), lineWidth: 0.8))
+                                .stroke(s.url == cur ? TXT.opacity(0.5) : Color.white.opacity(0.10), lineWidth: 0.8))
                         }
                         .buttonStyle(.plain)
                     }
@@ -141,7 +141,7 @@ struct RadioTunerSmallView: View {
         Root(entry: entry) {
             VStack(spacing: 7) {
                 HStack(spacing: 5) {
-                    Circle().fill(np.playing ? Color.red : TXT.opacity(0.5)).frame(width: 6, height: 6)
+                    Circle().fill(np.playing ? Color.red : TXT.opacity(0.42)).frame(width: 6, height: 6)
                     MTitle(text: np.title, size: 13)
                     Spacer(minLength: 0)
                 }
@@ -159,7 +159,7 @@ struct RadioTunerSmallView: View {
                                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(Color.white.opacity(st.url == cur ? 0.18 : 0.07)))
                                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .stroke(st.url == cur ? TXT.opacity(0.6) : Color.white.opacity(0.10), lineWidth: 0.8))
+                                    .stroke(st.url == cur ? TXT.opacity(0.5) : Color.white.opacity(0.10), lineWidth: 0.8))
                             }
                             .buttonStyle(.plain)
                         }
@@ -290,11 +290,11 @@ struct TVReelView: View {
         Root(entry: entry) {
             VStack(spacing: 8) {
                 HStack(spacing: 6) {
-                    Image(systemName: "tv.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(TXT.opacity(0.8))
+                    Image(systemName: "tv.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(TXT.opacity(0.67))
                     Text(Lang.isEN ? "Channels" : "القنوات").font(.system(size: 13, weight: .bold)).foregroundStyle(TXT)
                     Spacer(minLength: 0)
                     Text(verbatim: "\(ar(page + 1))/\(ar(pages))").font(.system(size: 10, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(TXT.opacity(0.55))
+                        .foregroundStyle(TXT.opacity(0.46))
                         .environment(\.layoutDirection, .leftToRight)
                 }
                 HStack(spacing: 6) {

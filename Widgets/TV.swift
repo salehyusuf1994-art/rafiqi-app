@@ -298,6 +298,36 @@ enum LogoCache {
         guard let url, !url.isEmpty, let f = file(url) else { return nil }
         return UIImage(contentsOfFile: f.path)
     }
+    /// لون بطاقة الشعار: الشعارات البيضاء/الفاتحة (مثل «الحدث») تختفي على بطاقة بيضاء، فتأخذ بطاقة داكنة
+    private static var tileCache: [String: Bool] = [:]
+    private static let tileLock = NSLock()
+    static func tile(for url: String?, image img: UIImage) -> Color {
+        let k = url ?? ""
+        tileLock.lock(); let hit = tileCache[k]; tileLock.unlock()
+        let light = hit ?? isLight(img)
+        if hit == nil { tileLock.lock(); tileCache[k] = light; tileLock.unlock() }
+        return light ? Color(red: 0.13, green: 0.14, blue: 0.16) : .white
+    }
+    /// متوسط سطوع الأجزاء المرئية من الشعار (بعد تصغيره إلى ٢٤×٢٤)
+    private static func isLight(_ img: UIImage) -> Bool {
+        let n = 24
+        var px = [UInt8](repeating: 0, count: n * n * 4)
+        guard let cg = img.cgImage,
+              let ctx = CGContext(data: &px, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return false }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: n, height: n))
+        var sum = 0.0, cnt = 0.0
+        for i in stride(from: 0, to: px.count, by: 4) where px[i + 3] > 128 {
+            let a = Double(px[i + 3]) / 255
+            let l = (0.299 * Double(px[i]) + 0.587 * Double(px[i + 1]) + 0.114 * Double(px[i + 2])) / 255 / a
+            sum += l; cnt += 1
+        }
+        // صورة بلا شفافية (مربع كامل) لها خلفيتها الخاصة: لا نغيّر شيئًا
+        guard cnt > 0, cnt < Double(n * n) * 0.97 else { return false }
+        return sum / cnt > 0.82
+    }
+
     /// ينزّل الشعارات الناقصة (مصغّرة إلى ١٢٠ نقطة) — من التطبيق فقط
     static func fetch(_ urls: [String]) async {
         let fm = FileManager.default

@@ -18,7 +18,7 @@ struct DateStrip: View {
         let s = min(maxS, (width - 16) / max(1, total))
         HStack(spacing: 7) {
             CLine(names: gl, s: s)
-            Rectangle().fill(TXT.opacity(0.5)).frame(width: 1, height: 14)
+            Rectangle().fill(TXT.opacity(0.42)).frame(width: 1, height: 14)
             CLine(names: hl, s: s)
         }
         .frame(height: 107 * s * 0.62)
@@ -54,8 +54,8 @@ struct PrayerRowCapsule: View {
             ForEach(Array(list.enumerated()), id: \.offset) { _, p in
                 let on = p.time == st.next.time
                 VStack(spacing: 2) {
-                    Fit("pr_\(p.key.rawValue)_t", 50, 19, on ? 1 : 0.82)
-                    Digits(text: hm12(p.time), size: 13.5, color: on ? .white : TXT.opacity(0.88), bold: on)
+                    PrName(p.key, 50, 19, on ? 1 : 0.82)
+                    Digits(text: hm12(p.time), size: 13.5, color: on ? .white : TXT.opacity(0.74), bold: on)
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .background {
                             if on {
@@ -64,7 +64,7 @@ struct PrayerRowCapsule: View {
                             }
                         }
                     if note && on {
-                        CountDown(to: p.time, size: 10, color: TXT.opacity(0.8), width: 56, at: date)
+                        CountDown(to: p.time, size: 10, color: TXT.opacity(0.67), width: 56, at: date)
                     }
                 }
                 .frame(width: width / 6)
@@ -147,8 +147,8 @@ struct TickFrameView: View {
     var body: some View {
         let m = max(0, min(59, minute))
         ZStack {
-            TickFrame(from: m + 1, to: 60, majors: false).stroke(TXT.opacity(0.28), lineWidth: 1.3)
-            TickFrame(from: m + 1, to: 60, majors: true).stroke(TXT.opacity(0.35), lineWidth: 2.4)
+            TickFrame(from: m + 1, to: 60, majors: false).stroke(TXT.opacity(0.24), lineWidth: 1.3)
+            TickFrame(from: m + 1, to: 60, majors: true).stroke(TXT.opacity(0.29), lineWidth: 2.4)
             TickFrame(from: 0, to: m + 1, majors: false).stroke(Color.white, lineWidth: 1.3)
             TickFrame(from: 0, to: m + 1, majors: true).stroke(Color.white, lineWidth: 2.4)
         }
@@ -209,10 +209,10 @@ struct DayDotsView: View {
                                 let on = p.time == st.next.time
                                 HStack(spacing: 4) {
                                     Circle().fill(on ? Color.white : Color.clear)
-                                        .overlay(Circle().stroke(TXT.opacity(0.7), lineWidth: 1))
+                                        .overlay(Circle().stroke(TXT.opacity(0.59), lineWidth: 1))
                                         .frame(width: 6, height: 6)
-                                    Fit("pr_\(p.key.rawValue)_t", 44, 17, on ? 1 : 0.8)
-                                    Digits(text: hm12(p.time), size: 13, color: on ? .white : TXT.opacity(0.85), bold: on)
+                                    PrName(p.key, 44, 17, on ? 1 : 0.8)
+                                    Digits(text: hm12(p.time), size: 13, color: on ? .white : TXT.opacity(0.71), bold: on)
                                 }
                                 .frame(width: 110)
                             }
@@ -302,7 +302,7 @@ struct MonthDateView: View {
         Root(entry: entry) {
             VStack(spacing: 8) {
                 Fit((entry.greg ? "gm" : "hm") + "\(t.m)_t", 146, 60)
-                Digits(text: num, size: 15, color: TXT.opacity(0.85))
+                Digits(text: num, size: 15, color: TXT.opacity(0.71))
                     .environment(\.layoutDirection, .leftToRight)
             }
         }
@@ -352,7 +352,7 @@ struct DualDateView: View {
             HStack(spacing: 10) {
                 Fit("gm\(g.m)_t", 104, 46)
                 Fit("bn\(max(1, min(31, g.d)))", 52, 50)
-                Rectangle().fill(TXT.opacity(0.4)).frame(width: 1, height: 56)
+                Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 56)
                 Fit("bn\(max(1, min(31, h.d)))", 52, 50)
                 Fit("hm\(h.m)_t", 110, 46)
             }
@@ -370,9 +370,9 @@ struct TriplePrayerView: View {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Fit("gm\(g.m)_t", 96, 44)
-                    Rectangle().fill(TXT.opacity(0.4)).frame(width: 1, height: 44)
+                    Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 44)
                     Fit("wd\(Cal.weekday(entry.date))_t", 104, 50)
-                    Rectangle().fill(TXT.opacity(0.4)).frame(width: 1, height: 44)
+                    Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 44)
                     Fit("hm\(h.m)_t", 104, 44)
                 }
                 PrayerRowCapsule(date: entry.date, note: true)
@@ -398,7 +398,7 @@ struct PrayerIconCapsView: View {
                             PrIcon(key: p.key, size: 15, color: .white)
                             Spacer(minLength: 0)
                             VStack(spacing: 1) {
-                                Fit("pr_\(p.key.rawValue)_t", 40, 16)
+                                PrName(p.key, 40, 16)
                                 Digits(text: hm12(p.time), size: 11.5, color: .white, bold: on)
                             }
                             .colorMultiply(on ? Color(white: 0.12) : .white)
@@ -555,9 +555,9 @@ struct TripleNamesView: View {
         Root(entry: entry) {
             HStack(spacing: 10) {
                 Fit("gm\(g.m)_t", 104, 52)
-                Rectangle().fill(TXT.opacity(0.4)).frame(width: 1, height: 52)
+                Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 52)
                 Fit("wd\(Cal.weekday(entry.date))_t", 112, 60)
-                Rectangle().fill(TXT.opacity(0.4)).frame(width: 1, height: 52)
+                Rectangle().fill(TXT.opacity(0.34)).frame(width: 1, height: 52)
                 Fit("hm\(h.m)_t", 112, 52)
             }
         }

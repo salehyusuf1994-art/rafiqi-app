@@ -238,10 +238,10 @@ final class StreamTester: ObservableObject {
             guard token == t else { return }
             if M3UParser.isPlaylist(M3UParser.decode(d)) { state = .playlist; return }
             if code == 401 || code == 403 {
-                state = .failed(LF("الخادم رفض الطلب (%@). جرّب إضافة Referer أو User-Agent أو ترويسة المصادقة.", String(code)))
+                state = .failed(LF("الخادم رفض الطلب (%@). جرّب إضافة Referer أو User-Agent أو ترويسة المصادقة.", ar(code)))
                 return
             }
-            if code == 404 || code == 410 { state = .failed(LF("الرابط غير موجود (%@). ربما انتهى أو تغيّر.", String(code))); return }
+            if code == 404 || code == 410 { state = .failed(LF("الرابط غير موجود (%@). ربما انتهى أو تغيّر.", ar(code))); return }
         }
         guard token == t else { return }
         state = .failed(err ?? L("لم يبدأ البث خلال ١٥ ثانية."))
@@ -333,7 +333,7 @@ struct AddTVSheet: View {
                     if mode == .single {
                         Button("حفظ") { saveSingle() }.disabled(validURL == nil)
                     } else {
-                        Button(LF("إضافة (%@)", String(picked.count))) { addPicked() }.disabled(picked.isEmpty)
+                        Button(LF("إضافة (%@)", ar(picked.count))) { addPicked() }.disabled(picked.isEmpty)
                     }
                 }
             }
@@ -510,7 +510,7 @@ struct AddTVSheet: View {
                 Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.subheadline)
             }
             if let n = added {
-                Label(LF("أُضيفت %@ قناة", String(n)), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                Label(LF("أُضيفت %@ قناة", ar(n)), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             }
         } footer: {
             Text("الصق رابط قائمة M3U، أو اختر ملفها من «الملفات» 📄، أو الصق نصّها 📋. تُقرأ أسماء القنوات وشعاراتها ومجموعاتها وترويساتها (http-referrer و http-user-agent).")
@@ -536,7 +536,7 @@ struct AddTVSheet: View {
                 .buttonStyle(.borderless)
                 .font(.subheadline.weight(.semibold))
             } header: {
-                Text(LF("%@ قناة في القائمة", String(entries.count)))
+                Text(LF("%@ قناة في القائمة", ar(entries.count)))
             }
 
             Section {
@@ -584,7 +584,7 @@ struct AddTVSheet: View {
         do {
             let (d, r) = try await URLSession.shared.data(for: StreamAsset.request(u, headers: h))
             let code = (r as? HTTPURLResponse)?.statusCode ?? 200
-            guard (200..<300).contains(code) else { listError = LF("تعذّر تحميل القائمة (%@).", String(code)); return }
+            guard (200..<300).contains(code) else { listError = LF("تعذّر تحميل القائمة (%@).", ar(code)); return }
             let text = M3UParser.decode(d)
             if !M3UParser.isPlaylist(text) {
                 listError = text.contains("#EXT-X-") ? L("هذا رابط بث قناة واحدة (HLS) وليس قائمة؛ أضفه من «قناة واحدة».")
@@ -683,7 +683,7 @@ struct CustomChannelsView: View {
                             Label(src ?? L("مضافة يدويًا"), systemImage: src == nil ? "link" : "list.bullet.rectangle")
                                 .lineLimit(1)
                             Spacer()
-                            Text(verbatim: "\(items.count)")
+                            Text(verbatim: ar(items.count))
                         }
                     } footer: {
                         if src != nil {
@@ -715,7 +715,7 @@ struct CustomChannelsView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("تم") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     if editMode.isEditing {
-                        Button(LF("حذف (%@)", String(selection.count))) { confirm = .selected }
+                        Button(LF("حذف (%@)", ar(selection.count))) { confirm = .selected }
                             .disabled(selection.isEmpty).tint(.red)
                     } else if !list.isEmpty {
                         Button("تحديد") { withAnimation { editMode = .active } }
@@ -746,9 +746,9 @@ struct CustomChannelsView: View {
     private func confirmTitle(_ c: Confirm) -> String {
         switch c {
         case .source(let s):
-            return LF("حذف %@ قناة من «%@»", String(list.filter { $0.source == s }.count), s ?? L("مضافة يدويًا"))
-        case .selected: return LF("حذف %@ قناة محددة", String(selection.count))
-        case .all: return LF("حذف كل القنوات المضافة (%@)", String(list.count))
+            return LF("حذف %@ قناة من «%@»", ar(list.filter { $0.source == s }.count), s ?? L("مضافة يدويًا"))
+        case .selected: return LF("حذف %@ قناة محددة", ar(selection.count))
+        case .all: return LF("حذف كل القنوات المضافة (%@)", ar(list.count))
         }
     }
 

@@ -220,7 +220,7 @@ struct UmmAlQuraView: View {
                 ForEach(Array(times.enumerated()), id: \.offset) { _, p in
                     VStack(spacing: 3) {
                         Image(systemName: PR_ICON[p.key] ?? "sun.max").font(.system(size: 12, weight: .semibold)).foregroundStyle(p.key.tint)
-                        Fit("pr_\(p.key.rawValue)_t", 46, 18, 0.95)
+                        PrName(p.key, 46, 18, 0.95)
                         Digits(text: hm12(p.time), size: 12.5, color: .white)
                     }
                     .frame(maxWidth: .infinity)

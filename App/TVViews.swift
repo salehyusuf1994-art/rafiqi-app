@@ -375,9 +375,11 @@ struct TVLogo: View {
     var height: CGFloat = 72
     var body: some View {
         let r: CGFloat = min(width, height) * 0.22
+        let cached = LogoCache.image(channel.logo)
         ZStack {
-            RoundedRectangle(cornerRadius: r, style: .continuous).fill(Color.white)
-            if let img = LogoCache.image(channel.logo) {
+            RoundedRectangle(cornerRadius: r, style: .continuous)
+                .fill(cached.map { LogoCache.tile(for: channel.logo, image: $0) } ?? Color.white)
+            if let img = cached {
                 Image(uiImage: img).resizable().scaledToFit().padding(height * 0.14)
             } else if let u = URL(string: channel.logo), !channel.logo.isEmpty {
                 AsyncImage(url: u) { ph in
@@ -483,7 +485,7 @@ struct TVSections: View {
             if n > 0 {
                 Button { managing = true } label: {
                     TileRow(title: "القنوات المضافة", icon: "slider.horizontal.3", color: .orange,
-                            subtitle: LF("%@ قناة — حذف قناة أو قائمة كاملة", String(n)))
+                            subtitle: LF("%@ قناة — حذف قناة أو قائمة كاملة", ar(n)))
                 }
                 .buttonStyle(.plain)
                 .sheet(isPresented: $managing, onDismiss: { favs = TVChannels.favorites; rev += 1 }) { CustomChannelsView() }

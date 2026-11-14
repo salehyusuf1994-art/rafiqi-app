@@ -117,6 +117,15 @@ func fitS(_ n: String, _ maxW: CGFloat, _ maxH: CGFloat) -> CGFloat {
 func Fit(_ n: String, _ maxW: CGFloat, _ maxH: CGFloat, _ op: Double = 1) -> CImg {
     CImg(name: n, s: fitS(n, maxW, maxH), opacity: op)
 }
+/// اسم صلاة ضمن قائمة: مقياس واحد لكل الصلوات (أصغر مقياس يتسع له أطولها)،
+/// فلا يكبر اسم ويصغر آخر في نفس الصف — ومنتصف الليل وحده لأنه أطول بكثير
+func PrName(_ key: PKey, _ maxW: CGFloat, _ maxH: CGFloat, _ op: Double = 1) -> CImg {
+    let n = "pr_\(key.rawValue)_t"
+    if key == .midnight { return Fit(n, maxW * 1.3, maxH, op) }
+    let s = ["fajr", "sunrise", "dhuhr", "jumuah", "asr", "maghrib", "isha"].map { fitS("pr_\($0)_t", maxW, maxH) }.min() ?? fitS(n, maxW, maxH)
+    return CImg(name: n, s: s, opacity: op)
+}
+
 func lineWidth(_ names: [String], _ gapPx: CGFloat = GAP_PX, _ s: CGFloat) -> CGFloat {
     names.reduce(0) { $0 + wOf($1, s) } + gapPx * s / PX * CGFloat(max(0, names.count - 1))
 }
@@ -136,7 +145,11 @@ struct CLine: View {
 // MARK: - الأرقام والعدّادات (خط Hilal Digits)
 
 func digitFont(_ size: CGFloat, bold: Bool, _ font: WFont = .thuluth) -> Font {
-    if let ps = font.digitsPS { return .custom(ps, fixedSize: size * 0.96) }
+    // أرقام الرقعة وتجوّل أصغر من بقية الخطوط بنفس المقاس: نكبّرها لتتساوى بصريًا مع أرقام رفيقي
+    if let ps = font.digitsPS {
+        let k: CGFloat = font == .ruqaa ? 1.2 : font == .tajawal ? 1.1 : 0.96
+        return .custom(ps, fixedSize: size * k)
+    }
     return .custom(bold ? "HilalDigits-Bold" : "HilalDigits-Regular", fixedSize: size)
 }
 

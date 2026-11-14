@@ -117,6 +117,11 @@ struct ContentView: View {
         }
     }
 
+    static var statusBarHeight: CGFloat {
+        let w = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first { $0.isKeyWindow }
+        return w?.safeAreaInsets.top ?? 59
+    }
+
     private let items = [TabItem(tag: 0, title: "الرئيسية", icon: "moon.stars.fill"),
                          TabItem(tag: 1, title: "الويدجت", icon: "square.grid.2x2.fill"),
                          TabItem(tag: 4, title: "المسموع والمرئي", icon: "play.rectangle.fill"),
@@ -143,15 +148,16 @@ struct ContentView: View {
         }
         // تظليل خفيف تحت شريط الحالة: المحتوى المُمرَّر لا يتداخل مع الساعة والبطارية
         .overlay(alignment: .top) {
-            GeometryReader { g in
-                LinearGradient(stops: [.init(color: Color.black.opacity(0.92), location: 0),
-                                       .init(color: Color.black.opacity(0.75), location: 0.6),
-                                       .init(color: Color.black.opacity(0), location: 1)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(height: g.safeAreaInsets.top + 18)
-            }
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
+            // ارتفاع شريط الحالة من النافذة نفسها: داخل منطقة تتجاهل الحواف الآمنة يكون صفرًا،
+            // فكان التظليل ١٨ نقطة فقط ويظهر المحتوى المُمرَّر خلف الساعة
+            LinearGradient(stops: [.init(color: Color.black.opacity(0.92), location: 0),
+                                   .init(color: Color.black.opacity(0.75), location: 0.6),
+                                   .init(color: Color.black.opacity(0), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: Self.statusBarHeight + 18)
+                .frame(maxWidth: .infinity)
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
         }
         .tint(Theme.gold)
         .onOpenURL { url in

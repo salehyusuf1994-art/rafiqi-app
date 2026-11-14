@@ -197,7 +197,9 @@ struct DigitalClockView: View {
         Root(entry: entry) {
             VStack(spacing: 2) {
                 Fit("wd\(Cal.weekday(entry.date))_t", 124, 40)
-                Digits(text: hm12(entry.date), size: 46, color: .white, bold: true)
+                // الأرقام بلا فراغ السطر الزائد: كان اسم اليوم يلامس الحافة العلوية
+                Digits(text: hm12(entry.date), size: 46, color: .white, bold: true, tight: true)
+                    .padding(.vertical, 4)
                     .environment(\.layoutDirection, .leftToRight)
                 CLine(names: hl, s: min(0.55, 140 / lineWidth(hl, GAP_PX, 1)))
             }

@@ -6,7 +6,8 @@ import AppIntents
 
 func mmss(_ s: Double) -> String {
     let t = max(0, Int(s.isFinite ? s : 0))
-    return t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60)
+    // بأرقام التطبيق (عربية افتراضيًا) مثل بقية الويدجت
+    return ar(t >= 3600 ? String(format: "%d:%02d:%02d", t / 3600, (t % 3600) / 60, t % 60) : String(format: "%d:%02d", t / 60, t % 60))
 }
 
 /// غلاف المقطع: تدرّج حسب المصدر مع رمزه
@@ -79,7 +80,7 @@ struct MSub: View {
     let text: String
     var size: CGFloat = 12
     var body: some View {
-        Text(text).font(.system(size: size, weight: .medium)).foregroundStyle(TXT.opacity(0.65)).lineLimit(1)
+        Text(text).font(.system(size: size, weight: .medium)).foregroundStyle(TXT.opacity(0.55)).lineLimit(1)
     }
 }
 
@@ -180,7 +181,7 @@ struct MTimes: View {
             Text(np.live ? (Lang.isEN ? "LIVE" : "مباشر") : (np.duration > 0 ? mmss(np.duration) : "--:--"))
         }
         .font(.system(size: 11, weight: .medium).monospacedDigit())
-        .foregroundStyle(TXT.opacity(0.6))
+        .foregroundStyle(TXT.opacity(0.5))
         .environment(\.layoutDirection, .leftToRight)
     }
 }
@@ -235,9 +236,9 @@ struct Cassette: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: 7).fill(LinearGradient(colors: MediaArt(source: np.source).colors, startPoint: .leading, endPoint: .trailing)))
             HStack {
-                Image(systemName: "gear").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.75))
+                Image(systemName: "gear").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.63))
                 Spacer()
-                Image(systemName: "gear").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.75))
+                Image(systemName: "gear").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.63))
             }
             .padding(.horizontal, 18).padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.35)))
@@ -553,7 +554,7 @@ struct MediaWaveView: View {          // «موجة»
                         MSub(text: np.subtitle)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "headphones").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.6))
+                    Image(systemName: "headphones").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.5))
                 }
                 Waveform(np: np, count: 60, height: 26)
                 MTimes(np: np)
@@ -673,7 +674,7 @@ struct MediaOrbitMView: View {        // «مدار»
                         }
                         .font(.system(size: 15, weight: .semibold).monospacedDigit()).foregroundStyle(.white)
                         if np.timed {
-                            Text("/ " + mmss(np.duration)).font(.system(size: 13).monospacedDigit()).foregroundStyle(TXT.opacity(0.6))
+                            Text("/ " + mmss(np.duration)).font(.system(size: 13).monospacedDigit()).foregroundStyle(TXT.opacity(0.5))
                         }
                     }
                     .environment(\.layoutDirection, .leftToRight)
@@ -734,7 +735,7 @@ struct MediaBookView: View {          // «كتاب»
             HStack(spacing: 14) {
                 MediaArt(source: np.source, corner: 20, label: np.title).frame(width: 136, height: 136)
                 VStack(alignment: .leading, spacing: 6) {
-                    Image(systemName: MediaArt(source: np.source).icon).font(.system(size: 14)).foregroundStyle(TXT.opacity(0.6))
+                    Image(systemName: MediaArt(source: np.source).icon).font(.system(size: 14)).foregroundStyle(TXT.opacity(0.5))
                     Spacer(minLength: 0)
                     MTitle(text: np.title, size: 19)
                     MSub(text: np.subtitle)
@@ -766,7 +767,7 @@ struct MediaWheelView: View {         // «عجلة»
         MRoot(entry: entry) { np in
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Image(systemName: MediaArt(source: np.source).icon).font(.system(size: 30)).foregroundStyle(TXT.opacity(0.7))
+                    Image(systemName: MediaArt(source: np.source).icon).font(.system(size: 30)).foregroundStyle(TXT.opacity(0.59))
                     MProgress(np: np)
                     MTitle(text: np.title, size: 17)
                     MSub(text: np.subtitle)
@@ -828,7 +829,7 @@ struct MediaSlimView: View {          // «وسائط موجة»
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 4) {
                             MTitle(text: np.title, size: 16)
-                            Text("•").foregroundStyle(TXT.opacity(0.5))
+                            Text("•").foregroundStyle(TXT.opacity(0.42))
                             MSub(text: np.subtitle, size: 12)
                         }
                         MControls(np: np, small: 28, big: 34, spacing: 14)

@@ -111,7 +111,9 @@ struct MonthCalendarView: View {
         let t = Cal.dmy(entry.date, greg: greg)
         let lead = Cal.weekday(mi.first)
         let rows = Int(ceil(Double(lead + mi.len) / 7))
-        let cell: CGFloat = 20, rowH: CGFloat = rows > 5 ? 15 : 17
+        // الصفوف تملأ ارتفاع الويدجت بدل أن تتكدس في الأعلى ويبقى فراغ تحتها
+        let H = entry.size.height > 10 ? entry.size.height : 176
+        let cell: CGFloat = 20, rowH: CGFloat = min(21, floor((H - 18 - 28 - 18 - 4) / CGFloat(rows)))
         let mT = (greg ? "gm" : "hm") + "\(t.m)_t"
         let yT = (greg ? "gyl\(clampY(t.y, 2020, 2050))" : "hyl\(clampY(t.y, 1440, 1470))") + "_t"
         Root(entry: entry) {
@@ -135,9 +137,12 @@ struct MonthCalendarView: View {
                             let label = k < 1 ? mi.prevLen + k : (k > mi.len ? k - mi.len : k)
                             let on = !outside && k == mi.day
                             ZStack {
-                                if on { Circle().fill(Color.white).frame(width: rowH + 1, height: rowH + 1) }
-                                Digits(text: ar(label), size: 12.5, color: on ? Color(white: 0.11) : (outside ? Color.white.opacity(0.44) : TXT), bold: on)
+                                if on { Circle().fill(Color.white).frame(width: min(rowH + 1, cell), height: min(rowH + 1, cell)) }
+                                // رقم اليوم «مقصوص» من الدائرة: يظهر في كل الألوان وأوضاع الشاشة (لا رقم داكن على دائرة)
+                                Digits(text: ar(label), size: 12.5, color: on ? .white : (outside ? Color.white.opacity(0.44) : TXT), bold: on)
+                                    .blendMode(on ? .destinationOut : .normal)
                             }
+                            .compositingGroup()
                             .frame(width: cell, height: rowH)
                         }
                     }
@@ -165,7 +170,7 @@ struct DotField: View {
                     ForEach(0..<min(columns, count - r * columns), id: \.self) { c in
                         let i = r * columns + c + 1
                         Circle()
-                            .fill(i == today ? Color.white : (i < today ? TXT : Color.white))
+                            .fill(i == today ? Color.white : (i < today ? TXT.opacity(0.84) : Color.white))
                             .opacity(i == today ? 1 : (i < today ? 0.95 : 0.22))
                             .frame(width: dot, height: dot)
                     }

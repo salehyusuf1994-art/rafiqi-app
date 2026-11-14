@@ -93,7 +93,7 @@ enum SColor {
         let n = id.unicodeScalars.reduce(0) { ($0 * 31 + Int($1.value)) % 997 }
         return Color(hue: Double(n % 360) / 360, saturation: 0.55, brightness: 0.62)
     }
-    static func form(_ r: String) -> Color { r == "W" ? S_GREEN : r == "L" ? S_RED : Color(white: 0.62) }
+    static func form(_ r: String) -> Color { r == "W" ? S_GREEN : r == "L" ? S_RED : Color.white.opacity(0.62) }
 }
 
 enum STime {
@@ -190,7 +190,9 @@ struct SName: View {
     @Environment(\.wfont) private var wf
     @Environment(\.sTint) private var tint
     var body: some View {
-        Text(text).font(SFont.name(size, wf, weight))
+        // اسم لاتيني (فريق بلا اسم عربي): الخطوط العربية الزخرفية تُسقط بعض حروفه، فنرسمه بخط واضح
+        let latinOnly = !text.unicodeScalars.contains { (0x0600...0x06FF).contains($0.value) }
+        Text(text).font(latinOnly && !wf.latin ? SFont.latin(size, weight) : SFont.name(size, wf, weight))
             .foregroundStyle(color ?? (dim ? tint.opacity(0.55) : tint))
             .lineLimit(1).minimumScaleFactor(0.5)
     }

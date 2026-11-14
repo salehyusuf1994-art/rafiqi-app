@@ -136,7 +136,7 @@ struct LockDayPrayersView: View {
                         let on = p.key == st.next.key
                         VStack(spacing: 0) {
                             PrIcon(key: p.key, size: 10, color: .white)
-                            Fit("pr_\(p.key.rawValue)_t", 31, 16)
+                            PrName(p.key, 31, 16)
                             Digits(text: hm12(p.time), size: 11, color: .white, bold: on)
                         }
                         .opacity(on ? 1 : 0.72)

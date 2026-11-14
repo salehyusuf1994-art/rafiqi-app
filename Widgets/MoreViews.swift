@@ -53,10 +53,10 @@ struct PrayerDotsView: View {
                 ForEach(Array(list.enumerated()), id: \.offset) { _, p in
                     let on = p.time == st.next.time
                     HStack(spacing: 7) {
-                        Circle().fill(on ? Color.white : TXT.opacity(0.45))
+                        Circle().fill(on ? Color.white : TXT.opacity(0.38))
                             .frame(width: on ? 8 : 5, height: on ? 8 : 5)
                             .frame(width: 10)
-                        Fit("pr_\(p.key.rawValue)_t", 58, 19, on ? 1 : 0.75)
+                        PrName(p.key, 58, 19, on ? 1 : 0.75)
                             .frame(width: 60, alignment: .leading)
                         Spacer(minLength: 0)
                         Digits(text: hm12(p.time), size: on ? 15 : 14, color: on ? .white : Color.white.opacity(0.72), bold: on)
@@ -88,14 +88,14 @@ struct PrayerRingsView: View {
                     ForEach(Array(ws.enumerated()), id: \.offset) { _, w in
                         let cur = w.p > 0 && w.p < 1
                         VStack(spacing: 3) {
-                            Fit("pr_\(w.key.rawValue)_t", 58, 19, cur ? 1 : 0.8)
+                            PrName(w.key, 58, 19, cur ? 1 : 0.8)
                             ZStack {
                                 Circle().fill(Color.white.opacity(0.06))
                                 Circle().stroke(Color.white.opacity(0.18), lineWidth: 4)
                                 Circle().trim(from: 0, to: max(0.001, w.p))
-                                    .stroke(cur ? Color.white : TXT.opacity(0.85), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                                    .stroke(cur ? Color.white : TXT.opacity(0.71), style: StrokeStyle(lineWidth: 4, lineCap: .round))
                                     .ringStart()
-                                PrIcon(key: w.key, size: 15, color: cur ? .white : TXT.opacity(0.85))
+                                PrIcon(key: w.key, size: 15, color: cur ? .white : TXT.opacity(0.71))
                             }
                             .frame(width: compact ? 50 : 44, height: compact ? 50 : 44)
                             if !compact {
@@ -170,11 +170,11 @@ struct PrayerCapsView: View {
                         VStack(spacing: 3) {
                             ZStack(alignment: .bottom) {
                                 Capsule().fill(Color.white.opacity(0.16))
-                                Capsule().fill(cur ? Color.white : TXT.opacity(0.8))
+                                Capsule().fill(cur ? Color.white : TXT.opacity(0.67))
                                     .frame(height: max(cur ? 6 : 0, 76 * w.p))
                             }
                             .frame(width: 18, height: 76)
-                            Fit("pr_\(w.key.rawValue)_t", 40, 16, cur ? 1 : 0.8)
+                            PrName(w.key, 40, 16, cur ? 1 : 0.8)
                             Digits(text: hm12(w.time), size: 11, color: cur ? .white : Color.white.opacity(0.7), bold: cur)
                         }
                         .frame(width: 40)
@@ -207,7 +207,7 @@ struct IftarRingView: View {
                     .stroke(TXT, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .ringStart().frame(width: 142, height: 142)
                 VStack(spacing: 2) {
-                    Image(systemName: day ? "sunset.fill" : "sparkles").font(.system(size: 14)).foregroundStyle(TXT.opacity(0.8))
+                    Image(systemName: day ? "sunset.fill" : "sparkles").font(.system(size: 14)).foregroundStyle(TXT.opacity(0.67))
                     Fit(label, 96, 36)
                     Digits(text: hm12(end), size: 16, color: TXT)
                     CountDown(to: end, size: 19, color: .white, width: 110, at: entry.date)
@@ -244,8 +244,8 @@ struct LastThirdView: View {
                         .shadow(color: .white.opacity(0.8), radius: 4)
                         .offset(x: R * CGFloat(cos(a)), y: R * CGFloat(sin(a)))
                 }
-                PrIcon(key: .maghrib, size: 12, color: TXT.opacity(0.75)).offset(x: R, y: 14)
-                PrIcon(key: .fajr, size: 12, color: TXT.opacity(0.75)).offset(x: -R, y: 14)
+                PrIcon(key: .maghrib, size: 12, color: TXT.opacity(0.63)).offset(x: R, y: 14)
+                PrIcon(key: .fajr, size: 12, color: TXT.opacity(0.63)).offset(x: -R, y: 14)
                 VStack(spacing: 1) {
                     Color.clear.frame(height: 30)
                     Fit("lbl_third_t", 112, 32)
@@ -322,7 +322,7 @@ struct TripleDateView: View {
                 Rectangle().fill(Color.white.opacity(0.22)).frame(width: 1, height: 100)
                 VStack(spacing: 6) {
                     Fit("wd\(Cal.weekday(entry.date))_t", 108, 56)
-                    Image(systemName: "moon.stars").font(.system(size: 13)).foregroundStyle(TXT.opacity(0.6))
+                    Image(systemName: "moon.stars").font(.system(size: 13)).foregroundStyle(TXT.opacity(0.5))
                 }
                 .frame(width: 116)
                 Rectangle().fill(Color.white.opacity(0.22)).frame(width: 1, height: 100)
@@ -439,9 +439,11 @@ struct MonthGrid: View {
                         ZStack {
                             if on { Circle().fill(Color.white).frame(width: rowH + 2, height: rowH + 2) }
                             if !outside {
-                                Digits(text: ar(k), size: font, color: on ? Color(white: 0.11) : (friday ? .white : TXT), bold: on || friday)
+                                Digits(text: ar(k), size: font, color: on ? .white : (friday ? .white : TXT.opacity(0.84)), bold: on || friday)
+                                    .blendMode(on ? .destinationOut : .normal)
                             }
                         }
+                        .compositingGroup()
                         .frame(width: cell, height: rowH)
                     }
                 }
@@ -482,6 +484,8 @@ struct HijriMonthsView: View {
     var body: some View {
         let h = Cal.dmy(entry.date, greg: false)
         let mi = Cal.monthInfo(entry.date, greg: false)
+        // مقياس واحد لكل الأشهر (أصغر مقياس يتسع له أطولها) بدل أن يكبر الاسم القصير ويصغر الطويل
+        let ms = (1...12).map { fitS("hm\($0)_t", 76, 28) }.min() ?? 0.2
         Root(entry: entry) {
             VStack(spacing: 6) {
                 HStack(spacing: 8) {
@@ -500,7 +504,7 @@ struct HijriMonthsView: View {
                         ForEach(0..<4, id: \.self) { c in
                             let m = r * 4 + c + 1
                             let on = m == h.m
-                            Fit("hm\(m)_t", 70, 26, on ? 1 : (m < h.m ? 0.45 : 0.75))
+                            CImg(name: "hm\(m)_t", s: ms, opacity: on ? 1 : (m < h.m ? 0.45 : 0.75))
                                 .frame(width: 80, height: 36)
                                 .background {
                                     if on { Capsule().fill(Color.white.opacity(0.16)) }
@@ -529,7 +533,7 @@ struct MinuteRingClockView: View {
                     let major = i % 5 == 0
                     let done = i <= m
                     VStack(spacing: 0) {
-                        Capsule().fill(done ? Color.white : TXT.opacity(0.25))
+                        Capsule().fill(done ? Color.white : TXT.opacity(0.21))
                             .frame(width: major ? 2.6 : 1.6, height: major ? 10 : 6)
                         Spacer(minLength: 0)
                     }
@@ -587,11 +591,11 @@ struct DecoDialView: View {
         let size: CGFloat = 150
         Root(entry: entry) {
             ZStack {
-                Star8().fill(TXT.opacity(0.07)).frame(width: 128, height: 128)
-                Star8().stroke(TXT.opacity(0.22), lineWidth: 0.8).frame(width: 128, height: 128)
+                Star8().fill(TXT.opacity(0.06)).frame(width: 128, height: 128)
+                Star8().stroke(TXT.opacity(0.18), lineWidth: 0.8).frame(width: 128, height: 128)
                     .rotationEffect(.degrees(22.5))
-                Circle().stroke(TXT.opacity(0.35), lineWidth: 1).frame(width: size, height: size)
-                Circle().stroke(TXT.opacity(0.15), lineWidth: 0.6).frame(width: size - 10, height: size - 10)
+                Circle().stroke(TXT.opacity(0.29), lineWidth: 1).frame(width: size, height: size)
+                Circle().stroke(TXT.opacity(0.13), lineWidth: 0.6).frame(width: size - 10, height: size - 10)
                 ForEach(0..<12, id: \.self) { i in
                     VStack(spacing: 0) {
                         if i % 3 == 0 {
@@ -599,7 +603,7 @@ struct DecoDialView: View {
                                 .rotationEffect(.degrees(Double(-i) * 30))
                                 .frame(width: 24, height: 20)
                         } else {
-                            Rectangle().fill(TXT.opacity(0.85)).frame(width: 5, height: 5)
+                            Rectangle().fill(TXT.opacity(0.71)).frame(width: 5, height: 5)
                                 .rotationEffect(.degrees(45))
                                 .padding(.top, 5)
                         }
@@ -705,7 +709,7 @@ struct VerseText: View {
                 .lineLimit(2).minimumScaleFactor(0.55)
             Text(prefDigits(ref))
                 .font(.custom(wf == .thuluth ? "Amiri-Bold" : wf.ps, size: 11))
-                .foregroundStyle(TXT.opacity(0.7))
+                .foregroundStyle(TXT.opacity(0.59))
         }
     }
 }
@@ -757,7 +761,7 @@ struct WeatherWeekView: View {
                     }
                 }
                 if days.isEmpty {
-                    Text(L("افتح التطبيق لتحديث الطقس")).font(.caption).foregroundStyle(TXT.opacity(0.7))
+                    Text(L("افتح التطبيق لتحديث الطقس")).font(.caption).foregroundStyle(TXT.opacity(0.59))
                 }
             }
             .padding(12)
