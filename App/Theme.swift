@@ -286,8 +286,10 @@ struct FloatingTabBar: View {
     let items: [TabItem]
     @Namespace private var ns
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(items) { it in
+        // كل زر بعرض نصه (لا يُقص «المسموع والمرئي» ولا «إدارة الملفات»)، والمسافات الباقية موزّعة بينها
+        HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { i, it in
+                if i > 0 { Spacer(minLength: 0) }
                 let on = tab == it.tag
                 Button {
                     withAnimation(.snappy(duration: 0.28)) { tab = it.tag }
@@ -295,10 +297,13 @@ struct FloatingTabBar: View {
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: it.icon).font(.system(size: 18, weight: .semibold))
-                        Text(L(it.title)).font(Theme.title(10.5)).lineLimit(1).minimumScaleFactor(0.7)
+                        Text(L(it.title))
+                            .font(Lang.isEN ? .system(size: 12, weight: .bold, design: .rounded) : .custom(Theme.tajawal(.bold), fixedSize: 12))
+                            .lineLimit(1).minimumScaleFactor(0.75)
                     }
                     .foregroundStyle(on ? Color.black : .white.opacity(0.72))
-                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 9)
+                    .frame(minWidth: 58)
                     .padding(.vertical, 8)
                     .background {
                         if on { Capsule().fill(Theme.gold).matchedGeometryEffect(id: "sel", in: ns) }

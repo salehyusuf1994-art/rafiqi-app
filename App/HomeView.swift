@@ -246,6 +246,7 @@ struct QuickActions: View {
                 Badge(name: icon, size: 46)
                 Text(L(title)).font(Theme.title(13)).foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1).minimumScaleFactor(0.7)
+                    .padding(.horizontal, 6)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)

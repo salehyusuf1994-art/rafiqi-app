@@ -303,9 +303,11 @@ struct TVReelView: View {
                         // في المتوسط: رابط مباشر يفتح القناة في التطبيق (أضمن من الأمر)
                         Link(destination: URL(string: "miqat://tv/" + c.id) ?? URL(string: "miqat://media")!) {
                             VStack(spacing: 4) {
-                                ReelLogo(url: c.logo, icon: c.cat.icon, color: c.cat.color, size: 54, corner: 14)
-                                Text(c.name).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
-                                    .lineLimit(1).minimumScaleFactor(0.7)
+                                ReelLogo(url: c.logo, icon: c.cat.icon, color: c.cat.color, size: 50, corner: 13)
+                                // سطران بخط مقروء بدل سطر واحد مصغّر يُقص منه اسم القناة
+                                Text(c.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                                    .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.85)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -332,7 +334,7 @@ struct TVOneView: View {
                             ReelLogo(url: c.logo, icon: c.cat.icon, color: c.cat.color, size: 66, corner: 18)
                             Text(c.name).font(.system(size: 12.5, weight: .bold)).foregroundStyle(.white)
                                 .lineLimit(1).minimumScaleFactor(0.7)
-                            Label(c.cat.title, systemImage: c.cat.icon).font(.system(size: 9.5, weight: .semibold))
+                            Label(c.cat.title, systemImage: c.cat.icon).font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(c.cat.color)
                         }
                     }

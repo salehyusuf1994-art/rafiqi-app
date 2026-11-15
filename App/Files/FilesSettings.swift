@@ -33,7 +33,7 @@ struct FilesSettingsView: View {
 
                 Section {
                     Picker(selection: $skip) {
-                        ForEach([5, 10, 15, 30], id: \.self) { Text(LF("%@ ثانية", ar($0))).tag($0) }
+                        ForEach([5, 10, 15, 30], id: \.self) { Text(LF($0 <= 10 ? "%@ ثوانٍ" : "%@ ثانية", ar($0))).tag($0) }
                     } label: { TileRow(title: "التقديم والترجيع", icon: "goforward") }
                     Toggle(isOn: $autoNext) { TileRow(title: "تشغيل الملف التالي تلقائيًا", icon: "text.line.first.and.arrowtriangle.forward") }
                 } header: { Text("المشغّل") } footer: {

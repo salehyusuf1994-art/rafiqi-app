@@ -42,7 +42,12 @@ struct StorageView: View {
                                     Text(LF("%@ نسخ متطابقة · %@", ar(group.count), sizeText(group[0].size))).font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
                                     ForEach(group) { f in
                                         HStack {
-                                            Text(verbatim: store.key(f.url)).font(Theme.f(.footnote)).foregroundStyle(.white).lineLimit(1).truncationMode(.head)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(verbatim: f.name).font(Theme.f(.footnote)).foregroundStyle(.white).lineLimit(1).truncationMode(.middle)
+                                                let folder = store.key(f.url.deletingLastPathComponent())
+                                                Text(verbatim: folder.isEmpty ? L("ملفاتي") : L("ملفاتي") + " ‹ " + folder.split(separator: "/").joined(separator: " ‹ "))
+                                                    .font(Theme.f(.caption)).foregroundStyle(Theme.sub).lineLimit(1).truncationMode(.head)
+                                            }
                                             Spacer()
                                             if f.url != group[0].url {
                                                 Button(L("حذف")) { store.moveToTrash([f.url]); Task { await scan() } }
@@ -67,7 +72,8 @@ struct StorageView: View {
                                     FileThumb(item: f, size: 40)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(verbatim: f.name).font(Theme.f(.subheadline)).foregroundStyle(.white).lineLimit(1).truncationMode(.middle)
-                                        Text(verbatim: store.key(f.url.deletingLastPathComponent()).isEmpty ? L("ملفاتي") : store.key(f.url.deletingLastPathComponent()))
+                                        let folder = store.key(f.url.deletingLastPathComponent())
+                                        Text(verbatim: folder.isEmpty ? L("ملفاتي") : L("ملفاتي") + " ‹ " + folder.split(separator: "/").joined(separator: " ‹ "))
                                             .font(Theme.f(.caption)).foregroundStyle(Theme.sub).lineLimit(1)
                                     }
                                     Spacer()
