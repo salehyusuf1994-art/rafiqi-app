@@ -1,0 +1,67 @@
+name: UI crawl (every tap)
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: crawl budget per tab (minutes)
+        default: "55"
+
+permissions:
+  contents: write
+
+jobs:
+  crawl:
+    runs-on: macos-15
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        tab: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - run: brew install xcodegen && xcodegen generate
+      - name: Crawl
+        continue-on-error: true
+        timeout-minutes: 85
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']]
+          p=[x for x in c if 'Pro Max' in x['name']] or c
+          print(p[-1]['udid'])")
+          xcrun simctl boot $UDID || true
+          xcrun simctl bootstatus $UDID -b
+          xcrun simctl spawn $UDID defaults write -g AppleLanguages -array ar
+          xcrun simctl spawn $UDID defaults write -g AppleLocale ar_SA
+          xcrun simctl location $UDID set 24.4672,39.6111 || true
+          TEST_RUNNER_CRAWL_TAB=${{ matrix.tab }} TEST_RUNNER_CRAWL_MIN=${{ github.event.inputs.minutes || '55' }} \
+          xcodebuild test -project Hilal.xcodeproj -scheme Hilal -destination "id=$UDID" \
+            -derivedDataPath uibuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
+            -only-testing:HilalUITests/CrawlTests > ui.log 2>&1 || true
+          grep -E "CRAWL|error:" ui.log | tail -40
+          xcrun simctl spawn $UDID log show --last 90m --style compact --predicate 'eventMessage CONTAINS "RFDBG" OR eventMessage CONTAINS "TVDBG" OR eventMessage CONTAINS[c] "attempt to present" OR (process == "Hilal" AND messageType == fault)' > applog.txt 2>&1 || true
+          mkdir -p out && cp -R ~/uitest/crawl/* out/ 2>/dev/null || true
+          cp applog.txt out/applog_${{ matrix.tab }}.txt; grep -E "CRAWL" ui.log > out/uilog_${{ matrix.tab }}.txt || true
+          ls out | head
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crawl-${{ matrix.tab }}
+          path: out
+  publish:
+    needs: crawl
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: all
+      - run: |
+          mkdir pub && cp -R all/*/* pub/ 2>/dev/null || true
+          cd pub && git init -q && git checkout -q -b crawlout && git add -A && \
+          git -c user.name=ci -c user.email=ci@local commit -qm "crawl" && \
+          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} crawlout
