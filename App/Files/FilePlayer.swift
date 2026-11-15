@@ -388,7 +388,7 @@ struct FilesFullPlayer: View {
                 Slider(value: Binding(get: { pos }, set: { pos = $0 }), in: 0...max(1, p.state.duration), onEditingChanged: { e in
                     scrubbing = e
                     if !e { p.seek(to: pos) }
-                }
+                })
                 .tint(Theme.gold)
                 HStack {
                     Text(verbatim: durationText(pos))

@@ -227,6 +227,8 @@ struct FolderContent: View {
             if isRoot && query.isEmpty && filter == nil {
                 NavigationLink { PlaylistsView() } label: { navRow("music.note.list", L("قوائم التشغيل"), itemsText(FilePlaylists.shared.all.count)) }
                     .buttonStyle(.plain)
+                NavigationLink { ServersView() } label: { navRow("server.rack", L("الخوادم والمجلدات المشاركة"), L("كمبيوتر، جهاز تخزين، WebDAV")) }
+                    .buttonStyle(.plain)
                 trashRow
             }
             if selecting { Color.clear.frame(height: 70) }

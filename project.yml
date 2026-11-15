@@ -8,6 +8,12 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
     from: 0.9.19
+  AMSMB2:
+    url: https://github.com/amosavian/AMSMB2
+    from: 4.0.3
+  SwiftLAME:
+    url: https://github.com/hidden-spectrum/SwiftLAME
+    revision: 45d1b021c2bd2bbd38b9669934c0584cda0d1b6b
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -54,6 +60,8 @@ targets:
       - target: HilalWidgets
         embed: true
       - package: ZIPFoundation
+      - package: AMSMB2
+      - package: SwiftLAME
   HilalWidgets:
     type: app-extension
     platform: iOS

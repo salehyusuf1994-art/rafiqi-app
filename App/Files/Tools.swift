@@ -8,7 +8,7 @@ import PhotosUI
 
 enum ToolKind: String, Identifiable, CaseIterable {
     // صوت وفيديو
-    case trim, toM4A, toWAV, ringtone, speed, adjustAudio, transcribe, translate
+    case trim, toM4A, toMP3, toWAV, ringtone, speed, adjustAudio, transcribe, translate
     // فيديو
     case mute, replaceAudio, rotate, crop, text, compress, gif, reverse
     // صور
@@ -25,6 +25,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .trim: return L("قص المقطع")
         case .toM4A: return L("تحويل إلى M4A (صوت)")
         case .toWAV: return L("تحويل إلى WAV")
+        case .toMP3: return L("تحويل إلى MP3")
         case .ringtone: return L("تحويل إلى نغمة رنين")
         case .speed: return L("تغيير السرعة")
         case .adjustAudio: return L("تعديل الصوت (المستوى والتلاشي)")
@@ -59,6 +60,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .trim: return "scissors"
         case .toM4A: return "waveform"
         case .toWAV: return "waveform.path"
+        case .toMP3: return "music.note"
         case .ringtone: return "bell"
         case .speed: return "gauge.with.dots.needle.67percent"
         case .adjustAudio: return "slider.horizontal.3"
@@ -93,13 +95,13 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .video:
             return [
                 (L("تعديل الفيديو"), [.trim, .text, .crop, .rotate, .speed, .reverse, .mute, .replaceAudio, .compress, .metadata]),
-                (L("التحويل"), [.toM4A, .gif, .ringtone]),
+                (L("التحويل"), [.toMP3, .toM4A, .gif, .ringtone]),
                 (L("النص والترجمة"), [.transcribe, .translate] + (VideoController.subtitles(for: it.url).isEmpty ? [] : [.burnSubs])),
             ]
         case .audio:
             return [
                 (L("تعديل الصوت"), [.trim, .adjustAudio, .speed, .metadata]),
-                (L("التحويل"), [.toM4A, .toWAV, .ringtone]),
+                (L("التحويل"), [.toMP3, .toM4A, .toWAV, .ringtone]),
                 (L("النص"), [.transcribe]),
             ]
         case .image:
@@ -118,7 +120,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
     }
 
     /// أدوات تعمل مباشرة بلا إعدادات
-    var direct: Bool { [.toM4A, .toWAV, .mute, .rotate, .gif, .removeBG, .rotateImage, .toPDF, .burnSubs].contains(self) }
+    var direct: Bool { [.toM4A, .toMP3, .toWAV, .mute, .rotate, .gif, .removeBG, .rotateImage, .toPDF, .burnSubs].contains(self) }
 }
 
 // MARK: - تشغيل الأداة في صفحة موحّدة (الإعدادات ← التقدّم ← النتيجة)
@@ -512,6 +514,7 @@ struct ToolHost: View {
             case .ringtone: result = try await MediaTools.trim(url, start: start, end: min(end, start + 40), ringtone: true, progress: p)
             case .toM4A: result = try await MediaTools.toM4A(url, progress: p)
             case .toWAV: result = try await MediaTools.toWAV(url, progress: p)
+            case .toMP3: result = try await MediaTools.toMP3(url, progress: p)
             case .speed: result = try await MediaTools.speed(url, factor: speed, progress: p)
             case .adjustAudio: result = try await MediaTools.adjustAudio(url, gainDB: Float(gain), fadeIn: fadeIn ? 3 : 0, fadeOut: fadeOut ? 3 : 0, progress: p)
             case .mute: result = try await MediaTools.mute(url, progress: p)

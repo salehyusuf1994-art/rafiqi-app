@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 import Vision
 import Speech
 import PDFKit
+import SwiftLAME
 
 // MARK: - أدوات الصوت والفيديو والصور (كلها على الجهاز، بدون رفع أي ملف)
 
@@ -80,6 +81,35 @@ enum MediaTools {
         let a = AVURLAsset(url: src)
         guard !(await audioTracks(a)).isEmpty else { throw ToolError.failed(L("لا يحتوي الملف على صوت.")) }
         return try await export(a, preset: AVAssetExportPresetAppleM4A, to: output(for: src, suffix: L("صوت"), ext: "m4a"), type: .m4a, progress: progress)
+    }
+
+    /// تحويل إلى MP3 (‏١٩٢ ك.ب/ث)
+    static func toMP3(_ src: URL, progress: @escaping (Double) -> Void) async throws -> URL {
+        var input = src
+        var tmp: URL?
+        // الفيديو والصيغ التي لا يقرؤها AVAudioFile تُستخرج أولًا إلى M4A
+        if isVideo(src) || (try? AVAudioFile(forReading: src)) == nil {
+            let t = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+            let a = AVURLAsset(url: src)
+            guard !(await audioTracks(a)).isEmpty else { throw ToolError.failed(L("لا يحتوي الملف على صوت.")) }
+            _ = try await export(a, preset: AVAssetExportPresetAppleM4A, to: t, type: .m4a, progress: { progress($0 * 0.3) })
+            input = t; tmp = t
+        }
+        defer { if let tmp { try? FileManager.default.removeItem(at: tmp) } }
+        let out = output(for: src, suffix: "MP3", ext: "mp3")
+        let p = Progress()
+        let watcher = Task {
+            while !Task.isCancelled {
+                if p.totalUnitCount > 0 { progress(0.3 + 0.7 * Double(p.completedUnitCount) / Double(p.totalUnitCount)) }
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+        }
+        defer { watcher.cancel() }
+        let enc = try SwiftLameEncoder(sourceUrl: input, configuration: LameConfiguration(sampleRate: .default, bitrateMode: .constant(192), quality: .nearBest),
+                                       destinationUrl: out, progress: p)
+        try await enc.encode(priority: .userInitiated)
+        progress(1)
+        return out
     }
 
     /// تحويل إلى WAV (بدون ضغط)

@@ -100,7 +100,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     static func guessName(_ u: URL) -> String {
         let last = u.lastPathComponent.removingPercentEncoding ?? u.lastPathComponent
-        if !last.isEmpty, last != "/", (last as NSString).pathExtension.count in 1...5 { return last }
+        if !last.isEmpty, last != "/", (1...5).contains((last as NSString).pathExtension.count) { return last }
         return (u.host ?? "download") + "-" + String(Int(Date().timeIntervalSince1970))
     }
 
