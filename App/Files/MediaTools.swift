@@ -435,7 +435,7 @@ enum MediaTools {
         engine.connect(eq, to: engine.mainMixerNode, format: format)
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
         try engine.start()
-        node.scheduleFile(input, at: nil)
+        node.scheduleFile(input, at: nil, completionHandler: nil)
         node.play()
         let out = output(for: src, suffix: L("معدّل"), ext: "m4a")
         let settings: [String: Any] = [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: format.sampleRate,

@@ -5,8 +5,8 @@ import XCTest
 final class CrawlTests: XCTestCase {
     struct Step: Hashable { let scrolls: Int; let type: UInt; let label: String; let nth: Int }
 
-    let tabs = ["الرئيسية", "الويدجت", "المسموع والمرئي", "المباريات", "الإعدادات"]
-    let skipWords = ["حذف", "مسح", "Delete", "Remove", "إعادة ضبط", "إعادة تعيين"]
+    let tabs = ["الرئيسية", "الويدجت", "المسموع والمرئي", "إدارة الملفات", "الإعدادات"]
+    let skipWords = ["حذف", "مسح", "Delete", "Remove", "إعادة ضبط", "إعادة تعيين", "إفراغ", "التقاط"]
     let tappable: Set<XCUIElement.ElementType> = [.button, .cell, .switch, .link, .segmentedControl]
     var app: XCUIApplication!
     var report = ""
@@ -153,7 +153,7 @@ final class CrawlTests: XCTestCase {
         tabName = tabs[idx]
         if let m = ProcessInfo.processInfo.environment["CRAWL_MIN"], let v = Double(m) { budget = v * 60 }
         app = XCUIApplication()
-        app.launchArguments = ["-crawl", "1"]
+        app.launchArguments = ["-crawl", "1", "-seedFiles"]
         start = Date()
         log("== TAB \(tabName)")
 

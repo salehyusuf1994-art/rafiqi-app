@@ -237,7 +237,7 @@ final class VideoController: AVPlayerViewController {
         for ext in ["srt", "vtt", "ar.srt", "en.srt"] {
             let u = base.appendingPathExtension(ext)
             if let d = try? Data(contentsOf: u) {
-                let text = String(data: d, encoding: .utf8) ?? String(data: d, encoding: .windowsCP1256) ?? ""
+                let text = String(data: d, encoding: .utf8) ?? String(data: d, encoding: String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.windowsArabic.rawValue)))) ?? ""
                 return parseSRT(text)
             }
         }

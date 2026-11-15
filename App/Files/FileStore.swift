@@ -172,7 +172,7 @@ final class FileStore: ObservableObject {
         try? fm.createDirectory(at: trash, withIntermediateDirectories: true)
         if let d = try? Data(contentsOf: metaURL), let m = try? JSONDecoder().decode(FileMeta.self, from: d) { meta = m }
         // مجلدات العرض التجريبي (للمراجعة الآلية فقط)
-        if SHOT == "files" { seedDemo() }
+        if SHOT == "files" || ProcessInfo.processInfo.arguments.contains("-seedFiles") { seedDemo() }
     }
 
     func touch() { rev += 1 }
@@ -594,9 +594,27 @@ final class FileStore: ObservableObject {
         createFolder(L("قرآن"), in: root)
         createFolder(L("شعر"), in: root)
         createText(L("ملاحظة"), text: "رفيقي", in: root)
-        if let img = UIImage(systemName: "moon.stars.fill")?.withTintColor(.white).pngData() {
-            importData(img, name: "صورة.png", to: root)
+        let r = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 400))
+        let img = r.pngData { c in
+            UIColor(red: 0.2, green: 0.3, blue: 0.4, alpha: 1).setFill(); c.fill(CGRect(x: 0, y: 0, width: 600, height: 400))
+            ("رفيقي 123" as NSString).draw(at: CGPoint(x: 160, y: 170), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 48), .foregroundColor: UIColor.white])
         }
+        importData(img, name: "صورة.png", to: root)
+        // نغمة قصيرة (٣ ثوانٍ) لتجربة أدوات الصوت
+        var wav = Data()
+        let rate = 22050, n = rate * 3
+        func u32(_ v: UInt32) { var x = v.littleEndian; wav.append(Data(bytes: &x, count: 4)) }
+        func u16(_ v: UInt16) { var x = v.littleEndian; wav.append(Data(bytes: &x, count: 2)) }
+        wav.append(Data("RIFF".utf8)); u32(UInt32(36 + n * 2)); wav.append(Data("WAVEfmt ".utf8))
+        u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate * 2)); u16(2); u16(16)
+        wav.append(Data("data".utf8)); u32(UInt32(n * 2))
+        for i in 0..<n { u16(UInt16(bitPattern: Int16(sin(Double(i) * 2 * .pi * 440 / Double(rate)) * 8000))) }
+        importData(wav, name: "نغمة.wav", to: root)
+        // ملف PDF من صفحتين
+        let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 400)).pdfData { c in
+            for t in ["صفحة ١", "صفحة ٢"] { c.beginPage(); (t as NSString).draw(at: CGPoint(x: 100, y: 180), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 28)]) }
+        }
+        importData(pdf, name: "مستند.pdf", to: root)
     }
 }
 
