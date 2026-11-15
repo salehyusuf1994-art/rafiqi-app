@@ -126,13 +126,12 @@ let SHOT_WIDGET = SHOT == "detail" ? (UserDefaults.standard.string(forKey: "wid"
 struct ContentView: View {
     @State private var tab = ["home": 0, "gallery": 1, "detail": 1, "notify": 2, "notifyd": 2,
                               "settings": 3, "settings2": 3, "settings3": 3, "cities": 3, "style": 3, "media": 4, "media2": 4, "media3": 4, "media4": 4, "media5": 4,
-                              "files": 5][SHOT] ?? 0
+                              "files": 5, "filesdl": 5, "filesweb": 5, "filesset": 5, "filesstore": 5, "fileswifi": 5, "scanner": 5, "filesact": 5, "filestools": 5][SHOT] ?? 0
     @ObservedObject private var tvRouter = TVRouter.shared
     @ObservedObject private var filesRouter = FilesRouter.shared
     @ObservedObject private var sepTest = SepTestResult.shared
     @Environment(\.scenePhase) private var phase
     var body: some View {
-        let _ = NSLog("RFDBG content body")
         if SHOT.hasPrefix("notify") {
             NotifyCenterView()
         } else {
@@ -291,7 +290,6 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        let _ = NSLog("RFDBG settings body")
         NavigationStack {
           ScrollViewReader { proxy in
             List {

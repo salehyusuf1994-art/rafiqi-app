@@ -758,7 +758,6 @@ struct CustomChannelsView: View {
     }
 
     private func watch(_ c: TVChannel) {
-        NSLog("TVDBG custom watch %@", c.name)
         dismiss()
         TVRouter.shared.open = c
     }

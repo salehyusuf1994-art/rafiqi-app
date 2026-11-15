@@ -24,7 +24,7 @@ enum FilesPage: String, CaseIterable, Identifiable {
 @MainActor
 final class FilesRouter: ObservableObject {
     static let shared = FilesRouter()
-    @Published var page: FilesPage = .files
+    @Published var page: FilesPage = SHOT == "filesdl" ? .downloads : SHOT == "filesweb" ? .browser : .files
     @Published var path: [URL] = []
     /// طلب التبديل إلى تبويب «إدارة الملفات»
     @Published var openTab = false
@@ -35,9 +35,9 @@ struct FilesTab: View {
     @ObservedObject private var router = FilesRouter.shared
     @Environment(\.scenePhase) private var phase
     @State private var locked = FilePrefs.lockTab
-    @State private var showSettings = false
-    @State private var showWiFi = false
-    @State private var showStorage = false
+    @State private var showSettings = SHOT == "filesset"
+    @State private var showWiFi = SHOT == "fileswifi"
+    @State private var showStorage = SHOT == "filesstore"
 
     var body: some View {
         NavigationStack(path: $router.path) {
@@ -172,7 +172,7 @@ struct FolderContent: View {
     @State private var showPhotos = false
     @State private var showCamera = false
     @State private var showScanner = false
-    @State private var showScannerHome = false
+    @State private var showScannerHome = SHOT == "scanner"
     @State private var addingToPlaylist: [URL]? = nil
     @State private var reminding: FileItem?
     @State private var toast: String?
@@ -236,9 +236,16 @@ struct FolderContent: View {
         }
         .overlay(alignment: .bottom) { if selecting { selectionBar.offset(y: 0) } }
         .overlay(alignment: .top) { toastView }
+        .task {
+            // لقطات المراجعة: قائمة إجراءات ملف صوتي، وأدوات ملف فيديو/صوت
+            guard isRoot, SHOT == "filesact" || SHOT == "filestools" else { return }
+            try? await Task.sleep(for: .seconds(1.2))
+            let all = store.deepList(dir).filter { !$0.isDir }
+            actionItem = all.first { $0.kind == .audio } ?? all.first
+        }
         .sheet(item: $actionItem) { it in
             FileActionsSheet(item: it, inTrash: isTrash) { action in handle(action, it) }
-                .presentationDetents([.medium, .large])
+                .presentationDetents(SHOT == "filestools" ? [.large] : [.medium, .large])
         }
         .sheet(isPresented: Binding(get: { moving != nil }, set: { if !$0 { moving = nil } })) {
             FolderPicker(title: L("نقل إلى")) { dest in

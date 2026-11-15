@@ -145,10 +145,8 @@ struct NotifyCenterView: View {
     @State private var path: [String] = SHOT == "notifyd" ? ["dhuhr"] : []
     private let cols = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
     @Environment(\.dismiss) private var dismiss
-    init() { NSLog("RFDBG NotifyCenterView init") }
 
     var body: some View {
-        let _ = NSLog("RFDBG NotifyCenterView body path=%@", path.joined(separator: ","))
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -171,7 +169,6 @@ struct NotifyCenterView: View {
                         ForEach(Notify.items) { it in
                             NavigationLink(value: it.id) { tile(it) }
                                 .buttonStyle(PressStyle())
-                                .simultaneousGesture(TapGesture().onEnded { NSLog("RFDBG notify tile tap %@", it.id) })
                         }
                     }
 
@@ -199,10 +196,8 @@ struct NotifyCenterView: View {
             .navigationDestination(for: String.self) { id in
                 if let it = Notify.item(id) { NotifyDetail(item: it, store: store) }
             }
-            .onAppear { NSLog("RFDBG NotifyCenterView appear"); store.checkPermission() }
-            .onDisappear { NSLog("RFDBG NotifyCenterView disappear") }
+            .onAppear { store.checkPermission() }
         }
-        .onChange(of: path) { _, p in NSLog("RFDBG notify path changed=%@", p.joined(separator: ",")) }
     }
 
     /// المؤذن (لجزء الأذان والأذان كاملًا)
@@ -335,7 +330,6 @@ struct NotifyDetail: View {
     @ObservedObject var store: NotifyStore
 
     var body: some View {
-        let _ = NSLog("RFDBG NotifyDetail body %@", item.id)
         let jumuahNote = item.id == "dhuhr"
         List {
             Section {

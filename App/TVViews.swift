@@ -42,7 +42,6 @@ final class TVRouter: ObservableObject {
         vc.view.backgroundColor = .black
         hosting = vc
         top.present(vc, animated: true)
-        NSLog("TVDBG presented %@ from %@", c.name, String(describing: type(of: top)))
     }
 
     private static func topController() -> UIViewController? {
@@ -306,7 +305,6 @@ struct TVPlayerScreen: View {
         }
         .environment(\.colorScheme, .dark)
         .onAppear {
-            NSLog("TVDBG player appear")
             tv.start()
             OrientationLock.allowLandscape(true)
         }
@@ -565,7 +563,7 @@ struct TVSections: View {
 
     private func card(_ c: TVChannel, width: CGFloat, height: CGFloat) -> some View {
         let fav = favs.contains(c.id)
-        return Button { NSLog("TVDBG tap %@", c.name); TVRouter.shared.open = c } label: {
+        return Button { TVRouter.shared.open = c } label: {
             VStack(spacing: 6) {
                 TVLogo(channel: c, width: width, height: height)
                     .overlay(alignment: .topTrailing) {

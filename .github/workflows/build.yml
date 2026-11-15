@@ -114,58 +114,6 @@ jobs:
           done > tv.txt || true
           cat tv.txt
 
-      - name: Check sports data (ESPN)
-        if: always()
-        continue-on-error: true
-        run: |
-          D=$(TZ=Asia/Riyadh date +%Y%m); D2=""
-          B=https://site.api.espn.com/apis/site/v2/sports/soccer
-          for u in "$B/ksa.1/scoreboard?dates=$D&limit=300" "$B/ksa.1/scoreboard" "$B/ksa.1/teams/929" "$B/ksa.1/teams/929/schedule" \
-                   "https://site.api.espn.com/apis/v2/sports/soccer/ksa.1/standings" "$B/ksa.1/statistics" "$B/ksa.1/teams" \
-                   "$B/ksa.kings.cup/scoreboard?dates=$D" "$B/afc.champions/scoreboard?dates=$D" "$B/uefa.champions/scoreboard?dates=$D" \
-                   "$B/eng.1/scoreboard?dates=$D"; do
-            curl -s --max-time 20 "$u" -o resp.json -w "%{http_code} " | tee -a sports.txt
-            python3 - "$u" >> sports.txt <<'PY' || echo "parse fail $u" >> sports.txt
-          import json,sys
-          u=sys.argv[1]
-          try: j=json.load(open('resp.json'))
-          except Exception as e: print('BAD JSON',u); sys.exit()
-          ev=j.get('events') or []
-          t=j.get('team') or {}
-          ch=j.get('children') or []
-          st=j.get('stats') or []
-          info=[f"events={len(ev)}"]
-          if ev: info.append(f"first={ev[0].get('date')} {ev[0].get('name')} last={ev[-1].get('date')} {ev[-1].get('name')}")
-          if t: info.append(f"team={t.get('displayName')} next={[e.get('date') for e in t.get('nextEvent',[])]}")
-          if ch: info.append(f"table={len(ch[0].get('standings',{}).get('entries',[]))}")
-          if st: info.append(f"stats={[s.get('name') for s in st]} leaders={len(st[0].get('leaders',[]))}")
-          sp=j.get('sports')
-          if sp: info.append(f"teams={len(sp[0]['leagues'][0].get('teams',[]))}")
-          print(' '.join(info), '|', u)
-          PY
-          done
-          # المصدر الثاني (LiveScore): المراحل والمباريات والترتيب، وروابط الشعارات
-          LS=https://prod-public-api.livescore.com/v1/api/app
-          for p in egypt/premier-league united-arab-emirates/uae-league qatar/qatar-stars-league morocco/botola-pro tunisia/ligue-i \
-                   algeria/ligue-1-2025 kuwait/premier-league iraq/iraq-stars-league jordan/pro-league oman/professional-league \
-                   egypt/cup united-arab-emirates/presidents-cup intl/fifa-arab-cup-group-a; do
-            curl -s --max-time 20 "$LS/stage/soccer/$p/0?MD=1" -o resp.json -w "%{http_code} " | tee -a sports.txt
-            python3 - "$p" >> sports.txt <<'PY' || echo "parse fail $p" >> sports.txt
-          import json,sys
-          try: s=(json.load(open('resp.json')).get('Stages') or [{}])[0]
-          except Exception: print('BAD JSON',sys.argv[1]); sys.exit()
-          ev=s.get('Events') or []
-          lt=(s.get('LeagueTable') or {}).get('L') or []
-          rows=len(((lt[0].get('Tables') or [{}])[0].get('team') or [])) if lt else 0
-          eps=sorted({e.get('Eps') for e in ev if e.get('Eps')})
-          img=next((t.get('Img') for e in ev for t in e.get('T1',[]) if t.get('Img')),'')
-          print(f"LS {sys.argv[1]} snm={s.get('Snm')} events={len(ev)} table={rows} eps={eps} img={img}")
-          PY
-          done
-          IMG=$(grep -o "img=enet/[0-9]*\.png" sports.txt | head -1 | cut -d= -f2)
-          [ -n "$IMG" ] && curl -s -o /dev/null --max-time 15 -w "logo %{http_code} %{content_type} https://lsm-static-prod.livescore.com/medium/$IMG\n" "https://lsm-static-prod.livescore.com/medium/$IMG" | tee -a sports.txt
-          cat sports.txt
-
       - name: App screenshots (simulator)
         if: inputs.shots || inputs.matrix || contains(github.event.head_commit.message, '[shots]')
         continue-on-error: true
@@ -220,12 +168,18 @@ jobs:
           L media4 14; S 8h_radio_browse
           L media5 12; S 8i_tv
           L gallery 9 -filter "القنوات"; S 4e_gallery_tv
-          L sports 15; S 8e_sports
           L qibla 8; S 1b_qibla
           L calendar 8; S 1c_calendar
           L calendar2 8; S 1d_calendar_converter
-          L gallery 9 -filter "المباريات"; S 4d_gallery_sports
-          L detail 10 -wid hilal.s.matcht; S 6e_detail_sports
+          L files 10; S 9a_files
+          L filesdl 9; S 9b_files_downloads
+          L filesweb 10; S 9c_files_browser
+          L filesset 9; S 9d_files_settings
+          L filesstore 10; S 9e_files_storage
+          L fileswifi 9; S 9f_files_wifi
+          L scanner 9; S 9g_scanner
+          L filesact 10; S 9h_file_actions
+          L filestools 10; S 9i_file_tools
           L notifyd 9; S 8c_notify_detail
           L cities 9; S 9_cities
           L detail 9 -wid lock.next; S 5b_detail_lock
@@ -242,7 +196,6 @@ jobs:
           cp ../streams.txt . 2>/dev/null || true
           cp ../radios.txt . 2>/dev/null || true
           cp ../tv.txt . 2>/dev/null || true
-          cp ../sports.txt . 2>/dev/null || true
           cp ../Hilal.ipa . 2>/dev/null || true
           cp -R ../shots . 2>/dev/null || true
           cp -R ../matrix . 2>/dev/null || true

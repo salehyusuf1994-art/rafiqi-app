@@ -172,7 +172,7 @@ final class FileStore: ObservableObject {
         try? fm.createDirectory(at: trash, withIntermediateDirectories: true)
         if let d = try? Data(contentsOf: metaURL), let m = try? JSONDecoder().decode(FileMeta.self, from: d) { meta = m }
         // مجلدات العرض التجريبي (للمراجعة الآلية فقط)
-        if SHOT == "files" || ProcessInfo.processInfo.arguments.contains("-seedFiles") { seedDemo() }
+        if SHOT.hasPrefix("files") || SHOT == "scanner" || ProcessInfo.processInfo.arguments.contains("-seedFiles") { seedDemo() }
     }
 
     func touch() { rev += 1 }
