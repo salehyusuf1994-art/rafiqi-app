@@ -60,6 +60,7 @@ targets:
         INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Hilal.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Gold AppIcon-GoldBlack AppIcon-Navy AppIcon-Glass AppIcon-Light"
     dependencies:
       - target: HilalWidgets
         embed: true

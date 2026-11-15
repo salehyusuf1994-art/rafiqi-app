@@ -166,4 +166,36 @@ final class TVTapTests: XCTestCase {
         uq.tap(); sleep(1)
         XCTAssertTrue(uq.isSelected)
     }
+
+    /// تغيير أيقونة التطبيق فعليًا ثم إرجاعها للأصلية
+    func testAppIconChange() throws {
+        let app = XCUIApplication()
+        app.launchArguments = []
+        app.launch()
+        sleep(3)
+        let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for _ in 0..<3 { let a = sb.alerts.firstMatch; if a.waitForExistence(timeout: 3) { a.buttons.element(boundBy: a.buttons.count > 1 ? 1 : 0).tap() } }
+        app.buttons["الإعدادات"].firstMatch.tap()
+        sleep(2)
+        let row = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'أيقونة التطبيق'")).firstMatch
+        for _ in 0..<6 where !row.isHittable { app.swipeUp(); sleep(1) }
+        row.tap()
+        sleep(2)
+        let gold = app.buttons["كحلي ذهبي"].firstMatch
+        XCTAssertTrue(gold.waitForExistence(timeout: 5), "icon picker not opened")
+        gold.tap()
+        // تنبيه النظام «غيّرت أيقونة…»
+        let a = sb.alerts.firstMatch
+        if a.waitForExistence(timeout: 6) { a.buttons.firstMatch.tap() }
+        sleep(3)
+        let failed = app.staticTexts["تعذّر تغيير الأيقونة، حاول مرة أخرى."].exists
+        print("TVTEST icon changed:", gold.isSelected, "failed:", failed)
+        shot(app, "11_app_icon")
+        XCTAssertTrue(gold.isSelected && !failed, "icon not changed")
+        let orig = app.buttons["الأصلية"].firstMatch
+        orig.tap()
+        if sb.alerts.firstMatch.waitForExistence(timeout: 6) { sb.alerts.firstMatch.buttons.firstMatch.tap() }
+        sleep(3)
+        XCTAssertTrue(orig.isSelected, "icon not reverted")
+    }
 }

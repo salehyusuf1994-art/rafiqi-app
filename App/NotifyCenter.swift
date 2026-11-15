@@ -294,7 +294,7 @@ struct NotifPreview: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("هكذا يصلك التنبيه").font(Theme.title(14)).foregroundStyle(Theme.sub)
             HStack(alignment: .center, spacing: 10) {
-                Image("AppIconPreview").resizable().scaledToFit().frame(width: 38, height: 38)
+                Image(AppIcons.currentPreview).resizable().scaledToFit().frame(width: 38, height: 38)
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack {

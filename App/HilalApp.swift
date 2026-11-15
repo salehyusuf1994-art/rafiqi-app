@@ -125,7 +125,7 @@ let SHOT_WIDGET = SHOT == "detail" ? (UserDefaults.standard.string(forKey: "wid"
 
 struct ContentView: View {
     @State private var tab = ["home": 0, "gallery": 1, "detail": 1, "notify": 2, "notifyd": 2,
-                              "settings": 3, "settings2": 3, "settings3": 3, "cities": 3, "style": 3, "media": 4, "media2": 4, "media3": 4, "media4": 4, "media5": 4,
+                              "settings": 3, "appicon": 3, "settings2": 3, "settings3": 3, "cities": 3, "style": 3, "media": 4, "media2": 4, "media3": 4, "media4": 4, "media5": 4,
                               "files": 5, "filesdl": 5, "filesweb": 5, "filesset": 5, "filesstore": 5, "fileswifi": 5, "scanner": 5, "filesact": 5, "filestools": 5][SHOT] ?? 0
     @ObservedObject private var tvRouter = TVRouter.shared
     @ObservedObject private var filesRouter = FilesRouter.shared
@@ -269,6 +269,8 @@ struct SettingsView: View {
     @State private var showCities = SHOT == "cities"
     @State private var showStyle = SHOT == "style"
     @State private var showNotify = false
+    @State private var showIcons = SHOT == "appicon"
+    @State private var iconPreview = AppIcons.currentPreview
     @State private var mode = Settings.mode
     @State private var place = Settings.placeName
     @State private var medina = Settings.isMedina
@@ -298,6 +300,7 @@ struct SettingsView: View {
                 header
                 toolsSection
                 notifySection
+                iconSection
                 prayerSection
                 widgetSection
                 dateSection
@@ -314,6 +317,7 @@ struct SettingsView: View {
             }
             .navigationDestination(isPresented: $showStyle) { GlobalStyleView() }
             .navigationDestination(isPresented: $showNotify) { NotifyCenterView() }
+            .navigationDestination(isPresented: $showIcons) { AppIconPicker() }
             .navigationDestination(isPresented: $showCities) {
                 CityPicker { c in
                     Settings.setCity(name: c.name, lat: c.lat, lng: c.lng, tz: c.tz)
@@ -324,7 +328,7 @@ struct SettingsView: View {
             }
           }
             .toolbar(.hidden, for: .navigationBar)
-            .onAppear { hasBG = Backdrop.hasWallpaper; place = Settings.placeName }
+            .onAppear { hasBG = Backdrop.hasWallpaper; place = Settings.placeName; iconPreview = AppIcons.currentPreview }
             .onReceive(loc.objectWillChange) { _ in DispatchQueue.main.async { medina = Settings.isMedina; place = Settings.placeName } }
         }
     }
@@ -334,7 +338,7 @@ struct SettingsView: View {
     var header: some View {
         Section {
             HStack(spacing: 14) {
-                Image("AppIconPreview").resizable().scaledToFit().frame(width: 58, height: 58)
+                Image(iconPreview).resizable().scaledToFit().frame(width: 58, height: 58)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card))
                 VStack(alignment: .leading, spacing: 3) {
@@ -366,6 +370,20 @@ struct SettingsView: View {
             Button { showNotify = true } label: {
                 TileRow(title: "الإشعارات", icon: "bell.badge.fill", color: .red,
                         subtitle: "تنبيهات الصلاة وأصواتها")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    var iconSection: some View {
+        Section {
+            Button { showIcons = true } label: {
+                HStack {
+                    TileRow(title: "أيقونة التطبيق", icon: "app.badge.fill", color: .blue,
+                            subtitle: "غيّر شكل رفيقي على الشاشة الرئيسية")
+                    Image(iconPreview).resizable().scaledToFit().frame(width: 30, height: 30)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
             }
             .buttonStyle(.plain)
         }

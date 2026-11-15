@@ -156,6 +156,7 @@ jobs:
           L detail 9 -wid hilal.both; S 6_detail_both
           L detail 9 -wid hilal.prings; S 6b_detail_rings
           L settings 8; S 7_settings
+          L appicon 9; S 7d_app_icon
           L style 9; S 7b_general_design
           L detail 9 -wid hilal.dayprayers; S 6c_detail_dayprayers
           L detail 9 -wid hilal.tickm; S 6d_detail_tickm
