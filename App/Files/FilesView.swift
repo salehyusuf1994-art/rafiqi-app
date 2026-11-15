@@ -63,9 +63,9 @@ struct FilesTab: View {
     private var home: some View {
         VStack(spacing: 12) {
             PageHeader(title: "إدارة الملفات", subtitle: L("ملفاتك وتنزيلاتك في مكان واحد")) {
-                CircleButton(icon: "wifi", size: 40) { showWiFi = true }
-                CircleButton(icon: "chart.pie", size: 40) { showStorage = true }
-                CircleButton(icon: "gearshape", size: 40) { showSettings = true }
+                CircleButton(icon: "wifi", size: 40) { showWiFi = true }.accessibilityLabel(L("النقل عبر الواي فاي"))
+                CircleButton(icon: "chart.pie", size: 40) { showStorage = true }.accessibilityLabel(L("تحليل المساحة"))
+                CircleButton(icon: "gearshape", size: 40) { showSettings = true }.accessibilityLabel(L("إعدادات الملفات"))
             }
             .padding(.horizontal, 16)
             Picker("", selection: $router.page) {
@@ -694,7 +694,8 @@ struct FolderContent: View {
 
 /// «عنصر واحد، عنصران، ٥ عناصر، ١٢ عنصرًا»
 func itemsText(_ n: Int) -> String {
-    countText(n, one: "عنصر واحد", two: "عنصران", few: "عناصر", many: "عنصرًا", en: n == 1 ? "item" : "items")
+    if n == 0 { return L("لا شيء") }
+    return countText(n, one: "عنصر واحد", two: "عنصران", few: "عناصر", many: "عنصرًا", en: n == 1 ? "item" : "items")
 }
 
 struct PickedMovie: Transferable {
@@ -735,7 +736,7 @@ struct GridCell: View {
             .frame(width: 100, height: 100)
             Text(verbatim: item.isDir ? item.name : item.base)
                 .font(Theme.f(.footnote, .medium)).foregroundStyle(.white)
-                .lineLimit(2).multilineTextAlignment(.center).frame(height: 36, alignment: .top)
+                .lineLimit(2).multilineTextAlignment(.center).frame(height: 36, alignment: .center)
             FileSubtitle(item: item).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             if selected == nil {
                 Button(action: more) {
@@ -796,19 +797,25 @@ struct FileSubtitle: View {
     @State private var text = ""
     var body: some View {
         Text(verbatim: text.isEmpty ? quick : text)
-            .lineLimit(1)
+            .lineLimit(1).minimumScaleFactor(0.8)
             .task(id: item.url) {
                 if item.kind == .audio || item.kind == .video {
                     let d = try? await AVURLAsset(url: item.url).load(.duration)
                     if let s = d?.seconds, s.isFinite, s > 0 { text = durationText(s) }
                 } else if item.isDir {
+                    // المجلد: عدد عناصره وحجمها، و«فارغ» إن لم يكن فيه شيء
                     let u = item.url
+                    let n = FileStore.shared.count(u)
                     let size = await Task.detached { FileStore.folderSizeSync(u) }.value
-                    text = sizeText(size)
+                    text = n == 0 ? L("فارغ") : itemsText(n) + (size > 0 ? " · " + sizeText(size) : "")
                 }
             }
     }
-    private var quick: String { item.isDir ? itemsText(FileStore.shared.count(item.url)) : sizeText(item.size) }
+    private var quick: String {
+        guard item.isDir else { return sizeText(item.size) }
+        let n = FileStore.shared.count(item.url)
+        return n == 0 ? L("فارغ") : itemsText(n)
+    }
 }
 
 extension FileStore {

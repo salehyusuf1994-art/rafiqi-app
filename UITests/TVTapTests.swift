@@ -126,8 +126,44 @@ final class TVTapTests: XCTestCase {
         fajr.tap()
         sleep(3)
         shot(app, "8_notify_detail")
-        let opened = app.staticTexts["تنبيه دخول الوقت"].exists || app.staticTexts["تنبيه عند حلوله"].exists || app.switches.count > 0
+        // صفحة الصلاة تحتوي «وقت اليوم» وعنوانها في الشريط باسم الصلاة
+        let opened = app.staticTexts["وقت اليوم"].waitForExistence(timeout: 5)
         print("TVTEST notify detail opened:", opened)
         XCTAssertTrue(opened, "prayer card did not open")
+        // الرجوع ثم فتح «المؤذن»
+        app.navigationBars.buttons.firstMatch.tap()
+        sleep(2)
+        let mu = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'المؤذن'")).firstMatch
+        for _ in 0..<6 where !mu.isHittable { app.swipeUp(); sleep(1) }
+        mu.tap()
+        sleep(2)
+        shot(app, "9_muezzin")
+        let muOpened = app.navigationBars["المؤذن"].exists || app.staticTexts["المؤذن"].exists && app.buttons.containing(NSPredicate(format: "label CONTAINS 'العفاسي'")).count > 0
+        print("TVTEST muezzin opened:", muOpened)
+        XCTAssertTrue(app.navigationBars["المؤذن"].waitForExistence(timeout: 4), "muezzin picker did not open")
+    }
+
+    func testMethodPick() throws {
+        let app = XCUIApplication()
+        app.launchArguments = []
+        app.launch()
+        sleep(3)
+        let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for _ in 0..<3 { let a = sb.alerts.firstMatch; if a.waitForExistence(timeout: 3) { a.buttons.element(boundBy: a.buttons.count > 1 ? 1 : 0).tap() } }
+        app.buttons["الإعدادات"].firstMatch.tap()
+        sleep(2)
+        let row = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'طريقة حساب الأوقات'")).firstMatch
+        for _ in 0..<6 where !row.isHittable { app.swipeUp(); sleep(1) }
+        row.tap()
+        sleep(2)
+        let mwl = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'رابطة العالم الإسلامي'")).firstMatch
+        mwl.tap()
+        sleep(1)
+        print("TVTEST method selected:", mwl.isSelected)
+        shot(app, "10_method")
+        XCTAssertTrue(mwl.isSelected, "method not selected")
+        let uq = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'أم القرى'")).firstMatch
+        uq.tap(); sleep(1)
+        XCTAssertTrue(uq.isSelected)
     }
 }

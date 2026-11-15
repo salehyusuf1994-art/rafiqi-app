@@ -178,10 +178,14 @@ struct CircleButton: View {
     var tint: Color = .white
     var size: CGFloat = 44
     let action: () -> Void
-    var body: some View {
-        Button(action: action) { CircleIcon(icon: icon, tint: tint, size: size) }
-            .buttonStyle(PressStyle())
+    @ViewBuilder var body: some View {
+        let b = Button(action: action) { CircleIcon(icon: icon, tint: tint, size: size) }.buttonStyle(PressStyle())
+        if let n = Self.names[icon] { b.accessibilityLabel(L(n)) } else { b }
     }
+    /// أسماء مقروءة للأزرار الدائرية (لـVoiceOver بدل اسم الرمز)
+    static let names = ["xmark": "إغلاق", "chevron.backward": "رجوع", "calendar": "التقويم",
+                        "location.north.line.fill": "القبلة", "arrow.left.arrow.right": "تحويل التاريخ",
+                        "chevron.right": Lang.isEN ? "التالي" : "السابق", "chevron.left": Lang.isEN ? "السابق" : "التالي"]
 }
 
 struct CircleIcon: View {

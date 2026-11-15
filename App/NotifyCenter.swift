@@ -140,19 +140,19 @@ extension Notify.Item {
     }
 }
 
+/// صفحة الإشعارات: تُفتح بالدفع داخل تنقّل الإعدادات (لا ورقة بتنقّل مستقل داخلها؛
+/// ذلك كان يمنع فتح صفحات الصلوات والمؤذن عند الضغط)
 struct NotifyCenterView: View {
     @StateObject private var store = NotifyStore()
-    @State private var path: [String] = SHOT == "notifyd" ? ["dhuhr"] : []
+    @State private var openID: String? = SHOT == "notifyd" ? "dhuhr" : nil
+    @State private var picker: Int? = nil   // ٠ المؤذن، ١ أذان الفجر
     private let cols = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    PageHeader(title: "الإشعارات", subtitle: L("تنبيهات الأوقات بصوت رفيقي")) {
-                        CircleButton(icon: "xmark", size: 40) { dismiss() }
-                    }
+                    BackRow()
+                    PageHeader(title: "الإشعارات", subtitle: L("تنبيهات الأوقات بصوت رفيقي"))
                     NotifPreview()
                     if store.denied {
                         Button {
@@ -167,7 +167,7 @@ struct NotifyCenterView: View {
 
                     LazyVGrid(columns: cols, spacing: 12) {
                         ForEach(Notify.items) { it in
-                            NavigationLink(value: it.id) { tile(it) }
+                            Button { openID = it.id } label: { tile(it) }
                                 .buttonStyle(PressStyle())
                         }
                     }
@@ -193,28 +193,26 @@ struct NotifyCenterView: View {
             .scrollIndicators(.hidden)
             .background(AppBackground())
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: String.self) { id in
-                if let it = Notify.item(id) { NotifyDetail(item: it, store: store) }
+            .navigationDestination(isPresented: Binding(get: { openID != nil }, set: { if !$0 { openID = nil } })) {
+                if let id = openID, let it = Notify.item(id) { NotifyDetail(item: it, store: store) }
+            }
+            .navigationDestination(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } })) {
+                MuezzinPicker(store: store, fajr: picker == 1)
             }
             .onAppear { store.checkPermission() }
-        }
     }
 
     /// المؤذن (لجزء الأذان والأذان كاملًا)
     var adhanCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("الأذان").font(Theme.title(17)).foregroundStyle(.white)
-            NavigationLink {
-                MuezzinPicker(store: store, fajr: false)
-            } label: {
+            Button { picker = 0 } label: {
                 TileRow(title: "المؤذن", icon: "speaker.wave.3.fill", color: Theme.goldDeep,
                         subtitle: Notify.muezzin(for: "dhuhr").name)
             }
             .buttonStyle(.plain)
             Divider().overlay(Theme.stroke)
-            NavigationLink {
-                MuezzinPicker(store: store, fajr: true)
-            } label: {
+            Button { picker = 1 } label: {
                 TileRow(title: "أذان الفجر", icon: "sunrise.fill", color: Color(red: 0.36, green: 0.78, blue: 0.45),
                         subtitle: Notify.muezzin(for: "fajr").name)
             }

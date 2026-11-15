@@ -133,7 +133,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var phase
     var body: some View {
         if SHOT.hasPrefix("notify") {
-            NotifyCenterView()
+            NavigationStack { NotifyCenterView() }
         } else {
             tabs
         }
@@ -313,6 +313,7 @@ struct SettingsView: View {
                 if SHOT == "settings3" { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { proxy.scrollTo("date", anchor: .top) } }
             }
             .navigationDestination(isPresented: $showStyle) { GlobalStyleView() }
+            .navigationDestination(isPresented: $showNotify) { NotifyCenterView() }
             .navigationDestination(isPresented: $showCities) {
                 CityPicker { c in
                     Settings.setCity(name: c.name, lat: c.lat, lng: c.lng, tz: c.tz)
@@ -368,7 +369,6 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
         }
-        .sheet(isPresented: $showNotify) { NotifyCenterView() }
     }
 
     var prayerSection: some View {
@@ -551,22 +551,25 @@ struct SettingsView: View {
 
 struct MethodPicker: View {
     @Binding var selected: String
+    @State private var cur: String? = nil   // نسخة محلية تُحدّث العلامة فورًا
     var body: some View {
+        let now = cur ?? selected
         List {
             Section {
                 ForEach(CalcMethods.all) { m in
-                    Button { selected = m.id } label: {
+                    Button { cur = m.id; selected = m.id } label: {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(m.name).foregroundStyle(.white)
                                 Text(verbatim: m.detail).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                             }
                             Spacer(minLength: 0)
-                            Image(systemName: m.id == selected ? "checkmark.circle.fill" : "circle")
-                                .font(Theme.f(.title3)).foregroundStyle(m.id == selected ? Theme.gold : Theme.sub)
+                            Image(systemName: m.id == now ? "checkmark.circle.fill" : "circle")
+                                .font(Theme.f(.title3)).foregroundStyle(m.id == now ? Theme.gold : Theme.sub)
                         }
                         .padding(.vertical, 2)
                     }
+                    .accessibilityAddTraits(m.id == now ? .isSelected : [])
                 }
             } footer: {
                 Text("العصر لجميع الطرق على قول الجمهور (ظل الشيء مثله). في البلاد البعيدة شمالًا، إذا لم تبلغ الشمس زاوية الفجر أو العشاء صيفًا، يُحسب الوقت بجزء من الليل.")

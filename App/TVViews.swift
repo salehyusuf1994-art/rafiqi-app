@@ -573,9 +573,10 @@ struct TVSections: View {
                         }
                     }
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+                // سطران عند الحاجة بدل قص الاسم الطويل («إذاعة القرآن الكريم من القاهرة»)
                 Text(verbatim: c.name).font(Theme.f(.caption, .semibold)).foregroundStyle(.white)
-                    .lineLimit(1).minimumScaleFactor(0.8)
-                    .frame(width: width)
+                    .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.9)
+                    .frame(width: width, height: 34, alignment: .top)
             }
         }
         .buttonStyle(.plain)
