@@ -32,6 +32,51 @@ struct LinkProbe {
     var variants: [(String, Int, URL)] = []
     /// ملفات وُجدت داخل صفحة الموقع
     var found: [URL] = []
+    /// تفاصيل ما وُجد في الصفحة (النوع والدقة والحجم) لعرضه بعناوين واضحة
+    var items: [FoundItem] = []
+}
+
+/// ملف وُجد داخل صفحة موقع
+struct FoundItem: Identifiable, Hashable {
+    var id: URL { url }
+    let url: URL
+    var kind: LinkProbe.Kind
+    /// دقة الفيديو (٧٢٠ لـ 720p) إن عُرفت من الرابط
+    var height: Int?
+    var size: Int64?
+
+    /// «جودة عالية • 720p»، «صوت MP3»، «صورة JPG»…
+    var title: String {
+        let ext = url.pathExtension.uppercased()
+        switch kind {
+        case .video:
+            guard let h = height else { return ext.isEmpty ? L("فيديو") : LF("فيديو %@", ext) }
+            return FoundItem.tier(h) + " • " + "\(h)p"
+        case .hls: return L("بث فيديو (عدة جودات)")
+        case .audio: return ext.isEmpty ? L("صوت") : LF("صوت %@", ext)
+        case .image: return ext.isEmpty ? L("صورة") : LF("صورة %@", ext == "JPEG" ? "JPG" : ext)
+        case .document: return ext.isEmpty ? L("مستند") : LF("مستند %@", ext)
+        case .page: return L("صفحة موقع")
+        case .other: return ext.isEmpty ? L("ملف") : LF("ملف %@", ext)
+        }
+    }
+
+    static func tier(_ h: Int) -> String {
+        h >= 1080 ? L("جودة فائقة") : h >= 720 ? L("جودة عالية") : h >= 480 ? L("جودة متوسطة") : L("جودة منخفضة")
+    }
+
+    /// الدقة من الرابط: «/720x1280/» أو «_720p»
+    static func height(in url: URL) -> Int? {
+        let s = url.absoluteString
+        if let re = try? NSRegularExpression(pattern: #"(?<![0-9])([0-9]{3,4})x([0-9]{3,4})(?![0-9])"#),
+           let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+           let a = Range(m.range(at: 1), in: s), let b = Range(m.range(at: 2), in: s),
+           let w = Int(s[a]), let h = Int(s[b]), w >= 144, h >= 144 { return min(w, h) }
+        if let re = try? NSRegularExpression(pattern: #"(?<![0-9])(144|240|360|480|540|720|1080|1440|2160)p(?![a-z0-9])"#, options: [.caseInsensitive]),
+           let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+           let a = Range(m.range(at: 1), in: s) { return Int(s[a]) }
+        return nil
+    }
 }
 
 enum LinkInspector {
@@ -87,8 +132,60 @@ enum LinkInspector {
             var full = data
             if data.count >= 65536, let more = try? await URLSession.shared.data(from: final).0 { full = more }
             p.found = scanPage(String(decoding: full, as: UTF8.self), base: final)
+            p.items = await details(p.found, referer: final.absoluteString)
         }
         return p
+    }
+
+    /// نوع كل ملف وحجمه (طلب صغير لكل رابط بالتوازي)، ثم الترتيب: الفيديو من الأعلى دقة، فالصوت، فالصور، فالباقي
+    static func details(_ urls: [URL], referer: String) async -> [FoundItem] {
+        let list = Array(urls.prefix(24))
+        var out: [FoundItem] = await withTaskGroup(of: FoundItem?.self) { g in
+            for u in list {
+                g.addTask {
+                    var req = URLRequest(url: u)
+                    req.setValue(ua, forHTTPHeaderField: "User-Agent")
+                    req.setValue(referer, forHTTPHeaderField: "Referer")
+                    req.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+                    req.timeoutInterval = 10
+                    let ext = u.pathExtension.lowercased()
+                    var mime: String?, size: Int64?
+                    if let (_, resp) = try? await URLSession.shared.data(for: req), let h = resp as? HTTPURLResponse {
+                        if h.statusCode >= 400 { return nil }   // رابط لا يعمل: لا يُعرض
+                        mime = h.mimeType
+                        if let cr = h.value(forHTTPHeaderField: "Content-Range"), let t = cr.split(separator: "/").last { size = Int64(t) }
+                        else if h.expectedContentLength > 1 { size = h.expectedContentLength }
+                    }
+                    var k = kind(mime: mime, ext: ext)
+                    if k == .page { return nil }                       // رابط صفحة أخرى، لا ملف
+                    if k == .other && ext.isEmpty && size == nil { return nil }
+                    if (mime ?? "").lowercased().hasPrefix("text/") && ext.isEmpty { k = .other }
+                    return FoundItem(url: u, kind: k, height: k == .video ? FoundItem.height(in: u) : nil, size: size)
+                }
+            }
+            var r: [FoundItem] = []
+            for await x in g { if let x { r.append(x) } }
+            return r
+        }
+        func rank(_ k: LinkProbe.Kind) -> Int {
+            switch k {
+            case .video: return 0
+            case .hls: return 1
+            case .audio: return 2
+            case .image: return 3
+            case .document: return 4
+            default: return 5
+            }
+        }
+        out.sort { a, b in
+            rank(a.kind) != rank(b.kind) ? rank(a.kind) < rank(b.kind) : (a.height ?? 0) != (b.height ?? 0) ? (a.height ?? 0) > (b.height ?? 0) : (a.size ?? 0) > (b.size ?? 0)
+        }
+        // نفس الدقة مكررة: يبقى واحد
+        var seen = Set<String>()
+        return out.filter { it in
+            guard it.kind == .video, let h = it.height else { return true }
+            return seen.insert("v\(h)").inserted
+        }
     }
 
     /// جودات البث من القائمة الرئيسية
@@ -108,7 +205,7 @@ enum LinkInspector {
             while j < lines.count, lines[j].trimmingCharacters(in: .whitespaces).isEmpty || lines[j].hasPrefix("#") { j += 1 }
             guard j < lines.count, let u = URL(string: lines[j].trimmingCharacters(in: .whitespaces), relativeTo: base)?.absoluteURL else { continue }
             let h = res.split(separator: "x").last.flatMap { Int($0) }
-            let label = h.map { "\($0)p" } ?? LF("%@ ك.ب/ث", ar(bw / 1000))
+            let label = h.map { FoundItem.tier($0) + " • " + "\($0)p" } ?? LF("%@ ك.ب/ث", ar(bw / 1000))
             if !out.contains(where: { $0.0 == label }) { out.append((label, bw, u)) }
         }
         return out.sorted { $0.1 > $1.1 }
@@ -236,25 +333,42 @@ struct DownloadOptionsPage: View {
             Text("روابط البث (m3u8) تُنزَّل ثم تُحوَّل إلى ملف MP4. البث المحمي بالتشفير (DRM) لا يُنزَّل.")
                 .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
         case .page:
-            if p.found.isEmpty {
+            if p.items.isEmpty {
                 Text("هذا رابط صفحة موقع ولم يُعثر فيها على ملفات مباشرة. افتحه في «المتصفح» لتشغيل الفيديو، ثم اضغط زر «تنزيل» الذي يظهر.")
                     .font(Theme.f(.subheadline)).foregroundStyle(Theme.sub).glassCard(padding: 14)
             } else {
-                Text(LF("وُجد في الصفحة %@:", itemsText(p.found.count))).font(Theme.f(.footnote, .bold)).foregroundStyle(Theme.sub)
+                Text(LF("وُجد في الصفحة %@:", itemsText(p.items.count))).font(Theme.f(.footnote, .bold)).foregroundStyle(Theme.sub)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                ForEach(p.found, id: \.self) { u in
-                    Button { nested = u } label: {
-                        HStack(spacing: 10) {
-                            Badge(name: icon(LinkInspector.kind(mime: nil, ext: u.pathExtension.lowercased())), size: 34)
-                            Text(verbatim: u.lastPathComponent.removingPercentEncoding ?? u.lastPathComponent).font(Theme.f(.subheadline)).foregroundStyle(.white)
-                                .lineLimit(1).truncationMode(.middle)
-                            Spacer()
-                            Image(systemName: "chevron.forward").foregroundStyle(Theme.sub)
+                ForEach(p.items) { it in
+                    if direct(it) {
+                        // ملف معروف النوع والدقة: يبدأ تنزيله مباشرة
+                        option(icon(it.kind), it.title, it.size.map { sizeText($0) }) {
+                            start(it.url.absoluteString, .none, name: fileName(it, page: p), referer: p.url.absoluteString)
                         }
-                        .padding(12).background(RoundedRectangle(cornerRadius: 14).fill(Theme.card))
-                        .contentShape(Rectangle())
+                    } else {
+                        // بث أو ملف غير معروف الدقة: تُفتح خياراته (الجودات والتحويل)
+                        Button { nested = it.url } label: {
+                            HStack(spacing: 12) {
+                                Badge(name: icon(it.kind), size: 36)
+                                Text(verbatim: it.title).font(Theme.f(.body, .medium)).foregroundStyle(.white)
+                                Spacer()
+                                if let sz = it.size { Text(verbatim: sizeText(sz)).font(Theme.f(.caption)).foregroundStyle(Theme.sub) }
+                                Image(systemName: "chevron.forward").foregroundStyle(Theme.sub)
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.edge, lineWidth: 1))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PressStyle())
+                        .accessibilityLabel(it.title + " " + (it.url.lastPathComponent))
                     }
-                    .buttonStyle(PressStyle())
+                }
+                // صوت MP3 من الفيديو (من أصغر نسخة: الصوت نفسه بتنزيل أقل)
+                if let v = p.items.last(where: { $0.kind == .video && $0.height != nil }) {
+                    option("music.note", L("صوت MP3"), v.size.map { sizeText($0) }) {
+                        start(v.url.absoluteString, .mp3, name: fileName(v, page: p), referer: p.url.absoluteString)
+                    }
                 }
             }
             option("arrow.down.doc", L("حفظ الصفحة نفسها"), nil) { start(p.url.absoluteString, .none, name: (p.url.host ?? "page") + ".html") }
@@ -288,8 +402,26 @@ struct DownloadOptionsPage: View {
 
     private func approx(_ bw: Int) -> String { LF("%@ م.ب/دقيقة تقريبًا", ar(String(format: "%.0f", Double(bw) * 60 / 8 / 1_000_000))) }
 
-    private func start(_ url: String, _ post: PostProcess, name: String?) {
-        if DownloadManager.shared.add(url, name: name, headers: referer.map { ["Referer": $0] } ?? [:], post: post) { done(L("بدأ التنزيل")) }
+    /// يُنزَّل مباشرة: فيديو معروف الدقة، أو صوت أو صورة أو مستند
+    private func direct(_ it: FoundItem) -> Bool {
+        switch it.kind {
+        case .video: return it.height != nil
+        case .audio, .image, .document: return true
+        default: return false
+        }
+    }
+
+    /// اسم الملف: اسم الموقع مع الدقة (مثل «x.com 720p.mp4») بدل الحروف العشوائية في الرابط
+    private func fileName(_ it: FoundItem, page: LinkProbe) -> String {
+        let ext = it.url.pathExtension.isEmpty ? "mp4" : it.url.pathExtension
+        let site = (page.url.host ?? "").replacingOccurrences(of: "www.", with: "")
+        if let h = it.height { return "\(site) \(h)p.\(ext)" }
+        return it.url.lastPathComponent.removingPercentEncoding ?? it.url.lastPathComponent
+    }
+
+    private func start(_ url: String, _ post: PostProcess, name: String?, referer ref: String? = nil) {
+        let r = ref ?? referer
+        if DownloadManager.shared.add(url, name: name, headers: r.map { ["Referer": $0] } ?? [:], post: post) { done(L("بدأ التنزيل")) }
         close()
     }
 

@@ -223,6 +223,11 @@ final class TVTapTests: XCTestCase {
         let item = app.buttons.containing(NSPredicate(format: "label CONTAINS 'mov_bbb.mp4'")).firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 40), "page items not listed")
         shot(app, "13_page_items")
+        // العناوين الواضحة: «صوت MP3» و«صورة JPG» بدل أسماء الملفات العشوائية
+        let mp3 = app.buttons.containing(NSPredicate(format: "label CONTAINS 'صوت MP3'")).firstMatch
+        let jpg = app.buttons.containing(NSPredicate(format: "label CONTAINS 'صورة JPG'")).firstMatch
+        print("TVTEST page labels:", mp3.exists, jpg.exists)
+        XCTAssertTrue(mp3.exists && jpg.exists, "clear labels missing")
         item.tap()
         let best = app.buttons.containing(NSPredicate(format: "label CONTAINS 'أعلى جودة'")).firstMatch
         let ok = best.waitForExistence(timeout: 40)
