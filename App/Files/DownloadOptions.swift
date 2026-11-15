@@ -283,7 +283,9 @@ struct DownloadOptionsPage: View {
             .background(AppBackground())
             .navigationTitle("خيارات التنزيل")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(item: $nested) { u in DownloadOptionsPage(link: u.absoluteString, referer: probe?.url.absoluteString, done: done, close: close) }
+            .navigationDestination(isPresented: Binding(get: { nested != nil }, set: { if !$0 { nested = nil } })) {
+                if let u = nested { DownloadOptionsPage(link: u.absoluteString, referer: probe?.url.absoluteString, done: done, close: close) }
+            }
         .task {
             guard let u = LinkInspector.normalize(link) else { error = L("الرابط غير صالح."); return }
             do { probe = try await LinkInspector.probe(u, referer: referer) } catch { self.error = error.localizedDescription }
@@ -347,7 +349,7 @@ struct DownloadOptionsPage: View {
                         }
                     } else {
                         // بث أو ملف غير معروف الدقة: تُفتح خياراته (الجودات والتحويل)
-                        Button { nested = it.url } label: {
+                        Button { NSLog("RFDBG page item tapped %@", it.url.absoluteString); nested = it.url } label: {
                             HStack(spacing: 12) {
                                 Badge(name: icon(it.kind), size: 36)
                                 Text(verbatim: it.title).font(Theme.f(.body, .medium)).foregroundStyle(.white)
