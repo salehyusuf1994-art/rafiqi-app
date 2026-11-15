@@ -1,0 +1,52 @@
+name: Check all links
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check
+        run: |
+          mkdir -p out
+          check() { # name url
+            r=$(curl -sL -A "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1" -r 0-16383 --max-time 12 -o /tmp/s.bin -w "%{http_code}" "$2" 2>/dev/null || true)
+            n=$(wc -c < /tmp/s.bin 2>/dev/null || echo 0); ok=FAIL
+            if head -c 8 /tmp/s.bin 2>/dev/null | grep -q "#EXTM3U"; then ok=OK-HLS; elif [ "$n" -gt 400 ]; then ok=OK; fi
+            printf "%-7s %4s %7s  %s  %s\n" "$ok" "$r" "$n" "$1" "$2"; rm -f /tmp/s.bin
+          }
+          echo "== RADIO" > out/links.txt
+          python3 ci/streams.py Widgets/Media.swift | while IFS=$'\t' read -r name url; do check "$name" "$url"; done >> out/links.txt
+          echo "== QURAN reciters (surah 1 and 114)" >> out/links.txt
+          grep -o 'Reciter(id: [0-9]*, name: "[^"]*", server: "[^"]*"' Widgets/Media.swift | sed -E 's/.*name: "([^"]*)", server: "([^"]*)"/\1\t\2/' | while IFS=$'\t' read -r n s; do check "$n 001" "${s}001.mp3"; check "$n 114" "${s}114.mp3"; done >> out/links.txt
+          echo "== QURAN api" >> out/links.txt
+          curl -s --max-time 20 "https://mp3quran.net/api/v3/reciters?language=ar" -o /tmp/rec.json; python3 - >> out/links.txt <<'EOF'
+          import json,random,subprocess
+          try:
+              d=json.load(open('/tmp/rec.json'))['reciters']; print("reciters in API:",len(d))
+              random.seed(1)
+              for r in random.sample(d,min(12,len(d))):
+                  m=r['moshaf'][0]; u=m['server'].rstrip('/')+'/001.mp3'
+                  c=subprocess.run(['curl','-sL','-r','0-2047','--max-time','10','-o','/dev/null','-w','%{http_code}',u],capture_output=True,text=True).stdout
+                  print(c, r['name'], u)
+          except Exception as e: print("API FAIL",e)
+          EOF
+          echo "== TV" >> out/links.txt
+          python3 ci/tv.py Widgets/TV.swift 2>/dev/null | while IFS=$'\t' read -r name url; do check "$name" "$url"; done >> out/links.txt || echo "no tv extractor" >> out/links.txt
+          echo "== SPORTS" >> out/links.txt
+          for u in "https://site.api.espn.com/apis/site/v2/sports/soccer/ksa.1/scoreboard" "https://site.api.espn.com/apis/v2/sports/soccer/ksa.1/standings" "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"; do check sports "$u"; done >> out/links.txt
+          echo "== WEATHER" >> out/links.txt
+          check weather "https://api.open-meteo.com/v1/forecast?latitude=24.47&longitude=39.61&current=temperature_2m" >> out/links.txt
+          grep -c "^FAIL" out/links.txt || true
+          grep "^FAIL\|^[0-9]" out/links.txt | head -80
+      - name: Publish
+        run: |
+          cd out && git init -q && git checkout -q -b linksout && git add -A && \
+          git -c user.name=ci -c user.email=ci@local commit -qm links && \
+          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} linksout
