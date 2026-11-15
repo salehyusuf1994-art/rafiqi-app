@@ -15,6 +15,7 @@ final class NotifyStore: ObservableObject {
     @Published var modes: [String: Notify.SoundMode] = Dictionary(uniqueKeysWithValues: Notify.items.map { ($0.id, Notify.mode($0.id)) })
     @Published var note = ""
     @Published var denied = false
+    @Published var playing: String? = nil   // الصوت المسموع الآن (يتحوّل زره إلى إيقاف)
     private var player: AVAudioPlayer?
 
     func set(_ id: String, pre isPre: Bool, _ on: Bool) {
@@ -66,13 +67,28 @@ final class NotifyStore: ObservableObject {
 
     func playFile(_ file: String) {
         let name = (file as NSString).deletingPathExtension
-        guard let u = Bundle.main.url(forResource: name, withExtension: "caf") else { return }
-        try? AVAudioSession.sharedInstance().setCategory(.playback)
-        player = try? AVAudioPlayer(contentsOf: u)
-        player?.play()
+        toggle(name)
     }
 
-    func stopPlaying() { player?.stop() }
+    func stopPlaying() { player?.stop(); playing = nil }
+
+    /// تشغيل الصوت أو إيقافه إن كان هو المسموع الآن
+    private func toggle(_ name: String) {
+        if playing == name { stopPlaying(); return }
+        guard let u = Bundle.main.url(forResource: name, withExtension: "caf") else { return }
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        player?.stop()
+        player = try? AVAudioPlayer(contentsOf: u)
+        guard let p = player, p.play() else { playing = nil; return }
+        playing = name
+        DispatchQueue.main.asyncAfter(deadline: .now() + p.duration + 0.2) { [weak self, weak p] in
+            guard let self, let p, self.player === p, !p.isPlaying else { return }
+            self.playing = nil
+        }
+    }
+
+    func isPlaying(file: String) -> Bool { playing == (file as NSString).deletingPathExtension }
+    func isPlaying(_ id: String, pre isPre: Bool) -> Bool { playing == "miqat_\(isPre ? "pre_" : "")\(id)" }
 
     func setVoice(_ v: Bool) {
         voice = v; Notify.voice = v
@@ -101,11 +117,7 @@ final class NotifyStore: ObservableObject {
 
     /// تشغيل صوت التنبيه للتجربة
     func play(_ id: String, pre isPre: Bool) {
-        let name = "miqat_\(isPre ? "pre_" : "")\(id)"
-        guard let u = Bundle.main.url(forResource: name, withExtension: "caf") else { return }
-        try? AVAudioSession.sharedInstance().setCategory(.playback)
-        player = try? AVAudioPlayer(contentsOf: u)
-        player?.play()
+        toggle("miqat_\(isPre ? "pre_" : "")\(id)")
     }
 }
 
@@ -245,8 +257,10 @@ struct NotifyCenterView: View {
             .tint(Theme.gold)
             if store.voice {
                 Button { store.play(id, pre: false) } label: {
-                    Image(systemName: "play.circle.fill").font(Theme.f(.title3)).foregroundStyle(Theme.gold)
+                    Image(systemName: store.isPlaying(id, pre: false) ? "stop.circle.fill" : "play.circle.fill")
+                        .font(Theme.f(.title3)).foregroundStyle(Theme.gold)
                 }
+                .accessibilityLabel(L(store.isPlaying(id, pre: false) ? "إيقاف" : "تشغيل"))
                 .buttonStyle(.borderless)
             }
         }
@@ -372,7 +386,8 @@ struct NotifyDetail: View {
                     }
                     if store.modes[item.id] == .part || store.modes[item.id] == .full {
                         Button { store.playFile(Notify.muezzin(for: item.id).part) } label: {
-                            Label(LF("استمع: %@", Notify.muezzin(for: item.id).name), systemImage: "play.circle.fill")
+                            Label(LF("استمع: %@", Notify.muezzin(for: item.id).name),
+                                  systemImage: store.isPlaying(file: Notify.muezzin(for: item.id).part) ? "stop.circle.fill" : "play.circle.fill")
                                 .font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
                         }
                         .buttonStyle(.borderless)
@@ -413,7 +428,7 @@ struct NotifyDetail: View {
             // صوت التنبيه الناطق (لتنبيه دخول الوقت فقط إذا كان صوته «التنبيه الناطق»)
             if store.voice && (pre || !item.isPrayer || store.modes[item.id] == .voice) {
                 Button { store.play(item.id, pre: pre) } label: {
-                    Label("استمع إلى الصوت", systemImage: "play.circle.fill")
+                    Label("استمع إلى الصوت", systemImage: store.isPlaying(item.id, pre: pre) ? "stop.circle.fill" : "play.circle.fill")
                         .font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
                 }
                 .buttonStyle(.borderless)
@@ -445,8 +460,10 @@ struct MuezzinPicker: View {
                         }
                         .buttonStyle(.plain)
                         Button { store.playFile(m.part) } label: {
-                            Image(systemName: "play.circle.fill").font(Theme.f(.title2)).foregroundStyle(Theme.gold)
+                            Image(systemName: store.isPlaying(file: m.part) ? "stop.circle.fill" : "play.circle.fill")
+                                .font(Theme.f(.title2)).foregroundStyle(Theme.gold)
                         }
+                        .accessibilityLabel(L(store.isPlaying(file: m.part) ? "إيقاف" : "تشغيل"))
                         .buttonStyle(.borderless)
                     }
                 }

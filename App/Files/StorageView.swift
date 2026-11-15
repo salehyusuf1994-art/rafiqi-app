@@ -67,7 +67,12 @@ struct StorageView: View {
 
                     Section {
                         ForEach(largest) { f in
-                            Button { FileOpener.open(f.url) } label: {
+                            Button {
+                                // الصوت يُشغَّل في المشغّل المصغّر أسفل الشاشة، فتُغلق هذه الصفحة ليظهر
+                                if FileKind.of(f.url, isDir: false) == .audio {
+                                    dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { FileOpener.open(f.url) }
+                                } else { FileOpener.open(f.url) }
+                            } label: {
                                 HStack(spacing: 12) {
                                     FileThumb(item: f, size: 40)
                                     VStack(alignment: .leading, spacing: 2) {
