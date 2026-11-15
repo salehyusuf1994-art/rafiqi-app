@@ -369,8 +369,11 @@ struct SettingsView: View {
     var notifySection: some View {
         Section {
             Button { showNotify = true } label: {
-                TileRow(title: "الإشعارات", icon: "bell.badge.fill", color: .red,
-                        subtitle: "تنبيهات الصلاة وأصواتها")
+                HStack {
+                    TileRow(title: "الإشعارات", icon: "bell.badge.fill", color: .red,
+                            subtitle: "تنبيهات الصلاة وأصواتها")
+                    RowChevron()
+                }
             }
             .buttonStyle(.plain)
         }
@@ -380,10 +383,11 @@ struct SettingsView: View {
         Section {
             Button { showIcons = true } label: {
                 HStack {
-                    TileRow(title: "أيقونة التطبيق", icon: "app.badge.fill", color: .blue,
+                    TileRow(title: "أيقونة التطبيق", icon: "apps.iphone", color: .blue,
                             subtitle: "غيّر شكل رفيقي على الشاشة الرئيسية")
                     Image(iconPreview).resizable().scaledToFit().frame(width: 30, height: 30)
                         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    RowChevron()
                 }
             }
             .buttonStyle(.plain)
@@ -567,6 +571,16 @@ struct SettingsView: View {
 }
 
 // MARK: - طريقة حساب أوقات الصلاة
+
+/// سهم الصف مثل صفوف التنقّل (للصفوف التي تفتح صفحتها بزر)
+struct RowChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.forward")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(Color(uiColor: .tertiaryLabel))
+            .accessibilityHidden(true)
+    }
+}
 
 struct MethodPicker: View {
     @Binding var selected: String
