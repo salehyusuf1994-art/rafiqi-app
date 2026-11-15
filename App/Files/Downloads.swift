@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
+import AVFoundation
 
 // MARK: - التنزيلات: من رابط مباشر، بالخلفية، مع الإيقاف والاستئناف
 
@@ -16,8 +17,15 @@ struct DLItem: Codable, Identifiable, Equatable {
     var file: String? = nil       // المسار النسبي داخل «ملفاتي» بعد الاكتمال
     var error: String? = nil
     var headers: [String: String] = [:]
+    /// تحويل بعد التنزيل (جودة أقل، صوت فقط…)
+    var post: PostProcess? = nil
+    /// حالة إضافية (مثل «جارٍ التحويل»)
+    var note: String? = nil
+    /// تنزيل بث HLS (يتابعه HLSDownloader)
+    var external: Bool? = nil
+    var fraction: Double? = nil
 
-    var progress: Double { total > 0 ? min(1, Double(received) / Double(total)) : 0 }
+    var progress: Double { fraction ?? (total > 0 ? min(1, Double(received) / Double(total)) : 0) }
 }
 
 @MainActor
@@ -77,7 +85,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     /// يقبل الرابط مع ترويسات بصيغة «الرابط|Referer=…&User-Agent=…»
     @discardableResult
-    func add(_ text: String, name: String? = nil, headers: [String: String] = [:]) -> Bool {
+    func add(_ text: String, name: String? = nil, headers: [String: String] = [:], post: PostProcess = .none) -> Bool {
         var raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
         var hdrs = headers
         if let bar = raw.firstIndex(of: "|") {
@@ -92,7 +100,7 @@ final class DownloadManager: NSObject, ObservableObject {
         guard let u = URL(string: raw) ?? URL(string: raw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""),
               u.host != nil else { return false }
         let guess = name ?? Self.guessName(u)
-        items.insert(DLItem(url: u.absoluteString, name: guess, headers: hdrs), at: 0)
+        items.insert(DLItem(url: u.absoluteString, name: guess, headers: hdrs, post: post == .none ? nil : post), at: 0)
         save()
         pump()
         return true
@@ -110,7 +118,7 @@ final class DownloadManager: NSObject, ObservableObject {
     private func pump() {
         let active = items.filter { $0.state == .running }.count
         guard active < maxActive else { return }
-        for i in items.indices.reversed() where items[i].state == .queued {
+        for i in items.indices.reversed() where items[i].state == .queued && items[i].external != true {
             if items.filter({ $0.state == .running }).count >= maxActive { break }
             start(i)
         }
@@ -235,7 +243,11 @@ final class DownloadManager: NSObject, ObservableObject {
             items[i].received = size
             items[i].total = size
             store.touch()
-            if FilePrefs.autoPhotos {
+            if let post = items[i].post, post != .none {
+                items[i].state = .running
+                items[i].note = L("جارٍ التحويل…")
+                Task { await self.postProcess(id, file: dest, post: post) }
+            } else if FilePrefs.autoPhotos {
                 let k = FileKind.of(dest, isDir: false)
                 if k == .image || k == .video { Task { _ = await store.saveToPhotos([dest]) } }
             }
@@ -247,6 +259,75 @@ final class DownloadManager: NSObject, ObservableObject {
         speed[id] = nil
         save()
         pump()
+    }
+
+    // MARK: التحويل بعد التنزيل
+
+    func postProcess(_ id: UUID, file: URL, post: PostProcess) async {
+        do {
+            let out: URL
+            switch post {
+            case .videoMedium: out = try await MediaTools.compress(file, preset: AVAssetExportPreset960x540, progress: { _ in })
+            case .videoLow: out = try await MediaTools.compress(file, preset: AVAssetExportPreset640x480, progress: { _ in })
+            case .mp3: out = try await MediaTools.toMP3(file, progress: { _ in })
+            case .m4a: out = try await MediaTools.toM4A(file, progress: { _ in })
+            case .imageCompressed: out = try MediaTools.compressImage(file, quality: 0.6, maxSide: 2048)
+            case .jpg: out = try MediaTools.convertImage(file, to: "jpg")
+            case .png: out = try MediaTools.convertImage(file, to: "png")
+            case .none: out = file
+            }
+            // الناتج يأخذ اسم الملف الأصلي بامتداده الجديد، ويُحذف الأصل
+            if out != file {
+                let store = FileStore.shared
+                try? FileManager.default.removeItem(at: file)
+                let final = store.unique(file.deletingPathExtension().lastPathComponent + "." + out.pathExtension, in: file.deletingLastPathComponent())
+                try? FileManager.default.moveItem(at: out, to: final)
+                let result = FileManager.default.fileExists(atPath: final.path) ? final : out
+                if let i = index(id) {
+                    items[i].file = store.key(result)
+                    items[i].name = result.lastPathComponent
+                    let size = (try? result.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
+                    items[i].received = size; items[i].total = size
+                }
+                if FilePrefs.autoPhotos, [.image, .video].contains(FileKind.of(result, isDir: false)) { _ = await store.saveToPhotos([result]) }
+            }
+            if let i = index(id) { items[i].state = .done; items[i].note = nil; items[i].fraction = nil }
+        } catch {
+            if let i = index(id) { items[i].state = .failed; items[i].note = nil; items[i].error = L("اكتمل التنزيل لكن تعذّر التحويل: ") + error.localizedDescription }
+        }
+        FileStore.shared.touch()
+        save()
+    }
+
+    // MARK: تنزيلات البث (HLS)
+
+    func addExternal(url: String, name: String, post: PostProcess) -> UUID {
+        var it = DLItem(url: url, name: name, state: .running, post: post == .none ? nil : post)
+        it.external = true
+        it.fraction = 0
+        items.insert(it, at: 0)
+        save()
+        return it.id
+    }
+    func externalProgress(_ id: UUID, _ f: Double) { if let i = index(id) { items[i].fraction = min(1, f) } }
+    func externalStatus(_ id: UUID, _ s: String) { if let i = index(id) { items[i].note = s } }
+    func externalFailed(_ id: UUID, _ e: String) {
+        if let i = index(id) { items[i].state = .failed; items[i].error = e; items[i].note = nil }
+        save()
+    }
+    func finishExternal(_ id: UUID, file: URL) async {
+        guard let i = index(id) else { return }
+        items[i].file = FileStore.shared.key(file)
+        items[i].name = file.lastPathComponent
+        let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize).map { Int64($0) } ?? 0
+        items[i].received = size; items[i].total = size
+        if let post = items[i].post, post != .none {
+            items[i].note = L("جارٍ التحويل…")
+            await postProcess(id, file: file, post: post)
+        } else {
+            items[i].state = .done; items[i].note = nil; items[i].fraction = nil
+            FileStore.shared.touch(); save()
+        }
     }
 
     fileprivate func progress(_ id: UUID, received: Int64, total: Int64) {
@@ -317,6 +398,7 @@ struct DownloadsView: View {
     @ObservedObject private var dm = DownloadManager.shared
     @State private var link = ""
     @State private var bad = false
+    @State private var options: String?
     var open: (URL) -> Void
 
     var body: some View {
@@ -359,6 +441,8 @@ struct DownloadsView: View {
         }
     }
 
+    private var optionsBinding: Binding<Bool> { Binding(get: { options != nil }, set: { if !$0 { options = nil } }) }
+
     private var linkBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "link").foregroundStyle(Theme.sub)
@@ -379,12 +463,16 @@ struct DownloadsView: View {
         .padding(.leading, 12).padding(.trailing, 5).padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.edge, lineWidth: 1))
+        .sheet(isPresented: optionsBinding) { DownloadOptionsSheet(link: options ?? "") { _ in } }
     }
 
     private func go() {
-        guard !link.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        bad = !dm.add(link)
-        if !bad { link = "" }
+        let t = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        guard LinkInspector.normalize(t)?.host != nil else { bad = true; return }
+        bad = false
+        options = t
+        link = ""
     }
 
     @ViewBuilder private func row(_ it: DLItem) -> some View {
@@ -417,7 +505,7 @@ struct DownloadsView: View {
         .onTapGesture {
             switch it.state {
             case .done: if let u = dm.fileURL(it) { open(u) }
-            case .failed: dm.retry(it.id)
+            case .failed: if it.external != true { dm.retry(it.id) }
             case .paused: dm.resume(it.id)
             default: break
             }
@@ -435,11 +523,12 @@ struct DownloadsView: View {
     @ViewBuilder private func controls(_ it: DLItem) -> some View {
         switch it.state {
         case .running, .queued:
-            circle("pause.fill") { dm.pause(it.id) }
+            if it.external == true || it.note != nil { ProgressView().tint(Theme.gold).frame(width: 34, height: 34) }
+            else { circle("pause.fill") { dm.pause(it.id) } }
         case .paused:
             circle("play.fill") { dm.resume(it.id) }
         case .failed:
-            circle("arrow.clockwise") { dm.retry(it.id) }
+            if it.external == true { circle("xmark") { dm.remove([it.id]) } } else { circle("arrow.clockwise") { dm.retry(it.id) } }
         case .done:
             circle("xmark") { dm.remove([it.id]) }
         }
@@ -456,7 +545,9 @@ struct DownloadsView: View {
     private func statusText(_ it: DLItem) -> String {
         switch it.state {
         case .queued: return L("بالانتظار")
-        case .running: return it.total > 0 ? ar("\(Int(it.progress * 100))%") : L("جارٍ التنزيل")
+        case .running:
+            if let n = it.note { return n }
+            return it.total > 0 || it.fraction != nil ? ar("\(Int(it.progress * 100))%") : L("جارٍ التنزيل")
         case .paused: return L("متوقف")
         case .done: return L("اكتمل")
         case .failed: return L("فشل")
