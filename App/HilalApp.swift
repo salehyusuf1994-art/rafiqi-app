@@ -118,6 +118,7 @@ struct ContentView: View {
     @ObservedObject private var tvRouter = TVRouter.shared
     @Environment(\.scenePhase) private var phase
     var body: some View {
+        let _ = NSLog("RFDBG content body")
         if SHOT.hasPrefix("notify") {
             NotifyCenterView()
         } else {
@@ -251,6 +252,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        let _ = NSLog("RFDBG settings body")
         NavigationStack {
           ScrollViewReader { proxy in
             List {
