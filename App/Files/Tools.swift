@@ -12,9 +12,9 @@ enum ToolKind: String, Identifiable, CaseIterable {
     // فيديو
     case mute, replaceAudio, rotate, crop, text, compress, gif, reverse
     // صور
-    case removeBG, ocr, barcode, compressImage, convertImage, rotateImage, toPDF, withAudio
+    case removeBG, ocr, barcode, compressImage, convertImage, rotateImage, toPDF, withAudio, scanImage
     // مستندات
-    case pdfText, editText, pdfPages
+    case pdfText, editText, pdfPages, docToPDF, print
     // عام للصوت والفيديو
     case metadata, burnSubs
 
@@ -52,6 +52,9 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .pdfText: return L("استخراج النص من PDF")
         case .editText: return L("تحرير النص")
         case .pdfPages: return L("تعديل الصفحات (ترتيب، حذف، تدوير)")
+        case .docToPDF: return L("تحويل إلى PDF")
+        case .print: return L("طباعة")
+        case .scanImage: return L("تحسين كمستند ممسوح (قص، فلاتر، توقيع)")
         case .metadata: return L("البيانات والصورة المصغّرة")
         case .burnSubs: return L("دمج الترجمة داخل الفيديو")
         }
@@ -89,6 +92,9 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .pdfText: return "doc.text.magnifyingglass"
         case .editText: return "square.and.pencil"
         case .pdfPages: return "doc.on.doc"
+        case .docToPDF: return "doc.richtext"
+        case .print: return "printer"
+        case .scanImage: return "doc.viewfinder"
         case .metadata: return "photo.badge.checkmark"
         case .burnSubs: return "captions.bubble"
         }
@@ -112,12 +118,14 @@ enum ToolKind: String, Identifiable, CaseIterable {
             ]
         case .image:
             return [
-                (L("أدوات الصورة"), [.removeBG, .ocr, .barcode, .rotateImage]),
-                (L("التحويل"), [.compressImage, .convertImage, .toPDF, .withAudio]),
+                (L("أدوات الصورة"), [.scanImage, .removeBG, .ocr, .barcode, .rotateImage]),
+                (L("التحويل"), [.compressImage, .convertImage, .toPDF, .withAudio, .print]),
             ]
         case .document:
             var t: [ToolKind] = []
             if it.ext == "pdf" { t.append(contentsOf: [.pdfPages, .pdfText]) }
+            if ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "html", "htm", "pages", "key", "numbers", "csv", "md"].contains(it.ext) { t.append(.docToPDF) }
+            t.append(.print)
             if ["txt", "md", "srt", "vtt", "csv", "json"].contains(it.ext) { t.append(.editText) }
             return t.isEmpty ? [] : [(L("أدوات المستند"), t)]
         default:
@@ -126,7 +134,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
     }
 
     /// أدوات تعمل مباشرة بلا إعدادات
-    var direct: Bool { [.toM4A, .toMP3, .toWAV, .mute, .rotate, .gif, .removeBG, .rotateImage, .toPDF, .burnSubs].contains(self) }
+    var direct: Bool { [.docToPDF, .toM4A, .toMP3, .toWAV, .mute, .rotate, .gif, .removeBG, .rotateImage, .toPDF, .burnSubs].contains(self) }
 }
 
 // MARK: - تشغيل الأداة في صفحة موحّدة (الإعدادات ← التقدّم ← النتيجة)
@@ -137,6 +145,16 @@ enum ToolRunner {
         // ننتظر إغلاق قائمة الإجراءات ثم نعرض صفحة الأداة
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 450_000_000)
+            if t == .print { FilePrinter.print([url]); return }
+            if t == .scanImage, let img = UIImage(contentsOfFile: url.path) {
+                let src = ScanProcessor.detectQuad(img).map { ScanProcessor.perspective(img, $0) } ?? img
+                let host = UIHostingController(rootView: ScanEditorHost(pages: [ScanPage(source: src)]).font(Theme.f(.body))
+                    .environment(\.layoutDirection, Lang.dir).digitsLocale())
+                host.overrideUserInterfaceStyle = .dark
+                host.modalPresentationStyle = .fullScreen
+                FileOpener.top()?.present(host, animated: true)
+                return
+            }
             let host = UIHostingController(rootView: ToolHost(tool: t, url: url).font(Theme.f(.body))
                 .environment(\.layoutDirection, Lang.dir).digitsLocale())
             host.overrideUserInterfaceStyle = .dark
@@ -581,8 +599,10 @@ struct ToolHost: View {
                 result = try await MediaTools.writeMetadata(url, title: metaTitle, artist: metaArtist, album: metaAlbum, art: cover, progress: p)
             case .burnSubs:
                 result = try await MediaTools.burnSubtitles(url, cues: VideoController.subtitles(for: url), progress: p)
-            case .pdfPages:
+            case .pdfPages, .print, .scanImage:
                 break
+            case .docToPDF:
+                result = try await DocToPDF.convert(url)
             case .editText:
                 try editBody.write(to: url, atomically: true, encoding: .utf8)
                 dismiss()

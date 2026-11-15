@@ -172,6 +172,7 @@ struct FolderContent: View {
     @State private var showPhotos = false
     @State private var showCamera = false
     @State private var showScanner = false
+    @State private var showScannerHome = false
     @State private var addingToPlaylist: [URL]? = nil
     @State private var reminding: FileItem?
     @State private var toast: String?
@@ -296,6 +297,7 @@ struct FolderContent: View {
             AddToPlaylistSheet(urls: addingToPlaylist ?? [])
         }
         .sheet(item: $reminding) { it in ReminderSheet(item: it) { msg in show(msg) } }
+        .fullScreenCover(isPresented: $showScannerHome) { ScannerHome() }
         .fullScreenCover(isPresented: $showScanner) {
             DocScanner { pdf in
                 if let pdf, let u = store.importData(pdf, name: L("مستند ممسوح") + ".pdf", to: dir) { show(LF("حُفظ «%@»", u.lastPathComponent)) }
@@ -318,11 +320,14 @@ struct FolderContent: View {
             Menu {
                 Button { newName = ""; askNewFolder = true } label: { Label("مجلد جديد", systemImage: "folder.badge.plus") }
                 Button { newName = ""; askNewNote = true } label: { Label("ملاحظة نصية", systemImage: "note.text.badge.plus") }
+                Button { showCamera = UIImagePickerController.isSourceTypeAvailable(.camera); if !showCamera { show(L("الكاميرا غير متاحة")) } } label: {
+                    Label("التقاط صورة أو فيديو", systemImage: "camera")
+                }
                 if VNDocumentCameraViewController.isSupported {
-                    Button { showScanner = true } label: { Label("مسح مستند (PDF)", systemImage: "doc.viewfinder") }
+                    Button { showScanner = true } label: { Label("مسح سريع إلى PDF", systemImage: "doc.viewfinder") }
                 }
             } label: { actionLabel("plus", L("إنشاء")) }
-            action("camera", L("التقاط")) { showCamera = UIImagePickerController.isSourceTypeAvailable(.camera); if !showCamera { show(L("الكاميرا غير متاحة")) } }
+            action("doc.viewfinder", L("الماسح")) { showScannerHome = true }
             action("photo.on.rectangle", L("من الصور")) { showPhotos = true }
             action("folder.badge.plus", L("من الملفات")) { importingFiles = true }
         }

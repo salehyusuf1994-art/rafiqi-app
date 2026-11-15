@@ -270,7 +270,10 @@ struct BrowserInner: View {
             navButton("chevron.forward", m.canForward) { m.web.goForward() }
             Spacer()
             if let u = m.web.url {
-                ShareLink(item: u) { Image(systemName: "square.and.arrow.up").font(.system(size: 18)).foregroundStyle(.white) }
+                Menu {
+                    ShareLink(item: u) { Label("مشاركة الرابط", systemImage: "square.and.arrow.up") }
+                    Button { Task { await savePDF() } } label: { Label("حفظ الصفحة PDF", systemImage: "doc.richtext") }
+                } label: { Image(systemName: "square.and.arrow.up").font(.system(size: 18)).foregroundStyle(.white).frame(width: 44, height: 36) }
                 Spacer()
                 navButton(m.isBookmarked ? "star.fill" : "star", true) { m.toggleBookmark() }
             }
@@ -307,6 +310,16 @@ struct BrowserInner: View {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    /// حفظ الصفحة الحالية PDF في «التنزيلات»
+    private func savePDF() async {
+        guard let data = try? await m.web.pdf() else { m.message = L("تعذّر حفظ الصفحة."); return }
+        let store = FileStore.shared
+        let dir = store.root.appendingPathComponent(L("التنزيلات"), isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let name = store.sanitize((m.title.isEmpty ? (m.web.url?.host ?? "page") : m.title)) + ".pdf"
+        if let u = store.importData(data, name: name, to: dir) { m.message = LF("حُفظت «%@»", u.lastPathComponent) }
     }
 
     private func links(_ title: String, _ list: [BrowserModel.Entry], clear: (() -> Void)?) -> some View {
