@@ -512,4 +512,8 @@ T.update({
 "النقل عبر الواي فاي": "Wi-Fi transfer",
 "قناة القرآن الكريم": "Quran TV",
 "الجمعة": "Friday",
+"تحويل إلى ملصق (واتساب)": "Make WhatsApp sticker",
+"ملصق": "Sticker",
+"يُقص العنصر البارز في الصورة ويوضع على خلفية شفافة بمقاس ملصقات واتساب (٥١٢×٥١٢).": "The main subject is cut out and placed on a transparent background at WhatsApp sticker size (512×512).",
+"لإضافته في واتساب: احفظه في «الصور»، ثم افتح الملصقات في أي محادثة ← «إنشاء ملصق» واختر الصورة.": "To add it in WhatsApp: save it to Photos, then open stickers in any chat → Create sticker and pick the image.",
 })

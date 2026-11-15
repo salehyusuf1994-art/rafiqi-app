@@ -12,7 +12,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
     // فيديو
     case mute, replaceAudio, rotate, crop, text, compress, gif, reverse
     // صور
-    case removeBG, ocr, barcode, compressImage, convertImage, rotateImage, toPDF, withAudio, scanImage
+    case removeBG, sticker, ocr, barcode, compressImage, convertImage, rotateImage, toPDF, withAudio, scanImage
     // مستندات
     case pdfText, editText, pdfPages, docToPDF, print
     // عام للصوت والفيديو
@@ -42,6 +42,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .gif: return L("تحويل إلى GIF")
         case .reverse: return L("عكس الفيديو")
         case .removeBG: return L("إزالة الخلفية")
+        case .sticker: return L("تحويل إلى ملصق (واتساب)")
         case .ocr: return L("استخراج النص من الصورة")
         case .barcode: return L("قراءة الباركود ورمز QR")
         case .compressImage: return L("ضغط الصورة")
@@ -82,6 +83,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .gif: return "photo.stack"
         case .reverse: return "backward"
         case .removeBG: return "person.crop.rectangle"
+        case .sticker: return "face.smiling"
         case .ocr: return "text.viewfinder"
         case .barcode: return "qrcode.viewfinder"
         case .compressImage: return "arrow.down.right.and.arrow.up.left"
@@ -118,7 +120,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
             ]
         case .image:
             return [
-                (L("أدوات الصورة"), [.scanImage, .removeBG, .ocr, .barcode, .rotateImage]),
+                (L("أدوات الصورة"), [.scanImage, .removeBG, .sticker, .ocr, .barcode, .rotateImage]),
                 (L("التحويل"), [.compressImage, .convertImage, .toPDF, .withAudio, .print]),
             ]
         case .document:
@@ -355,6 +357,11 @@ struct ToolHost: View {
                 .font(Theme.f(.body)).scrollContentBackground(.hidden)
                 .frame(minHeight: 320).padding(10)
                 .background(RoundedRectangle(cornerRadius: 16).fill(Theme.card))
+        case .sticker:
+            card {
+                note("يُقص العنصر البارز في الصورة ويوضع على خلفية شفافة بمقاس ملصقات واتساب (٥١٢×٥١٢).")
+                note("لإضافته في واتساب: احفظه في «الصور»، ثم افتح الملصقات في أي محادثة ← «إنشاء ملصق» واختر الصورة.")
+            }
         case .reverse:
             card { note("يُعكس الفيديو كاملًا بدون الصوت. المقاطع الطويلة تأخذ وقتًا أطول.") }
         case .removeMusic, .removeVocals:
@@ -587,6 +594,7 @@ struct ToolHost: View {
                 cues = r.srt
                 try await translateCues()
             case .removeBG: result = try await MediaTools.removeBackground(url)
+            case .sticker: result = try await MediaTools.sticker(url)
             case .ocr, .pdfText:
                 let t = try await MediaTools.recognizeText(url)
                 text = t

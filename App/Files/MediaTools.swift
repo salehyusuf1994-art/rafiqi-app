@@ -559,6 +559,39 @@ enum MediaTools {
         return dest
     }
 
+    /// ملصق واتساب: العنصر البارز مقصوصًا على خلفية شفافة ٥١٢×٥١٢ (PNG، وWebP إن دعمه النظام)
+    static func sticker(_ src: URL) async throws -> URL {
+        guard let ci = CIImage(contentsOf: src, options: [.applyOrientationProperty: true]) else { throw ToolError.failed(L("تعذّر فتح الصورة.")) }
+        let req = VNGenerateForegroundInstanceMaskRequest()
+        let h = VNImageRequestHandler(ciImage: ci)
+        try h.perform([req])
+        guard let r = req.results?.first else { throw ToolError.failed(L("لم يُعثر على عنصر بارز في الصورة.")) }
+        let px = try r.generateMaskedImage(ofInstances: r.allInstances, from: h, croppedToInstancesExtent: true)
+        let cut = CIImage(cvPixelBuffer: px)
+        guard let cg = CIContext().createCGImage(cut, from: cut.extent) else { throw ToolError.failed(L("تعذّر الحفظ.")) }
+        let side: CGFloat = 512, pad: CGFloat = 16
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1; fmt.opaque = false
+        let w = CGFloat(cg.width), hgt = CGFloat(cg.height)
+        let k = min((side - pad * 2) / w, (side - pad * 2) / hgt)
+        let rect = CGRect(x: (side - w * k) / 2, y: (side - hgt * k) / 2, width: w * k, height: hgt * k)
+        let img = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: fmt).image { _ in
+            UIImage(cgImage: cg).draw(in: rect)
+        }
+        guard let png = img.pngData() else { throw ToolError.failed(L("تعذّر الحفظ.")) }
+        let dest = output(for: src, suffix: L("ملصق"), ext: "png")
+        try png.write(to: dest)
+        // نسخة WebP (صيغة ملصقات واتساب) إن كان النظام يدعم ترميزها
+        let webp = "org.webmproject.webp"
+        if let types = CGImageDestinationCopyTypeIdentifiers() as? [String], types.contains(webp), let cgOut = img.cgImage {
+            let wURL = dest.deletingPathExtension().appendingPathExtension("webp")
+            if let d = CGImageDestinationCreateWithURL(wURL as CFURL, webp as CFString, 1, nil) {
+                CGImageDestinationAddImage(d, cgOut, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+                if !CGImageDestinationFinalize(d) { try? FileManager.default.removeItem(at: wURL) }
+            }
+        }
+        return dest
+    }
+
     /// استخراج النص من صورة أو PDF
     static func recognizeText(_ src: URL) async throws -> String {
         if src.pathExtension.lowercased() == "pdf" {
