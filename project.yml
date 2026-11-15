@@ -51,6 +51,8 @@ targets:
         buildPhase: resources
       - path: Resources/Models
         optional: true
+        excludes:
+          - ".cache/**"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.hilal.widgets
