@@ -66,6 +66,7 @@ targets:
         embed: true
       - package: ZIPFoundation
       - package: AMSMB2
+        embed: true   # مكتبة ديناميكية: يجب نسخها داخل التطبيق وإلا يُغلق عند الفتح
       - package: SwiftLAME
   HilalWidgets:
     type: app-extension
