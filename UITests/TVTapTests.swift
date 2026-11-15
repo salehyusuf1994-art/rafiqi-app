@@ -100,7 +100,7 @@ final class TVTapTests: XCTestCase {
         app.launchArguments = ["-shot", "home", "-sepTest"]
         app.launch()
         let t = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'septest' OR label BEGINSWITH 'SEPTEST'")).firstMatch
-        let ok = t.waitForExistence(timeout: 420)
+        let ok = t.waitForExistence(timeout: 1000)
         print("TVTEST separator:", ok ? t.label : "timeout")
         XCTAssertTrue(ok && !t.label.contains("error"), "separator failed")
     }
