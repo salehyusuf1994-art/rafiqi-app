@@ -573,9 +573,10 @@ struct TallClockView: View {
                     Fit("hm\(hj.m)_t", 70, 24, 0.85)
                 }
                 .frame(width: 72)
-                VStack(spacing: -16) {
-                    Digits(text: hh, size: 72, color: .white, bold: true, tight: true)
-                    Digits(text: mm, size: 72, color: TXT, bold: false, tight: true)
+                // تقارب بدون تلامس: كان ذيل رقم الساعة يدخل في الدقائق
+                VStack(spacing: -8) {
+                    Digits(text: hh, size: 70, color: .white, bold: true, tight: true)
+                    Digits(text: mm, size: 70, color: TXT, bold: false, tight: true)
                 }
                 .scaleEffect(x: 0.8, y: 1)
                 .frame(width: 84)

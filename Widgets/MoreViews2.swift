@@ -581,9 +581,9 @@ struct TickStackView: View {
                     if !Settings.use24h {
                         Text(ampm).font(.system(size: 11, weight: .semibold)).foregroundStyle(TXT)
                     }
-                    VStack(spacing: -12) {
-                        Digits(text: Settings.use24h ? ar(h12).leftPad2 : ar(h12), size: 62, color: .white, bold: true, tight: true)
-                        Digits(text: ar(c.minute ?? 0).leftPad2, size: 62, color: .white, bold: true, tight: true)
+                    VStack(spacing: -4) {
+                        Digits(text: Settings.use24h ? ar(h12).leftPad2 : ar(h12), size: 58, color: .white, bold: true, tight: true)
+                        Digits(text: ar(c.minute ?? 0).leftPad2, size: 58, color: .white, bold: true, tight: true)
                             .mask(LinearGradient(colors: [.white, .white.opacity(0.15)], startPoint: .top, endPoint: .bottom))
                     }
                 }
