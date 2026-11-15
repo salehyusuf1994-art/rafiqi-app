@@ -183,7 +183,7 @@ struct ContentView: View {
                 .allowsHitTesting(false)
         }
         .overlay(alignment: .center) {
-            if !sepTest.text.isEmpty { Text(verbatim: sepTest.text).font(.caption).padding(8).background(Color.black).accessibilityIdentifier("septest") }
+            if !sepTest.text.isEmpty { Text(verbatim: sepTest.text).font(.caption).padding(8).background(Color.black).accessibilityElement(children: .ignore).accessibilityLabel(sepTest.text).accessibilityIdentifier("septest").accessibilityAddTraits(.isStaticText) }
         }
         .tint(Theme.gold)
         .onOpenURL { url in

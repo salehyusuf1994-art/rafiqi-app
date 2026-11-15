@@ -788,3 +788,4 @@ T.update({
 'لا توجد قنوات مضافة.':'No added channels.',
 'مضافة يدويًا':'Added manually',
 })
+exec(open('en_files.py').read())
