@@ -768,7 +768,7 @@ struct CropView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { g in
-                let fit = AVMakeRectWithAspectRatioInsideRect(image.size, CGRect(origin: .zero, size: g.size))
+                let fit = AVMakeRect(aspectRatio: image.size, insideRect: CGRect(origin: .zero, size: g.size))
                 ZStack(alignment: .topLeading) {
                     Image(uiImage: image).resizable().scaledToFit().frame(width: g.size.width, height: g.size.height)
                     Path { p in
