@@ -127,8 +127,10 @@ jobs:
           print(p[-1]['udid'])")
           echo "sim: $UDID"; xcrun simctl list devices | grep "$UDID"
           set -o pipefail
-          xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Debug -destination "id=$UDID" \
-            -derivedDataPath simbuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build > sim.log 2>&1 || { grep -E "error:" sim.log | head -50; exit 1; }
+          simb() { xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Debug -destination "id=$UDID" \
+            -derivedDataPath simbuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build > sim.log 2>&1; }
+          # خطأ متقطّع في بيئة GitHub (AssetCatalogSimulatorAgent): إقلاع المحاكي ثم إعادة المحاولة مرة
+          simb || { grep -q "AssetCatalogSimulatorAgent" sim.log && { xcrun simctl boot $UDID || true; sleep 20; simb; }; } || { grep -E "error:" sim.log | head -50; exit 1; }
           APP=simbuild/Build/Products/Debug-iphonesimulator/Hilal.app
           xcrun simctl boot $UDID || true
           xcrun simctl bootstatus $UDID -b
