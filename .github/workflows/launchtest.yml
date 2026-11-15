@@ -1,0 +1,61 @@
+name: Launch test (Release build, simulator)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  launch:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Fetch AI model
+        run: |
+          pip3 install -q huggingface_hub --break-system-packages || pip3 install -q huggingface_hub
+          python3 -c "from huggingface_hub import snapshot_download; snapshot_download('gyoom/UVR-MDX-CoreML', allow_patterns=['UVR_MDXNET_9482.mlpackage/*'], local_dir='Resources/Models')" || echo "model download failed"
+          rm -rf Resources/Models/.cache
+      - run: brew install xcodegen && xcodegen generate
+      - name: Build Release for simulator, launch, collect crashes
+        continue-on-error: true
+        run: |
+          mkdir -p lout
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']]
+          p=[x for x in c if 'Pro Max' in x['name']] or c
+          print(p[-1]['udid'])")
+          xcrun simctl boot $UDID || true
+          xcrun simctl bootstatus $UDID -b
+          xcrun simctl spawn $UDID defaults write -g AppleLanguages -array ar
+          xcrun simctl spawn $UDID defaults write -g AppleLocale ar_SA
+          xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Release -destination "id=$UDID" \
+            -derivedDataPath rbuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- build > lout/build.log 2>&1 || { grep -E "error:" lout/build.log | head; }
+          APP=$(ls -d rbuild/Build/Products/Release-iphonesimulator/Hilal.app)
+          xcrun simctl install $UDID "$APP"
+          for i in 1 2 3; do
+            xcrun simctl launch --console-pty $UDID app.hilal.widgets > lout/console_$i.txt 2>&1 &
+            sleep 25
+            xcrun simctl io $UDID screenshot lout/launch_$i.png || true
+            xcrun simctl spawn $UDID launchctl list | grep -i hilal > lout/running_$i.txt || echo "NOT RUNNING" > lout/running_$i.txt
+            cat lout/running_$i.txt
+            xcrun simctl terminate $UDID app.hilal.widgets || true
+            sleep 3
+          done
+          cp ~/Library/Logs/DiagnosticReports/Hilal* lout/ 2>/dev/null || true
+          ls ~/Library/Logs/DiagnosticReports/ | tail -20
+          xcrun simctl spawn $UDID log show --last 15m --style compact --predicate 'process == "Hilal"' > lout/applog.txt 2>&1 || true
+          grep -i -E "fatal|crash|exception|terminat|assert|abort" lout/applog.txt | head -40
+          ls lout
+      - name: Publish
+        run: |
+          mkdir -p pub && cd pub && git init -q && git checkout -q -b launchout
+          cp -R ../lout/* . 2>/dev/null || true
+          git add -A && git -c user.name=ci -c user.email=ci@local commit -qm "launch test" && \
+          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} launchout
