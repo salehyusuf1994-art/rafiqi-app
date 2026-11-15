@@ -177,7 +177,7 @@ final class TVTapTests: XCTestCase {
     }
 
     /// تغيير أيقونة التطبيق فعليًا ثم إرجاعها للأصلية
-    func testAppIconChange() throws {
+    func testZAppIconChange() throws {
         let app = XCUIApplication()
         app.launchArguments = []
         app.launch()

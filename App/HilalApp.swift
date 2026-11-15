@@ -181,10 +181,6 @@ struct ContentView: View {
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
-        // نتيجة اختبار الفصل (وضع الفحص فقط): تنبيه نظامي يقرؤه الفحص الآلي بثبات
-        .alert(Text(verbatim: sepTest.text), isPresented: Binding(get: { !sepTest.text.isEmpty }, set: { _ in })) {
-            Button("OK") {}
-        }
         .tint(Theme.gold)
         .onOpenURL { url in
             // ملف مُرسل من تطبيق آخر («مشاركة» ← رفيقي أو «فتح باستخدام»): يُحفظ في «الواردة»
@@ -231,7 +227,13 @@ struct ContentView: View {
                 Task.detached {
                     let r = await Separator.selfTest()
                     NSLog("%@", r)
-                    await MainActor.run { SepTestResult.shared.text = r }
+                    // نتيجة اختبار الفصل (وضع الفحص فقط): تنبيه نظامي يقرؤه الفحص الآلي بثبات
+                    await MainActor.run {
+                        SepTestResult.shared.text = r
+                        let a = UIAlertController(title: r, message: nil, preferredStyle: .alert)
+                        a.addAction(UIAlertAction(title: "OK", style: .default))
+                        FileOpener.top()?.present(a, animated: true)
+                    }
                 }
             }
             tvRouter.checkPending()
