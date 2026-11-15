@@ -120,12 +120,16 @@ let SHOT = UserDefaults.standard.string(forKey: "shot") ?? ""
 let SHOT_FILTER = UserDefaults.standard.string(forKey: "filter") ?? "الكل"
 let SHOT_WIDGET = SHOT == "detail" ? (UserDefaults.standard.string(forKey: "wid") ?? "") : ""
 
+/// نتيجة اختبار الفصل الذاتي (تظهر نصًا ليقرأها الفحص الآلي)
+@MainActor final class SepTestResult: ObservableObject { static let shared = SepTestResult(); @Published var text = "" }
+
 struct ContentView: View {
     @State private var tab = ["home": 0, "gallery": 1, "detail": 1, "notify": 2, "notifyd": 2,
                               "settings": 3, "settings2": 3, "settings3": 3, "cities": 3, "style": 3, "media": 4, "media2": 4, "media3": 4, "media4": 4, "media5": 4,
                               "files": 5][SHOT] ?? 0
     @ObservedObject private var tvRouter = TVRouter.shared
     @ObservedObject private var filesRouter = FilesRouter.shared
+    @ObservedObject private var sepTest = SepTestResult.shared
     @Environment(\.scenePhase) private var phase
     var body: some View {
         let _ = NSLog("RFDBG content body")
@@ -178,6 +182,9 @@ struct ContentView: View {
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
+        .overlay(alignment: .center) {
+            if !sepTest.text.isEmpty { Text(verbatim: sepTest.text).font(.caption).padding(8).background(Color.black).accessibilityIdentifier("septest") }
+        }
         .tint(Theme.gold)
         .onOpenURL { url in
             // ملف مُرسل من تطبيق آخر («مشاركة» ← رفيقي أو «فتح باستخدام»): يُحفظ في «الواردة»
@@ -220,6 +227,13 @@ struct ContentView: View {
             TVBridge.open = { id in TVRouter.shared.show(id: id) }
             // إعادة ربط التنزيلات الجارية بالخلفية
             _ = DownloadManager.shared
+            if ProcessInfo.processInfo.arguments.contains("-sepTest") {
+                Task.detached {
+                    let r = await Separator.selfTest()
+                    NSLog("%@", r)
+                    await MainActor.run { SepTestResult.shared.text = r }
+                }
+            }
             tvRouter.checkPending()
             Backdrop.ensureCrops()
             // إذن الإشعارات: يُطلب عند أول تشغيل (التنبيهات مفعّلة افتراضيًا فلم يكن يُطلب أبدًا)

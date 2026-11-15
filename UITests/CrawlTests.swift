@@ -47,17 +47,21 @@ final class CrawlTests: XCTestCase {
     }
 
     static let digits = CharacterSet(charactersIn: "0123456789٠١٢٣٤٥٦٧٨٩:٫.,،%")
-    func clean(_ s: String) -> String { String(s.unicodeScalars.filter { !Self.digits.contains($0) }).trimmingCharacters(in: .whitespaces) }
+    /// الأرقام تُحذف فقط من الأوقات والعدّادات (فيها «:»)؛ التواريخ تبقى كما هي
+    func clean(_ s: String) -> String {
+        guard s.contains(":") || s.contains("٪") || s.contains("%") else { return s.trimmingCharacters(in: .whitespaces) }
+        return String(s.unicodeScalars.filter { !Self.digits.contains($0) }).trimmingCharacters(in: .whitespaces)
+    }
 
     /// بصمة الشاشة: نصوص وأزرار وقيمها، بدون أرقام (العدّادات تتغيّر كل ثانية)
     func sig() -> Set<String> {
         if app.state != .runningForeground { return ["<APP:\(app.state.rawValue)>"] }
         var r = Set<String>()
-        for e in snap() where [.staticText, .button, .switch, .cell, .textField, .navigationBar, .alert, .sheet].contains(e.elementType) {
+        for e in snap() where [.staticText, .button, .switch, .cell, .textField, .navigationBar, .alert, .sheet, .image, .slider].contains(e.elementType) {
             let v = (e.value as? String).map(clean) ?? ""
-            let l = clean(e.label)
+            let l = clean(e.label.isEmpty ? e.identifier : e.label)
             if l.isEmpty && v.isEmpty && e.elementType != .alert && e.elementType != .sheet { continue }
-            r.insert("\(e.elementType.rawValue)|\(l)|\(v)")
+            r.insert("\(e.elementType.rawValue)|\(l)|\(v)|\(e.isSelected)")
         }
         return r
     }

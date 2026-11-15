@@ -8,7 +8,7 @@ import PhotosUI
 
 enum ToolKind: String, Identifiable, CaseIterable {
     // صوت وفيديو
-    case trim, toM4A, toMP3, toWAV, ringtone, speed, adjustAudio, transcribe, translate
+    case trim, toM4A, toMP3, toWAV, ringtone, speed, adjustAudio, transcribe, translate, removeMusic, removeVocals
     // فيديو
     case mute, replaceAudio, rotate, crop, text, compress, gif, reverse
     // صور
@@ -26,6 +26,8 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .toM4A: return L("تحويل إلى M4A (صوت)")
         case .toWAV: return L("تحويل إلى WAV")
         case .toMP3: return L("تحويل إلى MP3")
+        case .removeMusic: return L("إزالة الموسيقى (إبقاء الصوت البشري)")
+        case .removeVocals: return L("إزالة الصوت البشري (إبقاء الموسيقى)")
         case .ringtone: return L("تحويل إلى نغمة رنين")
         case .speed: return L("تغيير السرعة")
         case .adjustAudio: return L("تعديل الصوت (المستوى والتلاشي)")
@@ -61,6 +63,8 @@ enum ToolKind: String, Identifiable, CaseIterable {
         case .toM4A: return "waveform"
         case .toWAV: return "waveform.path"
         case .toMP3: return "music.note"
+        case .removeMusic: return "music.note.slash"
+        case .removeVocals: return "person.wave.2.fill"
         case .ringtone: return "bell"
         case .speed: return "gauge.with.dots.needle.67percent"
         case .adjustAudio: return "slider.horizontal.3"
@@ -96,12 +100,14 @@ enum ToolKind: String, Identifiable, CaseIterable {
             return [
                 (L("تعديل الفيديو"), [.trim, .text, .crop, .rotate, .speed, .reverse, .mute, .replaceAudio, .compress, .metadata]),
                 (L("التحويل"), [.toMP3, .toM4A, .gif, .ringtone]),
+                (L("الذكاء الاصطناعي"), [.removeMusic, .removeVocals]),
                 (L("النص والترجمة"), [.transcribe, .translate] + (VideoController.subtitles(for: it.url).isEmpty ? [] : [.burnSubs])),
             ]
         case .audio:
             return [
                 (L("تعديل الصوت"), [.trim, .adjustAudio, .speed, .metadata]),
                 (L("التحويل"), [.toMP3, .toM4A, .toWAV, .ringtone]),
+                (L("الذكاء الاصطناعي"), [.removeMusic, .removeVocals]),
                 (L("النص"), [.transcribe]),
             ]
         case .image:
@@ -333,6 +339,13 @@ struct ToolHost: View {
                 .background(RoundedRectangle(cornerRadius: 16).fill(Theme.card))
         case .reverse:
             card { note("يُعكس الفيديو كاملًا بدون الصوت. المقاطع الطويلة تأخذ وقتًا أطول.") }
+        case .removeMusic, .removeVocals:
+            card {
+                note(tool == .removeMusic
+                     ? "يفصل الذكاء الاصطناعي الصوت البشري ويحذف الموسيقى والإيقاعات. تتم المعالجة على جوالك بدون إنترنت، وتأخذ تقريبًا دقيقة لكل خمس دقائق من المقطع."
+                     : "يحذف الذكاء الاصطناعي الصوت البشري ويبقي الموسيقى. تتم المعالجة على جوالك بدون إنترنت، وتأخذ تقريبًا دقيقة لكل خمس دقائق من المقطع.")
+                if !Separator.available { note("نموذج الفصل غير مضمّن في هذه النسخة.") }
+            }
         case .pdfPages:
             PDFPagesEditor(url: url) { dismiss() }
         case .metadata:
@@ -515,6 +528,19 @@ struct ToolHost: View {
             case .toM4A: result = try await MediaTools.toM4A(url, progress: p)
             case .toWAV: result = try await MediaTools.toWAV(url, progress: p)
             case .toMP3: result = try await MediaTools.toMP3(url, progress: p)
+            case .removeMusic, .removeVocals:
+                let keep: Separator.Keep = tool == .removeMusic ? .vocals : .music
+                let video = MediaTools.isVideo(url)
+                let stem = try await Separator.separate(url, keep: keep, progress: { v in Task { @MainActor in progress = video ? v * 0.8 : v } })
+                if video {
+                    let v = try await MediaTools.replaceAudio(url, with: stem, keepOriginal: false, progress: { x in Task { @MainActor in progress = 0.8 + x * 0.2 } })
+                    try? FileManager.default.removeItem(at: stem)
+                    let named = MediaTools.output(for: url, suffix: keep == .vocals ? L("بدون موسيقى") : L("بدون صوت بشري"), ext: "mp4")
+                    try? FileManager.default.moveItem(at: v, to: named)
+                    result = FileManager.default.fileExists(atPath: named.path) ? named : v
+                } else {
+                    result = stem
+                }
             case .speed: result = try await MediaTools.speed(url, factor: speed, progress: p)
             case .adjustAudio: result = try await MediaTools.adjustAudio(url, gainDB: Float(gain), fadeIn: fadeIn ? 3 : 0, fadeOut: fadeOut ? 3 : 0, progress: p)
             case .mute: result = try await MediaTools.mute(url, progress: p)

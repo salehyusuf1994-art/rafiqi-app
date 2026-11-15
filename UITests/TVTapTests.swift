@@ -93,4 +93,41 @@ final class TVTapTests: XCTestCase {
         print("TVTEST notification prompt shown:", found)
         XCTAssertTrue(found, "notification permission was not requested")
     }
+
+    /// فصل الصوت بالذكاء الاصطناعي: كلام + نغمة
+    func testSeparator() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-shot", "home", "-sepTest"]
+        app.launch()
+        let t = app.staticTexts["septest"]
+        let ok = t.waitForExistence(timeout: 420)
+        print("TVTEST separator:", ok ? t.label : "timeout")
+        XCTAssertTrue(ok && !t.label.contains("error"), "separator failed")
+    }
+
+    /// الإشعارات: الضغط على بطاقة صلاة يفتح صفحتها
+    func testNotifyCardOpens() throws {
+        let app = XCUIApplication()
+        app.launchArguments = []
+        app.launch()
+        sleep(3)
+        let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for _ in 0..<3 { let a = sb.alerts.firstMatch; if a.waitForExistence(timeout: 3) { a.buttons.element(boundBy: a.buttons.count > 1 ? 1 : 0).tap() } }
+        app.buttons["الإعدادات"].firstMatch.tap()
+        sleep(2)
+        var row = app.buttons["الإشعارات، تنبيهات الصلاة وأصواتها"].firstMatch
+        if !row.exists { row = app.staticTexts["الإشعارات"].firstMatch }
+        for _ in 0..<6 where !row.isHittable { app.swipeUp(); sleep(1) }
+        row.tap()
+        sleep(3)
+        shot(app, "7_notify_center")
+        let fajr = app.buttons.containing(NSPredicate(format: "label CONTAINS 'مفعّل' OR label CONTAINS 'متوقّف'")).firstMatch
+        print("TVTEST notify tile exists:", fajr.exists, fajr.label)
+        fajr.tap()
+        sleep(3)
+        shot(app, "8_notify_detail")
+        let opened = app.staticTexts["تنبيه دخول الوقت"].exists || app.staticTexts["تنبيه عند حلوله"].exists || app.switches.count > 0
+        print("TVTEST notify detail opened:", opened)
+        XCTAssertTrue(opened, "prayer card did not open")
+    }
 }

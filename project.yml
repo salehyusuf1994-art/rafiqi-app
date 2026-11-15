@@ -49,6 +49,8 @@ targets:
         buildPhase: resources
       - path: Resources/ksa_cities.json
         buildPhase: resources
+      - path: Resources/Models
+        optional: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.hilal.widgets
