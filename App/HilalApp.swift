@@ -181,8 +181,9 @@ struct ContentView: View {
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
-        .overlay(alignment: .center) {
-            if !sepTest.text.isEmpty { Text(verbatim: sepTest.text).font(.caption).padding(8).background(Color.black).accessibilityElement(children: .ignore).accessibilityLabel(sepTest.text).accessibilityIdentifier("septest").accessibilityAddTraits(.isStaticText) }
+        // نتيجة اختبار الفصل (وضع الفحص فقط): تنبيه نظامي يقرؤه الفحص الآلي بثبات
+        .alert(Text(verbatim: sepTest.text), isPresented: Binding(get: { !sepTest.text.isEmpty }, set: { _ in })) {
+            Button("OK") {}
         }
         .tint(Theme.gold)
         .onOpenURL { url in

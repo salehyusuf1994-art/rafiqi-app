@@ -99,10 +99,19 @@ final class TVTapTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-shot", "home", "-sepTest"]
         app.launch()
-        let t = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'septest' OR label BEGINSWITH 'SEPTEST'")).firstMatch
-        let ok = t.waitForExistence(timeout: 1000)
-        print("TVTEST separator:", ok ? t.label : "timeout")
-        XCTAssertTrue(ok && !t.label.contains("error"), "separator failed")
+        let t = app.alerts.firstMatch
+        let ok = t.waitForExistence(timeout: 600)
+        let label = ok ? t.label : "timeout"
+        print("TVTEST separator:", label)
+        shot(app, "12_separator")
+        XCTAssertTrue(ok && label.hasPrefix("SEPTEST") && !label.contains("error"), "separator failed")
+        // دقة الفصل: الصوت البشري يطابق الكلام، والموسيقى تطابق النغمة
+        func val(_ k: String) -> Double {
+            guard let r = label.range(of: k + "=") else { return 0 }
+            return Double(label[r.upperBound...].prefix(4)) ?? 0
+        }
+        XCTAssertGreaterThan(val("vocals~speech"), 0.8, "vocals not clean")
+        XCTAssertGreaterThan(val("music~tone"), 0.8, "music not clean")
     }
 
     /// الإشعارات: الضغط على بطاقة صلاة يفتح صفحتها
