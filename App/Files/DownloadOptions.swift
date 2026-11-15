@@ -246,14 +246,7 @@ struct DownloadOptionsSheet: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let sub {
-                    DownloadOptionsPage(link: sub.url, referer: sub.referer, done: done, close: { dismiss() }, open: open)
-                        .id(sub.url)
-                } else {
-                    DownloadOptionsPage(link: link, done: done, close: { dismiss() }, open: open)
-                }
-            }
+            DownloadOptionsPage(link: sub?.url ?? link, referer: sub?.referer, done: done, close: { dismiss() }, open: open)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } }
                 if sub != nil {
@@ -304,7 +297,9 @@ struct DownloadOptionsPage: View {
             .background(AppBackground())
             .navigationTitle("خيارات التنزيل")
             .navigationBarTitleDisplayMode(.inline)
-        .task {
+        // يُعاد الفحص كلما تغيّر الرابط (عند اختيار ملف من الصفحة أو الرجوع منها)
+        .task(id: link) {
+            probe = nil; error = nil
             guard let u = LinkInspector.normalize(link) else { error = L("الرابط غير صالح."); return }
             do { probe = try await LinkInspector.probe(u, referer: referer) } catch { self.error = error.localizedDescription }
         }
