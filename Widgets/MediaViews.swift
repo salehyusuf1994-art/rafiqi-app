@@ -23,6 +23,7 @@ struct MediaArt: View {
         case .quran: return [Color(red: 0.86, green: 0.70, blue: 0.42), Color(red: 0.42, green: 0.28, blue: 0.14), Color(red: 0.12, green: 0.10, blue: 0.09)]
         case .radio: return [Color(red: 0.20, green: 0.62, blue: 0.70), Color(red: 0.12, green: 0.24, blue: 0.48), Color(red: 0.06, green: 0.08, blue: 0.16)]
         case .music: return [Color(red: 0.93, green: 0.38, blue: 0.56), Color(red: 0.52, green: 0.36, blue: 0.86), Color(red: 0.28, green: 0.62, blue: 0.86)]
+        case .files: return [Color(red: 0.36, green: 0.66, blue: 0.66), Color(red: 0.16, green: 0.30, blue: 0.34), Color(red: 0.07, green: 0.09, blue: 0.12)]
         }
     }
     var icon: String {
@@ -30,6 +31,7 @@ struct MediaArt: View {
         case .quran: return "book.closed.fill"
         case .radio: return "dot.radiowaves.left.and.right"
         case .music: return "music.note"
+        case .files: return "waveform"
         }
     }
     var body: some View {

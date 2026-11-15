@@ -39,7 +39,7 @@ enum RadioCountries {
         ("", "كل الدول"), ("SA", "السعودية"), ("AE", "الإمارات"), ("KW", "الكويت"), ("QA", "قطر"), ("BH", "البحرين"),
         ("OM", "عُمان"), ("YE", "اليمن"), ("IQ", "العراق"), ("JO", "الأردن"), ("SY", "سوريا"), ("LB", "لبنان"),
         ("PS", "فلسطين"), ("EG", "مصر"), ("SD", "السودان"), ("LY", "ليبيا"), ("TN", "تونس"), ("DZ", "الجزائر"),
-        ("MA", "المملكة المغربية"), ("MR", "موريتانيا"),
+        ("MA", "المغرب"), ("MR", "موريتانيا"),
     ]
     static func name(_ code: String) -> String { list.first { $0.0 == code }.map { L($0.1) } ?? code }
 }
@@ -86,7 +86,7 @@ struct StationMeta: View {
                 Text(verbatim: station.quality).environment(\.layoutDirection, .leftToRight)
             }
         }
-        .font(.caption2).foregroundStyle(Theme.sub).lineLimit(1)
+        .font(Theme.f(.caption2)).foregroundStyle(Theme.sub).lineLimit(1)
     }
 }
 
@@ -98,7 +98,7 @@ struct LiveBadge: View {
             // نبض النقطة الحمراء أثناء البث فقط
             Circle().fill(on ? Color.red : Theme.sub).frame(width: 7, height: 7)
                 .phaseAnimator(on ? [1.0, 0.3] : [1.0]) { v, op in v.opacity(op) } animation: { _ in .easeInOut(duration: 0.8) }
-            Text("مباشر").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+            Text("مباشر").font(Theme.font(11, .bold)).foregroundStyle(.white)
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(Capsule().fill(on ? Color.red.opacity(0.22) : Theme.card))
@@ -188,10 +188,10 @@ struct RadioPlayerCard: View {
                         .minimumScaleFactor(0.8)
                     if let t = p.streamTitle {
                         Label { Text(verbatim: t).lineLimit(2) } icon: { Image(systemName: "waveform") }
-                            .font(.caption).foregroundStyle(Theme.gold)
+                            .font(Theme.f(.caption)).foregroundStyle(Theme.gold)
                     }
                     let meta = [st?.flag ?? "", st?.quality ?? ""].filter { !$0.isEmpty }.joined(separator: "  ")
-                    if !meta.isEmpty { Text(verbatim: meta).font(.caption2.monospacedDigit()).foregroundStyle(Theme.sub) }
+                    if !meta.isEmpty { Text(verbatim: meta).font(Theme.f(.caption2).monospacedDigit()).foregroundStyle(Theme.sub) }
                 }
                 Spacer(minLength: 0)
             }
@@ -211,9 +211,9 @@ struct RadioPlayerCard: View {
             .environment(\.layoutDirection, .leftToRight)
 
             HStack(spacing: 10) {
-                Image(systemName: "speaker.fill").font(.caption).foregroundStyle(Theme.sub)
+                Image(systemName: "speaker.fill").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 SystemVolume().frame(height: 30)
-                Image(systemName: "speaker.wave.3.fill").font(.caption).foregroundStyle(Theme.sub)
+                Image(systemName: "speaker.wave.3.fill").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             }
             .environment(\.layoutDirection, .leftToRight)
 
@@ -229,7 +229,7 @@ struct RadioPlayerCard: View {
                 Spacer()
                 VStack(spacing: 3) {
                     RoutePicker().frame(width: 26, height: 22)
-                    Text("AirPlay").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.sub)
+                    Text("AirPlay").font(Theme.font(10, .medium)).foregroundStyle(Theme.sub)
                 }
                 .frame(minWidth: 64)
                 Spacer()
@@ -237,7 +237,7 @@ struct RadioPlayerCard: View {
                     ShareLink(item: u, subject: Text(st.name)) {
                         VStack(spacing: 3) {
                             Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                            Text("مشاركة").font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.sub)
+                            Text("مشاركة").font(Theme.font(10, .medium)).foregroundStyle(Theme.sub)
                         }
                         .frame(minWidth: 64)
                     }
@@ -265,7 +265,7 @@ struct RadioPlayerCard: View {
         Button(action: a) {
             VStack(spacing: 3) {
                 Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(on ? Theme.gold : .white)
-                Text(L(title)).font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.sub).lineLimit(1)
+                Text(L(title)).font(Theme.font(10, .medium)).foregroundStyle(Theme.sub).lineLimit(1)
             }
             .frame(minWidth: 64)
         }
@@ -292,7 +292,7 @@ struct StationRow: View {
                 HStack(spacing: 12) {
                     StationArt(station: station, size: 42)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(verbatim: station.name).font(.body.weight(current ? .semibold : .regular))
+                        Text(verbatim: station.name).font(Theme.f(.body, current ? .semibold : .regular))
                             .foregroundStyle(current ? Theme.gold : .white).lineLimit(1)
                         StationMeta(station: station)
                     }
@@ -386,8 +386,8 @@ struct StationBrowser: View {
                     HStack { Spacer(); ProgressView().tint(Theme.gold); Spacer() }.padding(.vertical, 20)
                 } else if loaded && results.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: "antenna.radiowaves.left.and.right.slash").font(.title2).foregroundStyle(Theme.sub)
-                        Text("لا توجد نتائج. جرّب اسمًا آخر أو دولة أخرى.").font(.footnote).foregroundStyle(Theme.sub)
+                        Image(systemName: "antenna.radiowaves.left.and.right.slash").font(Theme.f(.title2)).foregroundStyle(Theme.sub)
+                        Text("لا توجد نتائج. جرّب اسمًا آخر أو دولة أخرى.").font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 20)
                 }
@@ -415,8 +415,8 @@ struct StationBrowser: View {
 
     private func filterChip(_ icon: String, _ t: String) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.caption)
-            Text(verbatim: t).font(.footnote.weight(.semibold))
+            Image(systemName: icon).font(Theme.f(.caption))
+            Text(verbatim: t).font(Theme.f(.footnote, .semibold))
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
         }
         .foregroundStyle(.white)
@@ -456,7 +456,7 @@ struct FavoritesManager: View {
             Section {
                 if saved.isEmpty {
                     Text("لا توجد إذاعات في المفضلة بعد. اضغط النجمة بجانب أي إذاعة لإضافتها.")
-                        .font(.footnote).foregroundStyle(Theme.sub)
+                        .font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                 }
                 ForEach(saved) { s in
                     HStack(spacing: 12) {
@@ -565,7 +565,7 @@ struct RadioCategoryGrid: View {
                         Image(systemName: c.icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(c.color)
                             .frame(width: 32, height: 32)
                             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(c.color.opacity(0.16)))
-                        Text(L(c.title)).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        Text(L(c.title)).font(Theme.f(.subheadline, .semibold)).foregroundStyle(.white)
                             .lineLimit(1).minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                     }
@@ -625,7 +625,7 @@ struct RadioCountryGrid: View {
         HStack(spacing: 10) {
             Text(verbatim: flag).font(.system(size: 22))
                 .frame(width: 32, height: 32)
-            Text(verbatim: title).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+            Text(verbatim: title).font(Theme.f(.subheadline, .semibold)).foregroundStyle(.white)
                 .lineLimit(1).minimumScaleFactor(0.75)
             Spacer(minLength: 0)
         }
@@ -653,7 +653,7 @@ struct CountryRadioView: View {
                     Text(verbatim: country.flag).font(.system(size: 44))
                     VStack(alignment: .leading, spacing: 3) {
                         Text(verbatim: LF("راديو %@", country.name)).font(Theme.title(24)).foregroundStyle(.white)
-                        Text("اختر قسمًا، أو اضغط «كل الإذاعات»").font(.caption).foregroundStyle(Theme.sub)
+                        Text("اختر قسمًا، أو اضغط «كل الإذاعات»").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                     }
                     Spacer(minLength: 0)
                 }
@@ -790,15 +790,15 @@ struct PlaylistView: View {
                 Section {
                     if pl.stations.isEmpty {
                         Text("القائمة فارغة. اضغط «إضافة إذاعات» واختر دولة، ثم اضغط زر الإضافة بجانب أي إذاعة.")
-                            .font(.footnote).foregroundStyle(Theme.sub)
+                            .font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                     }
                     ForEach(pl.stations) { s in StationRow(station: s, saved: $saved, showAdd: false) }
                         .onMove { from, to in var l = pl.stations; l.move(fromOffsets: from, toOffset: to); store.setStations(id, l) }
                         .onDelete { idx in var l = pl.stations; l.remove(atOffsets: idx); store.setStations(id, l) }
                 } header: {
-                    Text(verbatim: LF("%@ إذاعة", ar(pl.stations.count)))
+                    Text(verbatim: stationsText(pl.stations.count))
                 } footer: {
-                    Text("اسحب للحذف، أو اضغط «تعديل» لإعادة الترتيب. إذاعات القوائم تظهر في بكرة الويدجت وتتنقل بينها بالأمام والخلف.")
+                    Text("اسحب للحذف، أو اضغط «تعديل» لإعادة الترتيب. تظهر إذاعات القوائم في ويدجت البكرة، وتنتقل بينها بزرّي التالي والسابق.")
                 }
                 Section {
                     NavigationLink { AllCountriesView(saved: $saved) } label: {

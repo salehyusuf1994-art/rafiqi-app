@@ -160,6 +160,12 @@ func countText(_ n: Int, one: String, two: String, few: String, many: String, en
 func minutesText(_ n: Int) -> String {
     countText(n, one: "دقيقة واحدة", two: "دقيقتان", few: "دقائق", many: "دقيقة", en: n == 1 ? "minute" : "minutes")
 }
+func channelsText(_ n: Int) -> String {
+    countText(n, one: "قناة واحدة", two: "قناتان", few: "قنوات", many: "قناة", en: n == 1 ? "channel" : "channels")
+}
+func stationsText(_ n: Int) -> String {
+    countText(n, one: "إذاعة واحدة", two: "إذاعتان", few: "إذاعات", many: "إذاعة", en: n == 1 ? "station" : "stations")
+}
 func pointsText(_ n: Int) -> String {
     countText(n, one: "نقطة واحدة", two: "نقطتان", few: "نقاط", many: "نقطة", en: n == 1 ? "pt" : "pts")
 }

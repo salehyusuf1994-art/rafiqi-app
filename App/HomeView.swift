@@ -19,7 +19,7 @@ struct HomeView: View {
                         brandHeader
                         NextPrayerHero(date: tl.date, weather: weather)
                         QuickActions(qibla: { path.append(.qibla) }, calendar: { path.append(.calendar) },
-                                     audio: { openTab(4) }, matches: { openTab(5) })
+                                     audio: { openTab(4) }, files: { openTab(5) })
                         PrayerTimesCard(date: tl.date)
                         TodayCard(date: tl.date)
                         NightCard(date: tl.date)
@@ -124,7 +124,7 @@ struct NextPrayerHero: View {
                 Fit("pr_\(key.rawValue)_t", key == .midnight ? 210 : 170, 66)
                 HStack(spacing: 6) {
                     Digits(text: hm12(st.next.time), size: 17, color: .white.opacity(0.9), bold: true)
-                    Text(STime.ampm(st.next.time)).font(Theme.title(12)).foregroundStyle(.white.opacity(0.7))
+                    Text(ampmText(st.next.time)).font(Theme.title(12)).foregroundStyle(.white.opacity(0.7))
                 }
             }
             Text(timerInterval: Date()...max(Date(), st.next.time), countsDown: true)
@@ -230,23 +230,20 @@ struct QuickActions: View {
     let qibla: () -> Void
     let calendar: () -> Void
     let audio: () -> Void
-    let matches: () -> Void
+    let files: () -> Void
     var body: some View {
         HStack(spacing: 10) {
             tile("القبلة", "location.north.line.fill", Color(red: 0.20, green: 0.70, blue: 0.55), qibla)
             tile("التقويم", "calendar", Color(red: 0.95, green: 0.55, blue: 0.30), calendar)
             tile("المسموع والمرئي", "play.rectangle.fill", Theme.violet, audio)
-            tile("المباريات", "soccerball", Color(red: 0.25, green: 0.55, blue: 0.95), matches)
+            tile("الملفات", "folder", Theme.gold, files)
         }
     }
 
     func tile(_ title: String, _ icon: String, _ color: Color, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 20, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 46, height: 46)
-                    .background(Circle().fill(color.gradient))
-                    .shadow(color: color.opacity(0.5), radius: 8, y: 4)
+                Badge(name: icon, size: 46)
                 Text(L(title)).font(Theme.title(13)).foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
@@ -269,27 +266,23 @@ struct PrayerTimesCard: View {
             HStack {
                 Text("مواقيت اليوم").font(Theme.title(18)).foregroundStyle(.white)
                 Spacer()
-                Text(verbatim: Settings.method.short).font(.caption).foregroundStyle(Theme.sub)
+                Text(verbatim: Settings.method.short).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             }
             .padding(.horizontal, 4).padding(.bottom, 4)
             ForEach(Array(times.enumerated()), id: \.offset) { _, p in
                 let on = p.time == next.time
                 let passed = p.time < date && !on
                 HStack(spacing: 12) {
-                    Image(systemName: PR_ICON[p.key] ?? "sun.max").font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white).frame(width: 34, height: 34)
-                        .background(Circle().fill(p.key.tint.gradient))
+                    Badge(name: APP_PR_ICON[p.key] ?? "sun.max", size: 34, active: on, dim: passed)
                     Fit("pr_\(p.key.rawValue)_t", 74, 28, 1)
                     Spacer(minLength: 4)
                     if on {
                         Text(timerInterval: Date()...max(Date(), p.time), countsDown: true)
-                            .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                            .font(Theme.font(14, .bold).monospacedDigit())
                             .foregroundStyle(Theme.gold)
                             .multilineTextAlignment(.center)
                             .frame(width: 70)
                             .environment(\.layoutDirection, .leftToRight)
-                    } else if passed {
-                        Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(Theme.sub)
                     }
                     Digits(text: hm12(p.time), size: 18, color: on ? Theme.gold : .white, bold: on)
                         .frame(minWidth: 58, alignment: .trailing)
@@ -340,10 +333,10 @@ struct TodayCard: View {
                 .frame(height: 6)
                 .environment(\.layoutDirection, Lang.dir)
                 HStack {
-                    Text(LF("اليوم %@ من %@", ar(mi.day), ar(mi.len))).font(.caption).foregroundStyle(Theme.sub)
+                    Text(LF("اليوم %@ من %@", ar(mi.day), ar(mi.len))).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                     Spacer()
                     Text(mi.len - mi.day <= 0 ? L("آخر يوم في الشهر") : LF("المتبقي: %@", daysText(mi.len - mi.day)))
-                        .font(.caption).foregroundStyle(Theme.sub)
+                        .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 }
             }
         }
@@ -361,7 +354,7 @@ struct DateBlock: View {
             CLine(names: names, s: s)
             HStack(spacing: 6) {
                 Fit(year, 64, 15, 0.9)
-                Text(L(label)).font(.caption2).foregroundStyle(Theme.sub)
+                Text(L(label)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
             }
         }
     }
@@ -388,9 +381,7 @@ struct NightCard: View {
 
     func item(icon: String, title: String, time: Date) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(Circle().fill(Color(red: 0.30, green: 0.34, blue: 0.66).gradient))
+            Badge(name: icon, size: 36)
             VStack(alignment: .leading, spacing: 0) {
                 Text(L(title)).font(Theme.title(13)).foregroundStyle(Theme.sub)
                 Digits(text: hm12(time), size: 20, color: .white, bold: true)
@@ -415,7 +406,7 @@ struct WidgetsPromo: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("ويدجت رفيقي").font(Theme.title(18)).foregroundStyle(.white)
                     Text(LF("%@ ويدجت للشاشة الرئيسية و%@ لشاشة القفل", ar(Catalog.all.count), ar(Catalog.lock.count)))
-                        .font(.caption).foregroundStyle(Theme.sub)
+                        .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 }
                 Spacer(minLength: 0)
             }
@@ -430,7 +421,7 @@ struct WidgetsPromo: View {
     func button(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: icon).font(.footnote.weight(.semibold))
+                Image(systemName: icon).font(Theme.f(.footnote, .semibold))
                 Text(L(title)).font(Theme.title(14))
             }
             .foregroundStyle(.white)

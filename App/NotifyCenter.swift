@@ -110,6 +110,18 @@ final class NotifyStore: ObservableObject {
 }
 
 extension Notify.Item {
+    /// رمز الوقت بنمط التطبيق الموحّد
+    var appIcon: String {
+        switch id {
+        case "fajr": return "moon.haze"
+        case "sunrise": return "sunrise"
+        case "dhuhr": return "sun.max"
+        case "asr": return "sun.min"
+        case "maghrib": return "sunset"
+        case "isha": return "moon.stars"
+        default: return "moon"
+        }
+    }
     var color: Color {
         switch id {
         case "fajr": return Color(red: 0.36, green: 0.78, blue: 0.45)
@@ -175,7 +187,7 @@ struct NotifyCenterView: View {
                     .glassCard(padding: 14)
 
                     Text("تصل الإشعارات والتطبيق مغلق، وتتجدّد تلقائيًا بحسب موقعك.")
-                        .font(.footnote).foregroundStyle(Theme.sub)
+                        .font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
                 }
@@ -213,7 +225,7 @@ struct NotifyCenterView: View {
             }
             .buttonStyle(.plain)
             Text("اختر صوت كل صلاة من صفحتها: التنبيه الناطق، أو نغمة، أو جزء من الأذان، أو الأذان كاملًا.")
-                .font(.caption).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+                .font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
         }
         .glassCard(padding: 14)
         .id(store.muezzin + store.fajrMuezzin)
@@ -240,7 +252,7 @@ struct NotifyCenterView: View {
             .tint(Theme.gold)
             if store.voice {
                 Button { store.play(id, pre: false) } label: {
-                    Image(systemName: "play.circle.fill").font(.title3).foregroundStyle(Theme.gold)
+                    Image(systemName: "play.circle.fill").font(Theme.f(.title3)).foregroundStyle(Theme.gold)
                 }
                 .buttonStyle(.borderless)
             }
@@ -251,20 +263,16 @@ struct NotifyCenterView: View {
         let on = store.at.contains(it.id), pre = store.pre.contains(it.id)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: it.icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(it.color.gradient))
+                Badge(name: it.appIcon, size: 34, active: on || pre)
                 Fit("pr_\(it.id)_t", 72, 28)
                 Spacer(minLength: 0)
-                Image(systemName: Lang.isEN ? "chevron.right" : "chevron.left").font(.footnote.bold()).foregroundStyle(Theme.sub)
+                Image(systemName: Lang.isEN ? "chevron.right" : "chevron.left").font(Theme.f(.footnote, .bold)).foregroundStyle(Theme.sub)
             }
             HStack(spacing: 6) {
                 Image(systemName: on ? "bell.fill" : "bell.slash")
-                    .font(.caption).foregroundStyle(on ? Theme.gold : Theme.sub)
+                    .font(Theme.f(.caption)).foregroundStyle(on ? Theme.gold : Theme.sub)
                 Text(L(on ? (pre ? "مفعّل، وقبله بـ٥ دقائق" : "مفعّل") : (pre ? "قبله بـ٥ دقائق فقط" : "متوقّف")))
-                    .font(.caption).foregroundStyle(on || pre ? .white.opacity(0.85) : Theme.sub)
+                    .font(Theme.f(.caption)).foregroundStyle(on || pre ? .white.opacity(0.85) : Theme.sub)
                 Spacer(minLength: 0)
                 if let t = it.time(on: Date()) {
                     Digits(text: hm12(t), size: 13, color: .white.opacity(0.7))
@@ -276,11 +284,11 @@ struct NotifyCenterView: View {
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(on || pre ? it.color.opacity(0.14) : Theme.card)
+                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(on || pre ? Theme.gold.opacity(0.08) : Theme.card)
             }
         )
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .strokeBorder(on || pre ? AnyShapeStyle(it.color.opacity(0.5)) : AnyShapeStyle(Theme.edge), lineWidth: 1))
+            .strokeBorder(on || pre ? AnyShapeStyle(Theme.gold.opacity(0.35)) : AnyShapeStyle(Theme.edge), lineWidth: 1))
         .environment(\.colorScheme, .dark)
     }
 }
@@ -297,15 +305,15 @@ struct NotifPreview: View {
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     HStack {
-                        Text(Notify.title(key.rawValue, pre: false)).font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        Text(Notify.title(key.rawValue, pre: false)).font(Theme.f(.subheadline, .semibold)).foregroundStyle(.white)
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        Text("الآن").font(.caption2).foregroundStyle(Theme.sub)
+                        Text("الآن").font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
                     }
                     if !Settings.placeName.isEmpty {
-                        Text(Settings.placeName).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.85))
+                        Text(Settings.placeName).font(Theme.f(.caption, .semibold)).foregroundStyle(.white.opacity(0.85))
                     }
-                    Text(LF("الساعة %@", hm12(st.next.time)) + ".").font(.caption).foregroundStyle(.white.opacity(0.75))
+                    Text(LF("الساعة %@", hm12(st.next.time)) + ".").font(Theme.f(.caption)).foregroundStyle(.white.opacity(0.75))
                 }
                 ZStack {
                     LinearGradient(colors: key.sky, startPoint: .top, endPoint: .bottom)
@@ -332,15 +340,11 @@ struct NotifyDetail: View {
         List {
             Section {
                 VStack(spacing: 10) {
-                    Image(systemName: item.icon)
-                        .font(.system(size: 44, weight: .semibold))
-                        .foregroundStyle(item.color)
-                        .frame(width: 84, height: 84)
-                        .background(Circle().fill(item.color.opacity(0.15)))
+                    Badge(name: item.appIcon, size: 84, active: true)
                     Text(L(item.name)).font(Theme.title(28)).foregroundStyle(.white)
                     if let t = item.time(on: Date()) {
                         HStack(spacing: 6) {
-                            Text("وقت اليوم").font(.subheadline).foregroundStyle(Theme.sub)
+                            Text("وقت اليوم").font(Theme.f(.subheadline)).foregroundStyle(Theme.sub)
                             Digits(text: hm12(t), size: 17, color: Theme.gold, bold: true)
                         }
                     }
@@ -366,23 +370,23 @@ struct NotifyDetail: View {
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(m.title).foregroundStyle(.white)
-                                    Text(m.subtitle).font(.caption).foregroundStyle(Theme.sub)
+                                    Text(m.subtitle).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                                 }
                                 Spacer(minLength: 0)
                                 Image(systemName: store.modes[item.id] == m ? "checkmark.circle.fill" : "circle")
-                                    .font(.title3).foregroundStyle(store.modes[item.id] == m ? Theme.gold : Theme.sub)
+                                    .font(Theme.f(.title3)).foregroundStyle(store.modes[item.id] == m ? Theme.gold : Theme.sub)
                             }
                         }
                     }
                     if store.modes[item.id] == .part || store.modes[item.id] == .full {
                         Button { store.playFile(Notify.muezzin(for: item.id).part) } label: {
                             Label(LF("استمع: %@", Notify.muezzin(for: item.id).name), systemImage: "play.circle.fill")
-                                .font(.subheadline).foregroundStyle(Theme.gold)
+                                .font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
                         }
                         .buttonStyle(.borderless)
                     }
                     if !store.note.isEmpty {
-                        Text(store.note).font(.footnote).foregroundStyle(.orange)
+                        Text(store.note).font(Theme.f(.footnote)).foregroundStyle(.orange)
                     }
                 } header: {
                     Text("صوت تنبيه دخول الوقت")
@@ -418,7 +422,7 @@ struct NotifyDetail: View {
             if store.voice && (pre || !item.isPrayer || store.modes[item.id] == .voice) {
                 Button { store.play(item.id, pre: pre) } label: {
                     Label("استمع إلى الصوت", systemImage: "play.circle.fill")
-                        .font(.subheadline).foregroundStyle(Theme.gold)
+                        .font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
                 }
                 .buttonStyle(.borderless)
             }
@@ -442,20 +446,20 @@ struct MuezzinPicker: View {
                         Button { store.setMuezzin(m.id, fajr: fajr) } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: m.id == selected ? "checkmark.circle.fill" : "circle")
-                                    .font(.title3).foregroundStyle(m.id == selected ? Theme.gold : Theme.sub)
+                                    .font(Theme.f(.title3)).foregroundStyle(m.id == selected ? Theme.gold : Theme.sub)
                                 Text(m.name).foregroundStyle(.white)
                                 Spacer(minLength: 0)
                             }
                         }
                         .buttonStyle(.plain)
                         Button { store.playFile(m.part) } label: {
-                            Image(systemName: "play.circle.fill").font(.title2).foregroundStyle(Theme.gold)
+                            Image(systemName: "play.circle.fill").font(Theme.f(.title2)).foregroundStyle(Theme.gold)
                         }
                         .buttonStyle(.borderless)
                     }
                 }
             } footer: {
-                Text(fajr ? "أذان الفجر الخاص فيه «الصلاة خير من النوم»." : "يُستخدم في جزء الأذان والأذان الكامل لكل الصلوات عدا الفجر، فلها اختيار مستقل.")
+                Text(fajr ? "أذان الفجر بصيغته الخاصة: «الصلاة خير من النوم»." : "يُستخدم في جزء الأذان والأذان الكامل لكل الصلوات عدا الفجر، فلها اختيار مستقل.")
             }
             .listRowBackground(Theme.card)
         }

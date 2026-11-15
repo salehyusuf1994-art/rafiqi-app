@@ -40,13 +40,46 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 		<key>NSAllowsArbitraryLoadsForMedia</key>
 		<true/>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
 	</dict>
-	<key>NSSupportsLiveActivities</key>
+	<key>UIFileSharingEnabled</key>
 	<true/>
-	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.item</string>
+				<string>public.content</string>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>لالتقاط صورة أو فيديو وحفظه مباشرة في «إدارة الملفات».</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>لتسجيل الصوت مع الفيديو عند التصوير من «إدارة الملفات».</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>لحفظ الصور ومقاطع الفيديو من «إدارة الملفات» في تطبيق «الصور».</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>لقفل «إدارة الملفات» والمجلدات الخاصة ببصمة الوجه.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>لنقل الملفات بين الجوال والكمبيوتر عبر شبكة الواي فاي نفسها.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>لتفريغ الكلام في المقاطع الصوتية والفيديو إلى نص على جهازك.</string>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>يستخدم رفيقي المنبّه لتشغيل الأذان كاملًا عند دخول وقت الصلاة، حتى لو كان الجوال صامتًا.</string>
 	<key>NSAppleMusicUsageDescription</key>
@@ -54,7 +87,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>يحتاج التطبيق إلى موقعك لحساب أوقات الصلاة والطقس واتجاه القبلة بدقة، وتحديثها أينما ذهبت.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>يحتاج التطبيق إلى قراءة آخر لقطة شاشة لمطابقة خلفية الويدجت مع خلفية شاشتك.</string>
+	<string>يحتاج التطبيق إلى الصور لمطابقة خلفية الويدجت مع خلفية شاشتك، ولاستيراد الصور ومقاطع الفيديو إلى «إدارة الملفات».</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>HilalDigits-Regular.ttf</string>
@@ -68,6 +101,8 @@
 		<string>Katibeh-Regular.ttf</string>
 		<string>Blaka-Regular.ttf</string>
 		<string>Tajawal-Bold.ttf</string>
+		<string>Tajawal-Regular.ttf</string>
+		<string>Tajawal-Medium.ttf</string>
 		<string>ReadexPro-SemiBold.ttf</string>
 	</array>
 	<key>UIBackgroundModes</key>

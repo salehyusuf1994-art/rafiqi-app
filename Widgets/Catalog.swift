@@ -15,7 +15,7 @@ struct WInfo: Identifiable {
 }
 
 enum Catalog {
-    static let groups = ["التاريخ", "الصلاة", "الساعة", "الطقس", "القرآن", "الوسائط", "القنوات", "المباريات", "شاشة القفل"]
+    static let groups = ["التاريخ", "الصلاة", "الساعة", "الطقس", "القرآن", "الوسائط", "القنوات", "شاشة القفل"]
 
     private static func w<V: View>(_ id: String, _ group: String, _ name: String, _ desc: String,
                                    _ families: [WidgetFamily], _ sched: Sched, cal: Bool = false,
@@ -114,27 +114,6 @@ enum Catalog {
         w("hilal.m.wheel", "الوسائط", "عجلة", "عجلة تحكم دائرية، وبطاقة المقطع", [.systemMedium], .media) { MediaWheelView(entry: $0) },
         w("hilal.m.simple", "الوسائط", "الوسائط", "العنوان كبيرًا والأزرار، مع الغلاف", [.systemMedium], .media) { MediaSimpleView(entry: $0) },
         w("hilal.m.slim", "الوسائط", "وسائط موجة", "غلاف دائري، والعنوان والأزرار، وموجة صوتية بالتقدّم", [.systemMedium], .media) { MediaSlimView(entry: $0) },
-        // ── المباريات ──
-        w("hilal.s.team", "المباريات", "فريقي", "شعار فريقك وترتيبه ونقاطه، وثلاث مباريات قادمة", [.systemSmall], .sports) { SportsTeamSmallView(entry: $0) },
-        w("hilal.s.match", "المباريات", "مباراة", "البطولة والجولة، والفريقان مع الموعد أو النتيجة", [.systemSmall], .sports) { SportsMatchSmallView(entry: $0) },
-        w("hilal.s.matches", "المباريات", "مباريات", "ثلاث مباريات بالشعارات والمواعيد أو النتائج", [.systemSmall], .sports) { SportsMatchesSmallView(entry: $0) },
-        w("hilal.s.scorers", "المباريات", "الهدافون", "أول ثلاثة هدافين في البطولة بصورهم وأهدافهم", [.systemSmall], .sports) { SportsScorersSmallView(entry: $0) },
-        w("hilal.s.form", "المباريات", "مباريات فريقي", "آخر نتائج فريقك بالنقاط الملوّنة، ومبارياته القادمة", [.systemSmall], .sports) { SportsFormSmallView(entry: $0) },
-        w("hilal.s.card", "المباريات", "بطاقة المباراة", "حالة المباراة والدقيقة، والفريقان بالنتيجة", [.systemSmall], .sports) { SportsCardSmallView(entry: $0) },
-        w("hilal.s.events", "المباريات", "أحداث المباراة", "النتيجة، وأهداف المباراة بأسماء اللاعبين ودقائقها", [.systemSmall], .sports) { SportsEventsSmallView(entry: $0) },
-        w("hilal.s.score", "المباريات", "النتيجة", "شعارا الفريقين والنتيجة الكبيرة، مع زر المتابعة المباشرة", [.systemSmall], .sports) { SportsScoreSmallView(entry: $0) },
-        w("hilal.s.matchm", "المباريات", "المباراة", "شعاران كبيران والنتيجة أو الموعد، والمباراة التالية تحتها، مع زر المتابعة المباشرة", [.systemMedium], .sports) { SportsMatchMediumView(entry: $0) },
-        w("hilal.s.vs", "المباريات", "مواجهة اليوم", "مباراة واحدة كبيرة، وتتنقّل بين مباريات اليوم بالأسهم", [.systemMedium], .sports) { SportsVsMediumView(entry: $0) },
-        w("hilal.s.goals", "المباريات", "الأهداف", "النتيجة، وأهداف المباراة بصور اللاعبين ودقائقها", [.systemMedium], .sports) { SportsGoalsMediumView(entry: $0) },
-        w("hilal.s.table", "المباريات", "الترتيب", "أول أربعة فرق في البطولة بنقاطها، مع فريقك دائمًا", [.systemMedium], .sports) { SportsTableMediumView(entry: $0) },
-        w("hilal.s.teamm", "المباريات", "فريقي", "فريقك وترتيبه وآخر خمس نتائج، وثلاث مباريات قادمة بأرضها وموعدها", [.systemMedium], .sports) { SportsTeamMediumView(entry: $0) },
-        w("hilal.s.list", "المباريات", "مباريات اليوم", "ثلاث مباريات بأسماء الفرق وشعاراتها، والمواعيد أو النتائج", [.systemMedium], .sports) { SportsListMediumView(entry: $0) },
-        w("hilal.s.teaml", "المباريات", "فريقي الكامل", "فريقك وآخر نتائجه، وثلاث مباريات قادمة وثلاث نتائج", [.systemLarge], .sports) { SportsTeamLargeView(entry: $0) },
-        w("hilal.s.log", "المباريات", "سجل المباراة", "النتيجة الكبيرة، والأهداف والبطاقات لكل فريق في عمود", [.systemLarge], .sports) { SportsLogLargeView(entry: $0) },
-        w("hilal.s.matcht", "المباريات", "المباراة والترتيب", "النتيجة الكبيرة، وترتيب البطولة تحتها", [.systemLarge], .sports) { SportsMatchTableLargeView(entry: $0) },
-        w("hilal.s.schedule", "المباريات", "جدول المباريات", "ست مباريات بالأسماء والشعارات، والمواعيد أو النتائج", [.systemLarge], .sports) { SportsScheduleLargeView(entry: $0) },
-        w("hilal.s.scorersl", "المباريات", "الهدافون", "قائمة الهدافين بالصور والأهداف وصناعة الأهداف", [.systemLarge], .sports) { SportsScorersLargeView(entry: $0) },
-        w("hilal.s.goalsl", "المباريات", "المباراة والأهداف", "النتيجة الكبيرة، وأهداف المباراة بصور اللاعبين", [.systemLarge], .sports) { SportsGoalsLargeView(entry: $0) },
         // ── القرآن ──
         w("hilal.wird", "القرآن", "ورد القرآن", "الجزء الذي تقرؤه وتقدّم الختمة، مع زرّين للتقدّم والرجوع من الويدجت نفسها", [.systemSmall], .day) { WirdView(entry: $0) },
         w("hilal.verse", "القرآن", "آية وأوقات الصلاة", "آية قصيرة تتجدّد كل يوم، وتحتها أوقات صلوات اليوم", [.systemMedium], .prayer) { VersePrayersView(entry: $0) },
@@ -156,12 +135,6 @@ enum Catalog {
         w("lock.inlinehijri", "شاشة القفل", "التاريخ الهجري (أعلى الساعة)", "الشهر والسنة الهجرية بخط الثلث، بجانب اليوم الذي يعرضه النظام", [.accessoryInline], .day) { LockInlineDate(entry: $0) },
         w("lock.inlinegreg", "شاشة القفل", "التاريخ الميلادي (أعلى الساعة)", "الشهر والسنة الميلادية بخط الثلث، بجانب اليوم الذي يعرضه النظام", [.accessoryInline], .day) { LockInlineDate(entry: $0, greg: true) },
         w("lock.inlineprayer", "شاشة القفل", "الصلاة القادمة (أعلى الساعة)", "اسم الصلاة القادمة ووقتها", [.accessoryInline], .prayer) { LockInlinePrayer(entry: $0) },
-        w("lock.s.rect", "المباريات", "مباراة فريقي", "النتيجة والدقيقة أثناء المباراة، والموعد قبلها", [.accessoryRectangular], .sports) {
-            SportsLockRect(entry: SportsLockEntry(date: $0.date, data: $0.sports ?? SportsStore.current())) },
-        w("lock.s.circle", "المباريات", "خصم فريقي", "شعار الخصم مع الموعد أو النتيجة", [.accessoryCircular], .sports) {
-            SportsLockCircle(entry: SportsLockEntry(date: $0.date, data: $0.sports ?? SportsStore.current())) },
-        w("lock.s.inline", "المباريات", "مباراة فريقي (أعلى الساعة)", "الفريقان والنتيجة أو الموعد", [.accessoryInline], .sports) {
-            SportsLockInline(entry: SportsLockEntry(date: $0.date, data: $0.sports ?? SportsStore.current())) },
     ]
 
     static func items(_ group: String) -> [WInfo] {

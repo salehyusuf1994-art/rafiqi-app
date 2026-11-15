@@ -6,7 +6,7 @@ import AppIntents
 // MARK: - الصوتيات: القرآن، الإذاعات، Apple Music
 // النموذج مشترك بين التطبيق والويدجت، والتشغيل نفسه داخل التطبيق فقط (App/AudioPlayer.swift)
 
-enum MediaSource: String, Codable { case quran, radio, music }
+enum MediaSource: String, Codable { case quran, radio, music, files }
 
 /// حالة التشغيل الحالية (يكتبها التطبيق، وتقرؤها الويدجت)
 struct NowPlaying: Codable, Equatable {
@@ -20,6 +20,8 @@ struct NowPlaying: Codable, Equatable {
     var surah = 1
     var shuffle = false
     var repeatOne = false
+    /// تكرار القائمة كلها (لملفاتي)
+    var repeatAll = false
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -34,6 +36,7 @@ struct NowPlaying: Codable, Equatable {
         surah = (try? c.decode(Int.self, forKey: .surah)) ?? 1
         shuffle = (try? c.decode(Bool.self, forKey: .shuffle)) ?? false
         repeatOne = (try? c.decode(Bool.self, forKey: .repeatOne)) ?? false
+        repeatAll = (try? c.decode(Bool.self, forKey: .repeatAll)) ?? false
     }
 
     /// بث مباشر: الإذاعة فقط (التلاوة قبل معرفة مدتها ليست «مباشر»)
@@ -66,6 +69,7 @@ struct NowPlaying: Codable, Equatable {
             n.title = AppGroup.defaults.string(forKey: "last_station_name") ?? Stations.builtin[0].name
             n.subtitle = Lang.isEN ? "Live" : "بث مباشر"
         case .music: n.title = "Apple Music"; n.subtitle = ""
+        case .files: n.title = Lang.isEN ? "My files" : "ملفاتي"; n.subtitle = ""
         }
         return n
     }

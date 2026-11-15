@@ -48,14 +48,6 @@ enum DesignSmall: String, AppEnum {
     case m_orbit = "hilal.m.orbit"
     case m_dots = "hilal.m.dots"
     case m_bar = "hilal.m.bar"
-    case s_team = "hilal.s.team"
-    case s_match = "hilal.s.match"
-    case s_matches = "hilal.s.matches"
-    case s_scorers = "hilal.s.scorers"
-    case s_form = "hilal.s.form"
-    case s_card = "hilal.s.card"
-    case s_events = "hilal.s.events"
-    case s_score = "hilal.s.score"
     case wird = "hilal.wird"
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "الويدجت"
     static let caseDisplayRepresentations: [DesignSmall: DisplayRepresentation] = [
@@ -101,14 +93,6 @@ enum DesignSmall: String, AppEnum {
         .m_orbit: DisplayRepresentation(title: "دائري", subtitle: "الوسائط"),
         .m_dots: DisplayRepresentation(title: "نقاط", subtitle: "الوسائط"),
         .m_bar: DisplayRepresentation(title: "شريط التقدّم", subtitle: "الوسائط"),
-        .s_team: DisplayRepresentation(title: "فريقي", subtitle: "المباريات"),
-        .s_match: DisplayRepresentation(title: "مباراة", subtitle: "المباريات"),
-        .s_matches: DisplayRepresentation(title: "مباريات", subtitle: "المباريات"),
-        .s_scorers: DisplayRepresentation(title: "الهدافون", subtitle: "المباريات"),
-        .s_form: DisplayRepresentation(title: "مباريات فريقي", subtitle: "المباريات"),
-        .s_card: DisplayRepresentation(title: "بطاقة المباراة", subtitle: "المباريات"),
-        .s_events: DisplayRepresentation(title: "أحداث المباراة", subtitle: "المباريات"),
-        .s_score: DisplayRepresentation(title: "النتيجة", subtitle: "المباريات"),
         .wird: DisplayRepresentation(title: "ورد القرآن", subtitle: "القرآن"),
     ]
 }
@@ -157,12 +141,6 @@ enum DesignMedium: String, AppEnum {
     case m_slim = "hilal.m.slim"
     case m_tuner = "hilal.m.tuner"
     case tv_reel = "hilal.tv.reel"
-    case s_matchm = "hilal.s.matchm"
-    case s_vs = "hilal.s.vs"
-    case s_goals = "hilal.s.goals"
-    case s_table = "hilal.s.table"
-    case s_teamm = "hilal.s.teamm"
-    case s_list = "hilal.s.list"
     case verse = "hilal.verse"
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "الويدجت"
     static let caseDisplayRepresentations: [DesignMedium: DisplayRepresentation] = [
@@ -209,33 +187,10 @@ enum DesignMedium: String, AppEnum {
         .m_slim: DisplayRepresentation(title: "وسائط موجة", subtitle: "الوسائط"),
         .m_tuner: DisplayRepresentation(title: "بكرة الإذاعات", subtitle: "الوسائط"),
         .tv_reel: DisplayRepresentation(title: "بكرة القنوات", subtitle: "القنوات"),
-        .s_matchm: DisplayRepresentation(title: "المباراة", subtitle: "المباريات"),
-        .s_vs: DisplayRepresentation(title: "مواجهة اليوم", subtitle: "المباريات"),
-        .s_goals: DisplayRepresentation(title: "الأهداف", subtitle: "المباريات"),
-        .s_table: DisplayRepresentation(title: "الترتيب", subtitle: "المباريات"),
-        .s_teamm: DisplayRepresentation(title: "فريقي", subtitle: "المباريات"),
-        .s_list: DisplayRepresentation(title: "مباريات اليوم", subtitle: "المباريات"),
         .verse: DisplayRepresentation(title: "آية وأوقات الصلاة", subtitle: "القرآن"),
     ]
 }
 
-enum DesignLarge: String, AppEnum {
-    case s_teaml = "hilal.s.teaml"
-    case s_log = "hilal.s.log"
-    case s_matcht = "hilal.s.matcht"
-    case s_schedule = "hilal.s.schedule"
-    case s_scorersl = "hilal.s.scorersl"
-    case s_goalsl = "hilal.s.goalsl"
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "الويدجت"
-    static let caseDisplayRepresentations: [DesignLarge: DisplayRepresentation] = [
-        .s_teaml: DisplayRepresentation(title: "فريقي الكامل", subtitle: "المباريات"),
-        .s_log: DisplayRepresentation(title: "سجل المباراة", subtitle: "المباريات"),
-        .s_matcht: DisplayRepresentation(title: "المباراة والترتيب", subtitle: "المباريات"),
-        .s_schedule: DisplayRepresentation(title: "جدول المباريات", subtitle: "المباريات"),
-        .s_scorersl: DisplayRepresentation(title: "الهدافون", subtitle: "المباريات"),
-        .s_goalsl: DisplayRepresentation(title: "المباراة والأهداف", subtitle: "المباريات"),
-    ]
-}
 
 struct RafiqiSmallIntent: WidgetConfigurationIntent, Positioned {
     static let title: LocalizedStringResource = "إعداد الويدجت"
@@ -246,14 +201,12 @@ struct RafiqiSmallIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
     @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
     @Parameter(title: "الخط", default: .app) var font: FontOpt
-    @Parameter(title: "البطولة (لويدجت المباريات)", default: .mine) var league: LeagueOpt
     @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
     var designID: String? { design.rawValue }
     var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { source == .current ? "" : source.rawValue }
-    var sportOpt: String { league.code }
     init() {}
 }
 
@@ -266,36 +219,15 @@ struct RafiqiMediumIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
     @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
     @Parameter(title: "الخط", default: .app) var font: FontOpt
-    @Parameter(title: "البطولة (لويدجت المباريات)", default: .mine) var league: LeagueOpt
     @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
     var designID: String? { design.rawValue }
     var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { source == .current ? "" : source.rawValue }
-    var sportOpt: String { league.code }
     init() {}
 }
 
-struct RafiqiLargeIntent: WidgetConfigurationIntent, Positioned {
-    static let title: LocalizedStringResource = "إعداد الويدجت"
-    static let description = IntentDescription("اختر الويدجت باسمها، ثم التقويم والمكان والخلفية والخط.")
-    @Parameter(title: "الويدجت", default: .s_teaml) var design: DesignLarge
-    @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
-    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
-    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
-    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
-    @Parameter(title: "الخط", default: .app) var font: FontOpt
-    @Parameter(title: "البطولة (لويدجت المباريات)", default: .mine) var league: LeagueOpt
-    @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
-    var designID: String? { design.rawValue }
-    var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
-    var bgOpt: BgOpt { bg }
-    var fontOpt: FontOpt { font }
-    var mediaOpt: String { source == .current ? "" : source.rawValue }
-    var sportOpt: String { league.code }
-    init() {}
-}
 
 struct RafiqiSmall: Widget {
     var body: some WidgetConfiguration {
@@ -325,19 +257,6 @@ struct RafiqiMedium: Widget {
     }
 }
 
-struct RafiqiLarge: Widget {
-    var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: "rafiqi.large", intent: RafiqiLargeIntent.self,
-                               provider: HProvider<RafiqiLargeIntent>(sched: Catalog.info("hilal.s.teaml").sched, kind: "hilal.s.teaml")) { entry in
-            Catalog.info(entry.kind).render(entry)
-        }
-        .configurationDisplayName(L("رفيقي — كبير"))
-        .description(L("اضغط مطوّلًا على الويدجت بعد إضافتها، ثم «تعديل الأداة»، واختر الويدجت التي تريدها باسمها."))
-        .supportedFamilies([.systemLarge])
-        .contentMarginsDisabled()
-        .containerBackgroundRemovable(false)
-    }
-}
 
 /// أنواع ويدجت الشاشة الرئيسية (لتحديثها)
 enum RafiqiKinds {

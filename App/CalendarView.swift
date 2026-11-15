@@ -55,6 +55,7 @@ struct UmmAlQuraView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                BackRow()
                 PageHeader(title: "تقويم أم القرى", subtitle: L("التقويم الرسمي للمملكة العربية السعودية")) {
                     CircleButton(icon: "arrow.left.arrow.right") { withAnimation(.snappy) { showConverter.toggle() } }
                 }
@@ -77,10 +78,10 @@ struct UmmAlQuraView: View {
                 VStack(spacing: 6) {
                     if Settings.hijriOffset != 0 {
                         Text(LF("تعديلك اليدوي للتاريخ (%@) يُطبّق على الويدجت فقط، ويعرض هذا التقويم التاريخ الرسمي.", offsetLabel))
-                            .font(.caption).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
+                            .font(Theme.f(.caption)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
                     }
                     Link(destination: URL(string: "https://www.ummulqura.org.sa")!) {
-                        Label("الموقع الرسمي لتقويم أم القرى", systemImage: "safari").font(.footnote.weight(.semibold))
+                        Label("الموقع الرسمي لتقويم أم القرى", systemImage: "safari").font(Theme.f(.footnote, .semibold))
                     }
                     .foregroundStyle(Theme.gold)
                 }
@@ -91,7 +92,7 @@ struct UmmAlQuraView: View {
         .scrollIndicators(.hidden)
         .barSpace()
         .background(AppBackground())
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     private var offsetLabel: String {
@@ -116,7 +117,7 @@ struct UmmAlQuraView: View {
                 VStack(spacing: 2) {
                     Text(verbatim: "\(UQ.monthName(mc.month ?? 1, hijri: hijriMode)) \(ar(mc.year ?? 0))\(hijriMode ? (Lang.isEN ? " AH" : " هـ") : "")")
                         .font(Theme.title(21)).foregroundStyle(.white)
-                    Text(verbatim: other).font(.caption).foregroundStyle(Theme.sub)
+                    Text(verbatim: other).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 }
                 Spacer()
                 CircleButton(icon: Lang.isEN ? "chevron.right" : "chevron.left", size: 36) { shift(1) }
@@ -162,7 +163,7 @@ struct UmmAlQuraView: View {
             VStack(spacing: 1) {
                 Text(ar(main)).font(digitFont(18, bold: true))
                     .foregroundStyle(isSel ? Color.black : (col == 5 ? Theme.gold : .white))
-                Text(ar(alt)).font(.system(size: 10, weight: .medium).monospacedDigit())
+                Text(ar(alt)).font(Theme.font(10, .medium).monospacedDigit())
                     .foregroundStyle(isSel ? Color.black.opacity(0.6) : Theme.sub)
                 Circle().fill(occ == nil ? Color.clear : (occ!.1 ? Theme.gold : Color.white.opacity(0.5)))
                     .frame(width: 4, height: 4)
@@ -207,7 +208,7 @@ struct UmmAlQuraView: View {
                     Text(verbatim: "\(ar(h.day ?? 1)) \(UQ.monthName(h.month ?? 1, hijri: true)) \(ar(h.year ?? 0))\(Lang.isEN ? " AH" : " هـ")")
                         .font(Theme.title(16)).foregroundStyle(Theme.gold)
                     Text(verbatim: "\(ar(g.day ?? 1)) \(UQ.monthName(g.month ?? 1, hijri: false)) \(ar(g.year ?? 0))")
-                        .font(.subheadline).foregroundStyle(Theme.sub)
+                        .font(Theme.f(.subheadline)).foregroundStyle(Theme.sub)
                 }
                 Spacer()
                 if let occ = UQ.occasion(selected) {
@@ -219,7 +220,7 @@ struct UmmAlQuraView: View {
             HStack(spacing: 0) {
                 ForEach(Array(times.enumerated()), id: \.offset) { _, p in
                     VStack(spacing: 3) {
-                        Image(systemName: PR_ICON[p.key] ?? "sun.max").font(.system(size: 12, weight: .semibold)).foregroundStyle(p.key.tint)
+                        Image(systemName: APP_PR_ICON[p.key] ?? "sun.max").font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.gold.opacity(0.9))
                         PrName(p.key, 46, 18, 0.95)
                         Digits(text: hm12(p.time), size: 12.5, color: .white)
                     }
@@ -257,7 +258,7 @@ struct UmmAlQuraView: View {
                             Text(L(it.1)).foregroundStyle(.white)
                             Spacer()
                             Text(verbatim: "\(ar(h.day ?? 1)) \(UQ.monthName(h.month ?? 1, hijri: true))  ·  \(ar(g.day ?? 1)) \(UQ.monthName(g.month ?? 1, hijri: false))")
-                                .font(.caption).foregroundStyle(Theme.sub)
+                                .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                         }
                     }
                 }

@@ -43,7 +43,7 @@ struct CityPicker: View {
                             HStack {
                                 Text(LF("منطقة %@", r)).foregroundStyle(.white)
                                 Spacer()
-                                Text(ar(Places.cities.filter { $0.region == i }.count)).font(.caption).foregroundStyle(Theme.sub)
+                                Text(ar(Places.cities.filter { $0.region == i }.count)).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                             }
                         }
                     }
@@ -119,7 +119,7 @@ struct CityPicker: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(worldName(it)).foregroundStyle(.white)
                     if let area = p.administrativeArea, area != p.locality {
-                        Text(area).font(.caption).foregroundStyle(Theme.sub)
+                        Text(area).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                     }
                 }
             }
@@ -135,7 +135,7 @@ struct CityPicker: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(c.name).foregroundStyle(.white)
                     if showRegion, Places.regions.indices.contains(c.region) {
-                        Text(LF("منطقة %@", Places.regions[c.region])).font(.caption).foregroundStyle(Theme.sub)
+                        Text(LF("منطقة %@", Places.regions[c.region])).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                     }
                 }
                 Spacer()

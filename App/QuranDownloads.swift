@@ -202,7 +202,7 @@ struct SurahsView: View {
                             Text(reciter.name).font(Theme.title(17)).foregroundStyle(.white)
                             Text(verbatim: LF("منزّل %@ من %@ سورة", ar(st.count), ar(avail.count))
                                  + (st.bytes > 0 ? " · " + ByteCountFormatter.string(fromByteCount: st.bytes, countStyle: .file) : ""))
-                                .font(.caption).foregroundStyle(Theme.sub)
+                                .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                         }
                         Spacer(minLength: 0)
                     }
@@ -210,14 +210,14 @@ struct SurahsView: View {
                         ProgressView(value: Double(dl.fullDone), total: Double(max(1, dl.fullTotal))).tint(Theme.gold)
                         HStack {
                             Text(verbatim: LF("جارٍ تنزيل المصحف: %@ من %@", ar(dl.fullDone), ar(dl.fullTotal)))
-                                .font(.caption).foregroundStyle(.white.opacity(0.85))
+                                .font(Theme.f(.caption)).foregroundStyle(.white.opacity(0.85))
                             Spacer()
-                            Button("إيقاف") { dl.cancelAll() }.font(.caption.bold()).foregroundStyle(Theme.gold)
+                            Button("إيقاف") { dl.cancelAll() }.font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
                         }
                     } else if st.count < avail.count {
                         Button { dl.downloadAll(reciter) } label: {
                             Label("تنزيل المصحف كاملًا للاستماع بدون إنترنت", systemImage: "square.and.arrow.down.on.square")
-                                .font(.subheadline.bold()).foregroundStyle(.black)
+                                .font(Theme.f(.subheadline, .bold)).foregroundStyle(.black)
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                                 .background(Capsule().fill(Theme.gold))
                         }
@@ -225,15 +225,15 @@ struct SurahsView: View {
                         .disabled(dl.fullFor != nil)
                     } else {
                         Label("المصحف كاملًا منزّل لهذا القارئ", systemImage: "checkmark.seal.fill")
-                            .font(.subheadline).foregroundStyle(.green)
+                            .font(Theme.f(.subheadline)).foregroundStyle(.green)
                     }
                     if st.count > 0 && dl.fullFor == nil {
                         Button(role: .destructive) { confirmDelete = true } label: {
-                            Label("حذف تنزيلات هذا القارئ", systemImage: "trash").font(.caption)
+                            Label("حذف تنزيلات هذا القارئ", systemImage: "trash").font(Theme.f(.caption))
                         }
                         .buttonStyle(.plain).foregroundStyle(.red.opacity(0.9))
                     }
-                    if let e = dl.lastError { Text(verbatim: e).font(.caption).foregroundStyle(.orange) }
+                    if let e = dl.lastError { Text(verbatim: e).font(Theme.f(.caption)).foregroundStyle(.orange) }
                 }
                 .padding(.vertical, 4)
             } footer: {
@@ -269,11 +269,11 @@ struct SurahsView: View {
         return HStack(spacing: 12) {
             Button { AudioPlayer.shared.playQuran(n, reciter: reciter) } label: {
                 HStack(spacing: 12) {
-                    Text(ar(n)).font(.footnote.monospacedDigit()).foregroundStyle(Theme.sub).frame(width: 30)
+                    Text(ar(n)).font(Theme.f(.footnote).monospacedDigit()).foregroundStyle(Theme.sub).frame(width: 30)
                     Text(Surahs.name(n)).foregroundStyle(playing ? Theme.gold : .white)
                     if playing && p.state.playing {
                         Image(systemName: "waveform").symbolEffect(.variableColor.iterative, options: .repeating)
-                            .font(.caption).foregroundStyle(Theme.gold)
+                            .font(Theme.f(.caption)).foregroundStyle(Theme.gold)
                     }
                     Spacer(minLength: 0)
                 }

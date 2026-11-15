@@ -18,7 +18,7 @@ struct ChipLabel: LabelStyle {
     let icon: Bool
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 5) {
-            if icon { configuration.icon.font(.caption) }
+            if icon { configuration.icon.font(Theme.f(.caption)) }
             configuration.title
         }
     }
@@ -149,7 +149,7 @@ struct LockShowcase: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("ويدجت شاشة القفل").font(Theme.title(17)).foregroundStyle(.white)
                     Text("تظهر على شاشة القفل أعلى الساعة أو أسفلها، دون فتح الجوال.")
-                        .font(.caption).foregroundStyle(Theme.sub)
+                        .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 }
             }
 
@@ -180,7 +180,7 @@ struct LockShowcase: View {
 
             Label("تأخذ ويدجت القفل لون ساعة القفل تلقائيًا، ويُعرض السطر أعلى الساعة نصًّا عاديًّا بحسب قيود النظام.",
                   systemImage: "info.circle")
-                .font(.caption).foregroundStyle(Theme.sub)
+                .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -223,7 +223,7 @@ struct GalleryContent: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(L(g)).font(Theme.title(24)).foregroundStyle(.white)
                             Text(LF("%@ ويدجت", ar(Catalog.items(g).count)))
-                                .font(.footnote).foregroundStyle(Theme.sub)
+                                .font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                         }
                     }
                     ForEach(Array(rows(g).enumerated()), id: \.offset) { _, row in
@@ -273,7 +273,6 @@ struct WidgetPreview: View {
                            weather: weather, preview: true, inApp: true, family: family)
         entry.style = Catalog.isLock(family) ? WStyle() : st
         entry.kind = info.id
-        if info.group == "المباريات" { entry.sports = SportsStore.current() }
         return entry
     }
 
@@ -395,17 +394,17 @@ struct WidgetDetail: View {
 
                     VStack(spacing: 6) {
                         Text(info.name).font(Theme.title(24)).foregroundStyle(.white)
-                        Text(info.desc).font(.subheadline).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
+                        Text(info.desc).font(Theme.f(.subheadline)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
                         HStack(spacing: 6) {
                             ForEach(info.families, id: \.self) { f in
                                 Text(Catalog.gridName(f))
-                                    .font(.caption).foregroundStyle(Theme.gold)
+                                    .font(Theme.f(.caption)).foregroundStyle(Theme.gold)
                                     .padding(.horizontal, 10).padding(.vertical, 4)
                                     .background(Capsule().stroke(Theme.gold.opacity(0.5), lineWidth: 1))
                             }
                             if custom && !isLock {
                                 Text("تصميم خاص")
-                                    .font(.caption).foregroundStyle(.black)
+                                    .font(Theme.f(.caption)).foregroundStyle(.black)
                                     .padding(.horizontal, 10).padding(.vertical, 4)
                                     .background(Capsule().fill(Theme.gold))
                             }
@@ -416,7 +415,7 @@ struct WidgetDetail: View {
                     if isLock {
                         Label("تأخذ ويدجت شاشة القفل لون ساعة القفل تلقائيًا، ويمكنك تغييره من «تخصيص» ثم الضغط على الساعة.",
                               systemImage: "paintpalette")
-                            .font(.footnote).foregroundStyle(Theme.sub)
+                            .font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .glassCard(padding: 14)
                     } else {
@@ -444,21 +443,21 @@ struct WidgetDetail: View {
                             }
                             HStack(spacing: 10) {
                                 Button(action: applyAll) {
-                                    Text("تطبيق على الكل").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                                    Text("تطبيق على الكل").font(Theme.f(.subheadline, .semibold)).foregroundStyle(.white)
                                         .frame(maxWidth: .infinity).padding(.vertical, 11)
                                         .background(Capsule().fill(Theme.card))
                                         .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
                                 }
                                 if custom {
                                     Button(action: reset) {
-                                        Text("الرجوع للتصميم العام").font(.subheadline).foregroundStyle(.red.opacity(0.9))
+                                        Text("الرجوع للتصميم العام").font(Theme.f(.subheadline)).foregroundStyle(.red.opacity(0.9))
                                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                                             .background(Capsule().fill(Theme.card))
                                     }
                                 }
                             }
                             if !msg.isEmpty {
-                                Label(L(msg), systemImage: "checkmark.circle.fill").font(.footnote).foregroundStyle(.green)
+                                Label(L(msg), systemImage: "checkmark.circle.fill").font(Theme.f(.footnote)).foregroundStyle(.green)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -515,7 +514,7 @@ struct WidgetDetail: View {
         Styles.set(info.id, s)
         custom = true
         reloadKind(info)
-        msg = "تم الحفظ. إن اخترت خلفية أو خطًّا من «تعديل الأداة» فإن ذلك الاختيار يتقدّم على هذا التصميم."
+        msg = "تم الحفظ. إن اخترت خلفية أو خطًّا من «تعديل الأداة» فاختيارك هناك مقدَّم على هذا التصميم."
     }
 
     func applyAll() {
@@ -562,10 +561,10 @@ struct WidgetDetail: View {
 
     func step(_ n: Int, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Text(ar(n)).font(.subheadline.bold()).foregroundStyle(.black)
+            Text(ar(n)).font(Theme.f(.subheadline, .bold)).foregroundStyle(.black)
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(Theme.gold))
-            Text(L(text)).font(.subheadline).foregroundStyle(.white.opacity(0.9))
+            Text(L(text)).font(Theme.f(.subheadline)).foregroundStyle(.white.opacity(0.9))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -625,7 +624,6 @@ enum GalleryShots {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         RenderDebug.bare = true
         defer { RenderDebug.bare = false }
-        let sports = SportsStore.current()
         let tints: [(String, Color)] = [("white", .white), ("gold", Tint.color("gold")), ("glass", Tint.glassColor)]
         func fam(_ f: WidgetFamily) -> String {
             switch f {
@@ -646,7 +644,6 @@ enum GalleryShots {
             var st = WStyle(); st.font = font
             e.style = st
             e.kind = info.id
-            if info.group == "المباريات" { e.sports = sports }
             let lock = Catalog.isLock(f)
             let view = info.render(e)
                 .frame(width: size.width, height: size.height)

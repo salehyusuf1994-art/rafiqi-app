@@ -1,6 +1,6 @@
 import pickle,re,os,collections
 code,strs=pickle.load(open('/tmp/lexed.pkl','rb'))
-R='/home/claude/hilal-widgets'
+R='/home/claude/rafiqi-app'
 def load(p):
     d={}
     for m in re.finditer(r'^"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)";',open(p).read(),re.M):

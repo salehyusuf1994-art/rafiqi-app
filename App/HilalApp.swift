@@ -21,7 +21,6 @@ struct HilalApp: App {
         // أوامر ويدجت الوسائط وشاشة القفل تُنفَّذ هنا حتى لو فُتح التطبيق في الخلفية
         AudioPlayer.shared.configure()
         // المتابعة المباشرة للمباريات (تبدأ من الويدجت حتى والتطبيق في الخلفية)
-        SportsLive.shared.configure()
         UNUserNotificationCenter.current().delegate = NotifDelegate.shared
         NotifDelegate.registerCategories()
         // الأذان كاملًا كمنبّه (iOS 26.1+)
@@ -47,10 +46,21 @@ struct HilalApp: App {
         bar.standardAppearance = scrolled
         bar.compactAppearance = scrolled
         bar.scrollEdgeAppearance = a
+        // أزرار الشريط والتبويبات المقسّمة وخانات البحث بخط التطبيق نفسه
+        let regular = UIFont(name: "Tajawal-Medium", size: 16) ?? title
+        let barButton = UIBarButtonItem.appearance()
+        for st: UIControl.State in [.normal, .highlighted, .disabled] {
+            barButton.setTitleTextAttributes([.font: regular], for: st)
+        }
+        let seg = UISegmentedControl.appearance()
+        seg.setTitleTextAttributes([.font: UIFont(name: "Tajawal-Medium", size: 14) ?? regular], for: .normal)
+        seg.setTitleTextAttributes([.font: UIFont(name: "Tajawal-Bold", size: 14) ?? regular], for: .selected)
+        UITextField.appearance(whenContainedInInstancesOf: [UISearchBar.self]).font = UIFont(name: "Tajawal-Regular", size: 16)
     }
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .font(Theme.f(.body))
                 .environment(\.layoutDirection, Lang.dir)
                 .digitsLocale()
                 .preferredColorScheme(.dark)
@@ -113,9 +123,9 @@ let SHOT_WIDGET = SHOT == "detail" ? (UserDefaults.standard.string(forKey: "wid"
 struct ContentView: View {
     @State private var tab = ["home": 0, "gallery": 1, "detail": 1, "notify": 2, "notifyd": 2,
                               "settings": 3, "settings2": 3, "settings3": 3, "cities": 3, "style": 3, "media": 4, "media2": 4, "media3": 4, "media4": 4, "media5": 4,
-                              "sports": 5][SHOT] ?? 0
-    @ObservedObject private var router = SportsRouter.shared
+                              "files": 5][SHOT] ?? 0
     @ObservedObject private var tvRouter = TVRouter.shared
+    @ObservedObject private var filesRouter = FilesRouter.shared
     @Environment(\.scenePhase) private var phase
     var body: some View {
         let _ = NSLog("RFDBG content body")
@@ -134,7 +144,7 @@ struct ContentView: View {
     private let items = [TabItem(tag: 0, title: "الرئيسية", icon: "moon.stars.fill"),
                          TabItem(tag: 1, title: "الويدجت", icon: "square.grid.2x2.fill"),
                          TabItem(tag: 4, title: "المسموع والمرئي", icon: "play.rectangle.fill"),
-                         TabItem(tag: 5, title: "المباريات", icon: "soccerball"),
+                         TabItem(tag: 5, title: "إدارة الملفات", icon: "folder.fill"),
                          TabItem(tag: 3, title: "الإعدادات", icon: "gearshape.fill")]
 
     var tabs: some View {
@@ -146,7 +156,7 @@ struct ContentView: View {
                     .toolbar(.hidden, for: .tabBar).tag(1)
                 MediaView()
                     .toolbar(.hidden, for: .tabBar).tag(4)
-                SportsView()
+                FilesTab()
                     .toolbar(.hidden, for: .tabBar).tag(5)
                 SettingsView()
                     .toolbar(.hidden, for: .tabBar).tag(3)
@@ -170,36 +180,51 @@ struct ContentView: View {
         }
         .tint(Theme.gold)
         .onOpenURL { url in
+            // ملف مُرسل من تطبيق آخر («مشاركة» ← رفيقي أو «فتح باستخدام»): يُحفظ في «الواردة»
+            if url.isFileURL {
+                let inbox = FileStore.shared.root.appendingPathComponent(L("الواردة"), isDirectory: true)
+                try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+                FileStore.shared.importFiles([url], to: inbox)
+                // نسخة النظام في Inbox لم تعد لازمة
+                if url.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: url) }
+                FilesRouter.shared.page = .files
+                FilesRouter.shared.path = [inbox]
+                tab = 5
+                return
+            }
             // miqat://edit/<kind> — الضغط على ويدجت يفتح صفحة تصميمها
             if url.host == "media" { tab = 4; return }
+            // miqat://download?url=… (من الاختصارات أو أي تطبيق): يُضاف للتنزيلات
+            if url.host == "download", let link = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "url" })?.value {
+                DownloadManager.shared.add(link)
+                FilesRouter.shared.page = .downloads
+                tab = 5
+                return
+            }
             // miqat://tv/<القناة>
             if url.host == "tv" {
                 tab = 4
                 if let id = url.pathComponents.last, id != "/" { tvRouter.show(id: id) }
                 return
             }
-            if url.host == "follow" || url.host == "sports" { tab = 5; router.open(url); return }
             if url.host == "edit", let id = url.pathComponents.last, id != "/" {
                 tab = 1
                 GalleryNav.shared.open = id
             }
         }
-        .onChange(of: router.showSports) { _, _ in tab = 5 }
+        .onChange(of: filesRouter.openTab) { _, on in if on { tab = 5; filesRouter.openTab = false } }
         .onChange(of: phase) { _, p in
-            if p == .active { SportsLive.shared.appBecameActive(); tvRouter.checkPending() }
+            if p == .active { tvRouter.checkPending() }
         }
         .task {
             TVBridge.open = { id in TVRouter.shared.show(id: id) }
+            // إعادة ربط التنزيلات الجارية بالخلفية
+            _ = DownloadManager.shared
             tvRouter.checkPending()
             Backdrop.ensureCrops()
             // إذن الإشعارات: يُطلب عند أول تشغيل (التنبيهات مفعّلة افتراضيًا فلم يكن يُطلب أبدًا)
-            if SHOT.isEmpty, Notify.enabled || SportsPrefs.notifyBefore { await Notify.askIfNeeded() }
+            if SHOT.isEmpty, Notify.enabled { await Notify.askIfNeeded() }
             await Notify.reschedule()
-            // بيانات المباريات (والصور) إذا قدمت
-            if Date().timeIntervalSince(SportsStore.load()?.updated ?? .distantPast) > 30 * 60 {
-                await Sports.refresh()
-                Sports.reloadWidgets()
-            }
             guard !SHOT.isEmpty else { return }
             Backdrop.screenPt = CGSize(width: 440, height: 956)
             if Backdrop.hasWallpaper { Backdrop.regenerate() }
@@ -216,9 +241,9 @@ struct StepsList: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, t in
                 HStack(alignment: .top, spacing: 10) {
-                    Text(ar(i + 1)).font(.caption.bold()).foregroundStyle(.black)
+                    Text(ar(i + 1)).font(Theme.f(.caption, .bold)).foregroundStyle(.black)
                         .frame(width: 20, height: 20).background(Circle().fill(Theme.gold))
-                    Text(L(t)).font(.footnote).foregroundStyle(.white.opacity(0.88))
+                    Text(L(t)).font(Theme.f(.footnote)).foregroundStyle(.white.opacity(0.88))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -301,8 +326,8 @@ struct SettingsView: View {
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("رفيقي").font(Theme.title(21)).foregroundStyle(.white)
-                    Text("رفيقك اليومي: الصلاة والتاريخ والقرآن والمباريات").font(.caption).foregroundStyle(Theme.sub)
-                    Text(L("الإصدار") + " " + version).font(.caption2).foregroundStyle(Theme.sub.opacity(0.8))
+                    Text("رفيقك اليومي: الصلاة والتاريخ والقرآن والوسائط").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                    Text(L("الإصدار") + " " + version).font(Theme.f(.caption2)).foregroundStyle(Theme.sub.opacity(0.8))
                 }
                 Spacer(minLength: 0)
             }
@@ -362,7 +387,7 @@ struct SettingsView: View {
                 HStack {
                     TileRow(title: "الخلفية الشفافة", icon: "photo.fill", color: Theme.goldDeep,
                             subtitle: "مطابقة الويدجت مع خلفية شاشتك")
-                    Text(hasBG ? "مضبوطة" : "غير مضبوطة").font(.caption).foregroundStyle(hasBG ? .green : .orange)
+                    Text(hasBG ? "مضبوطة" : "غير مضبوطة").font(Theme.f(.caption)).foregroundStyle(hasBG ? .green : .orange)
                 }
             }
             Picker(selection: Binding(get: { lockFont }, set: { lockFont = $0; Styles.lockFont = $0; reloadWidgets() })) {
@@ -522,11 +547,11 @@ struct MethodPicker: View {
                         HStack(spacing: 12) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(m.name).foregroundStyle(.white)
-                                Text(verbatim: m.detail).font(.caption).foregroundStyle(Theme.sub)
+                                Text(verbatim: m.detail).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                             }
                             Spacer(minLength: 0)
                             Image(systemName: m.id == selected ? "checkmark.circle.fill" : "circle")
-                                .font(.title3).foregroundStyle(m.id == selected ? Theme.gold : Theme.sub)
+                                .font(Theme.f(.title3)).foregroundStyle(m.id == selected ? Theme.gold : Theme.sub)
                         }
                         .padding(.vertical, 2)
                     }
@@ -644,7 +669,7 @@ struct WallpaperSettings: View {
                 } label: { TileRow(title: "إزالة الخلفية", icon: "trash.fill", color: .red) }
             }
             if !msg.isEmpty {
-                Label(L(msg), systemImage: "info.circle").font(.footnote).foregroundStyle(Theme.sub)
+                Label(L(msg), systemImage: "info.circle").font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
             }
             DisclosureGroup {
                 StepsList(items: [
@@ -654,7 +679,7 @@ struct WallpaperSettings: View {
                     "عُد إلى التطبيق واختر «استخدام آخر لقطة شاشة».",
                 ])
             } label: {
-                Text("طريقة التقاط صورة الخلفية").font(.subheadline).foregroundStyle(Theme.gold)
+                Text("طريقة التقاط صورة الخلفية").font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
             }
         } header: {
             HStack {
@@ -680,7 +705,7 @@ struct WallpaperSettings: View {
             if calibOn {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("وضع الضبط مفعّل لمدة عشر دقائق", systemImage: "viewfinder.circle.fill")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(.purple)
+                        .font(Theme.f(.subheadline, .semibold)).foregroundStyle(.purple)
                     StepsList(items: [
                         "انتقل إلى صفحة الويدجت في الشاشة الرئيسية.",
                         "التقط صورة للشاشة.",

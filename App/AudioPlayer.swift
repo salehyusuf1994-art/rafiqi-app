@@ -48,6 +48,16 @@ final class AudioPlayer: ObservableObject {
         rc.togglePlayPauseCommand.addTarget { _ in Task { @MainActor in if let tv = TVPlayback.current { tv.toggle() } else { AudioPlayer.shared.toggle() } }; return .success }
         rc.nextTrackCommand.addTarget { _ in Task { @MainActor in if let tv = TVPlayback.current { tv.zap(1) } else { AudioPlayer.shared.next() } }; return .success }
         rc.previousTrackCommand.addTarget { _ in Task { @MainActor in if let tv = TVPlayback.current { tv.zap(-1) } else { AudioPlayer.shared.previous() } }; return .success }
+        // التقديم والترجيع والسحب في شريط شاشة القفل (للتلاوة والملفات)
+        rc.skipForwardCommand.preferredIntervals = [NSNumber(value: FilePrefs.skip)]
+        rc.skipBackwardCommand.preferredIntervals = [NSNumber(value: FilePrefs.skip)]
+        rc.skipForwardCommand.addTarget { _ in Task { @MainActor in AudioPlayer.shared.seek(by: Double(FilePrefs.skip)) }; return .success }
+        rc.skipBackwardCommand.addTarget { _ in Task { @MainActor in AudioPlayer.shared.seek(by: -Double(FilePrefs.skip)) }; return .success }
+        rc.changePlaybackPositionCommand.addTarget { e in
+            guard let e = e as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            Task { @MainActor in AudioPlayer.shared.seek(to: e.positionTime) }
+            return .success
+        }
         timeControlObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
             let waiting = p.timeControlStatus == .waitingToPlayAtSpecifiedRate
             Task { @MainActor in AudioPlayer.shared.loading = waiting }
@@ -183,6 +193,8 @@ final class AudioPlayer: ObservableObject {
             useAppleMusic()
             MPMusicPlayerController.systemMusicPlayer.play()
             refreshMusic(later: true)
+        case .files:
+            if !fileQueue.isEmpty { playFile(at: fileIndex) }
         }
     }
 
@@ -334,6 +346,10 @@ final class AudioPlayer: ObservableObject {
         if state.source == .music { MPMusicPlayerController.systemMusicPlayer.play(); refreshMusic(later: true); return }
         // الإذاعة بث مباشر: الاستئناف يرجع للحظة الحالية لا لمكان الإيقاف
         if state.source == .radio, player.currentItem != nil, let u = currentURL { start(u); return }
+        if player.currentItem == nil, state.source == .files {
+            if !fileQueue.isEmpty { playFile(at: fileIndex) }
+            return
+        }
         if player.currentItem == nil {
             // بعد إعادة فتح التطبيق: نكمل آخر مقطع
             if state.source == .radio, let u = AppGroup.defaults.string(forKey: "last_station") {
@@ -345,6 +361,7 @@ final class AudioPlayer: ObservableObject {
         }
         activateSession()
         player.play()
+        if state.source == .files, rate != 1 { player.rate = rate }
         state.position = currentTime()
         state.playing = true
         save()
@@ -373,6 +390,7 @@ final class AudioPlayer: ObservableObject {
         case .music: MPMusicPlayerController.systemMusicPlayer.skipToNextItem(); refreshMusic(later: true)
         case .quran: playQuran(nextSurah(+1))
         case .radio: stepStation(+1)
+        case .files: stepFile(+1, manual: true)
         }
     }
 
@@ -382,6 +400,8 @@ final class AudioPlayer: ObservableObject {
         case .quran:
             if currentTime() > 5 { seek(to: 0) } else { playQuran(nextSurah(-1)) }
         case .radio: stepStation(-1)
+        case .files:
+            if currentTime() > 5 { seek(to: 0) } else { stepFile(-1, manual: true) }
         }
     }
 
@@ -413,10 +433,69 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func finished() {
+        if state.source == .files {
+            if sleepAtEnd { sleepAtEnd = false; pause(); return }
+            if state.repeatOne { seek(to: 0); player.play(); return }
+            if FilePrefs.autoNext { stepFile(+1, manual: false) } else { pause() }
+            return
+        }
         guard state.source == .quran else { return }
         if sleepAtEnd { sleepAtEnd = false; pause(); return }
         if state.repeatOne { seek(to: 0); player.play(); return }
         playQuran(nextSurah(+1))
+    }
+
+    // ── ملفاتي: قائمة تشغيل الملفات الصوتية ──
+    @Published private(set) var fileQueue: [URL] = []
+    @Published private(set) var fileIndex = 0
+    @Published var rate: Float = 1 { didSet { if state.playing { player.rate = rate } } }
+    var currentFile: URL? { state.source == .files && fileQueue.indices.contains(fileIndex) ? fileQueue[fileIndex] : nil }
+
+    func playFiles(_ urls: [URL], start: Int) {
+        guard !urls.isEmpty else { return }
+        fileQueue = urls
+        playFile(at: max(0, min(start, urls.count - 1)))
+    }
+
+    private func playFile(at i: Int) {
+        guard fileQueue.indices.contains(i) else { return }
+        fileIndex = i
+        let u = fileQueue[i]
+        state.source = .files
+        state.title = u.deletingPathExtension().lastPathComponent
+        state.subtitle = u.deletingLastPathComponent().lastPathComponent
+        start(u)
+        if rate != 1 { player.rate = rate }
+    }
+
+    private func stepFile(_ d: Int, manual: Bool) {
+        guard !fileQueue.isEmpty else { return }
+        if state.shuffle, fileQueue.count > 1 {
+            var n = fileIndex
+            while n == fileIndex { n = Int.random(in: 0..<fileQueue.count) }
+            playFile(at: n); return
+        }
+        let n = fileIndex + d
+        if n >= fileQueue.count { if manual || state.repeatAll { playFile(at: 0) } else { pause() }; return }
+        if n < 0 { playFile(at: fileQueue.count - 1); return }
+        playFile(at: n)
+    }
+
+    /// إيقاف ملفاتي وإخفاء المشغّل المصغّر
+    func stopFiles() {
+        guard state.source == .files else { return }
+        pause()
+        player.replaceCurrentItem(with: nil)
+        fileQueue = []
+        objectWillChange.send()
+    }
+
+    func position() -> Double { currentTime() }
+
+    func setRepeat(one: Bool, all: Bool) {
+        state.repeatOne = one
+        state.repeatAll = all
+        save()
     }
 
     func seek(by s: Double) { seek(to: max(0, currentTime() + s)) }
@@ -495,11 +574,16 @@ final class AudioPlayer: ObservableObject {
             MPMediaItemPropertyTitle: state.title,
             MPMediaItemPropertyArtist: state.subtitle,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: state.position,
-            MPNowPlayingInfoPropertyPlaybackRate: state.playing ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: state.playing ? Double(state.source == .files ? rate : 1) : 0.0,
             MPNowPlayingInfoPropertyIsLiveStream: state.source == .radio,
         ]
         if state.duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = state.duration }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // أزرار ±ثوانٍ في شاشة القفل لملفاتي فقط (الإذاعة والتلاوة تبقى بالتالي والسابق)
+        let rc = MPRemoteCommandCenter.shared()
+        rc.skipForwardCommand.isEnabled = state.source == .files
+        rc.skipBackwardCommand.isEnabled = state.source == .files
+        rc.changePlaybackPositionCommand.isEnabled = state.source != .radio
     }
 }
 

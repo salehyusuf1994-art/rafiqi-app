@@ -265,13 +265,11 @@ protocol Positioned {
     var bgOpt: BgOpt { get }
     var fontOpt: FontOpt { get }
     var mediaOpt: String { get }
-    var sportOpt: String { get }
     /// ويدجت رفيقي بالمقاس: الويدجت المختارة من «تعديل الأداة»
     var designID: String? { get }
 }
 extension Positioned {
     var mediaOpt: String { "" }
-    var sportOpt: String { "" }
     var designID: String? { nil }
 }
 
@@ -321,13 +319,11 @@ struct HEntry: TimelineEntry {
     var kind = ""
     /// مصدر ويدجت الوسائط (فارغ = الشغّال حاليًا)
     var media = ""
-    /// بيانات المباريات (لويدجت المباريات)
-    var sports: SportsData? = nil
     /// وضع المعايرة ما يطلع في معرض الويدجتات
     var calibrating: Bool { !preview && !inApp && Backdrop.calibrating(at: date) }
 }
 
-enum Sched { case day, prayer, minute, weather, media, sports }
+enum Sched { case day, prayer, minute, weather, media }
 
 struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelineProvider {
     let sched: Sched
@@ -355,21 +351,13 @@ struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelinePr
     }
 
     func placeholder(in context: Context) -> HEntry {
-        var e = make(Date(), nil, context, Weather.cached())
-        if sched == .sports { e.sports = SportsStore.current() }
-        return e
+        make(Date(), nil, context, Weather.cached())
     }
 
     func snapshot(for configuration: I, in context: Context) async -> HEntry {
         let sched = schedule(configuration)
         let w = sched == .weather ? await Weather.load() : nil
-        var e = make(Date(), configuration, context, w)
-        if sched == .sports {
-            // معرض إضافة الويدجت: البيانات المحفوظة أو التجريبية بلا انتظار
-            e.sports = context.isPreview ? SportsStore.current()
-                                         : await SportsTimeline.data(league: configuration.sportOpt, fetch: true)
-        }
-        return e
+        return make(Date(), configuration, context, w)
     }
 
     func timeline(for configuration: I, in context: Context) async -> Timeline<HEntry> {
@@ -416,15 +404,6 @@ struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelinePr
                 return Timeline(entries: entries, policy: .after(now.addingTimeInterval(min(3600, left + 5))))
             }
             return Timeline(entries: [first], policy: .after(now.addingTimeInterval(3600)))
-        case .sports:
-            let data = await SportsTimeline.data(league: configuration.sportOpt, fetch: true)
-            let plan = SportsTimeline.plan(data, now: now)
-            let entries: [HEntry] = plan.dates.map { d in
-                var x = e(d)
-                x.sports = data
-                return x
-            }
-            return Timeline(entries: entries, policy: .after(plan.refresh))
         case .weather:
             let w = await Weather.load()
             // مدخلات عند تغيّر الصلاة خلال نصف الساعة (لويدجت الطقس التي تعرض الصلاة القادمة)
@@ -734,4 +713,24 @@ enum Weather {
     static func deg(_ v: Double?) -> String {
         v.map { ar(Int((Settings.fahrenheit ? $0 * 9 / 5 + 32 : $0).rounded())) + "°" } ?? "--"
     }
+}
+
+
+/// صورة بألوانها الأصلية حتى في وضع الويدجت الملوّن
+struct SImage: View {
+    let img: UIImage
+    var body: some View {
+        if #available(iOS 18.0, *) {
+            Image(uiImage: img).resizable().widgetAccentedRenderingMode(.fullColor).scaledToFit()
+        } else {
+            Image(uiImage: img).resizable().scaledToFit()
+        }
+    }
+}
+
+/// «ص» أو «م» (فارغ في نظام ٢٤ ساعة)
+func ampmText(_ d: Date) -> String {
+    if Settings.use24h { return "" }
+    let am = Cal.gregCal.component(.hour, from: d) < 12
+    return Lang.isEN ? (am ? "AM" : "PM") : (am ? "ص" : "م")
 }

@@ -14,8 +14,42 @@ enum Theme {
     static let violet = Color(red: 0.45, green: 0.34, blue: 0.80)
     static let radius: CGFloat = 26
 
-    /// خط العناوين (تجوّل) — والنظام للنصوص الطويلة
-    static func title(_ size: CGFloat) -> Font { Lang.isEN ? .system(size: size, weight: .bold, design: .rounded) : .custom("Tajawal-Bold", size: size) }
+    /// خط العناوين (تجوّل العريض) — لا يقل عن ١٢ نقطة
+    static func title(_ size: CGFloat) -> Font { font(size, .bold) }
+
+    /// خط التطبيق الموحّد: تجوّل بأوزانه الثلاثة (عادي/متوسط/عريض)
+    static func font(_ size: CGFloat, _ weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> Font {
+        let size = max(12, size)
+        if Lang.isEN { return .system(size: size, weight: weight == .regular ? .regular : weight, design: .rounded) }
+        return .custom(tajawal(weight), size: size, relativeTo: style)
+    }
+
+    static func tajawal(_ w: Font.Weight) -> String {
+        switch w {
+        case .bold, .semibold, .heavy, .black: return "Tajawal-Bold"
+        case .medium: return "Tajawal-Medium"
+        default: return "Tajawal-Regular"
+        }
+    }
+
+    /// سلّم الأحجام الموحّد (بديل أنماط النظام): لا شيء أصغر من ١٢ نقطة
+    static func f(_ style: Font.TextStyle, _ weight: Font.Weight? = nil) -> Font {
+        let spec: (CGFloat, Font.Weight)
+        switch style {
+        case .largeTitle: spec = (32, .bold)
+        case .title: spec = (26, .bold)
+        case .title2: spec = (22, .bold)
+        case .title3: spec = (19, .medium)
+        case .headline: spec = (17, .bold)
+        case .callout: spec = (16, .regular)
+        case .subheadline: spec = (15, .regular)
+        case .footnote: spec = (14, .regular)
+        case .caption: spec = (13, .regular)
+        case .caption2: spec = (12, .regular)
+        default: spec = (17, .regular)
+        }
+        return font(spec.0, weight ?? spec.1, relativeTo: style)
+    }
     /// حدّ زجاجي متدرّج (أفتح من الأعلى)
     static var edge: LinearGradient {
         LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.05), Color.white.opacity(0.10)],
@@ -174,7 +208,7 @@ struct Chip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                if let icon { Image(systemName: icon).font(.caption) }
+                if let icon { Image(systemName: icon).font(Theme.f(.caption)) }
                 Text(L(title)).font(Theme.title(15))
             }
             .foregroundStyle(on ? Color.black : .white)
@@ -207,7 +241,7 @@ struct SectionTitle: View {
         HStack(alignment: .firstTextBaseline) {
             Text(L(title)).font(Theme.title(19)).foregroundStyle(.white)
             Spacer(minLength: 0)
-            if let trailing { Text(L(trailing)).font(.footnote).foregroundStyle(Theme.sub) }
+            if let trailing { Text(L(trailing)).font(Theme.f(.footnote)).foregroundStyle(Theme.sub) }
         }
         .padding(.horizontal, 4)
     }
@@ -283,19 +317,41 @@ struct FloatingTabBar: View {
     }
 }
 
-/// أيقونة داخل مربع ملوّن (مثل إعدادات النظام)
+/// أيقونة الصفوف: رمز ذهبي رفيع داخل مربع زجاجي داكن — نمط واحد في كل التطبيق
+/// (اللون الممرَّر يُتجاهل عمدًا: الألوان الكثيرة كانت تعطي مظهرًا طفوليًا)
 struct IconTile: View {
     let name: String
     var color: Color = Theme.gold
-    var size: CGFloat = 30
+    var size: CGFloat = 32
+    var body: some View { Badge(name: name, size: size) }
+}
+
+/// شارة الرمز الموحّدة
+struct Badge: View {
+    let name: String
+    var size: CGFloat = 34
+    var active = false
+    var dim = false
     var body: some View {
         Image(systemName: name)
-            .font(.system(size: size * 0.5, weight: .semibold))
-            .foregroundStyle(.white)
+            .symbolRenderingMode(.hierarchical)
+            .font(.system(size: size * 0.44, weight: .medium))
+            .foregroundStyle(active ? Theme.gold : (dim ? Color.white.opacity(0.45) : Theme.gold.opacity(0.92)))
             .frame(width: size, height: size)
-            .background(RoundedRectangle(cornerRadius: size * 0.27, style: .continuous).fill(color.gradient))
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+                    .fill(active ? Theme.gold.opacity(0.16) : Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+                    .strokeBorder(active ? Theme.gold.opacity(0.6) : Color.white.opacity(0.12), lineWidth: 0.8)
+            )
     }
 }
+
+/// رموز الأوقات داخل التطبيق (خطية ومتناسقة)
+let APP_PR_ICON: [PKey: String] = [.fajr: "moon.haze", .sunrise: "sunrise", .dhuhr: "sun.max", .jumuah: "sun.max",
+                                   .asr: "sun.min", .maghrib: "sunset", .isha: "moon.stars", .midnight: "moon"]
 
 /// صف بأيقونة ونص (للإعدادات)
 struct TileRow: View {
@@ -308,7 +364,7 @@ struct TileRow: View {
             IconTile(name: icon, color: color)
             VStack(alignment: .leading, spacing: 2) {
                 Text(L(title)).foregroundStyle(.white)
-                if let subtitle { Text(L(subtitle)).font(.caption).foregroundStyle(Theme.sub) }
+                if let subtitle { Text(L(subtitle)).font(Theme.f(.caption)).foregroundStyle(Theme.sub) }
             }
             Spacer(minLength: 0)
         }
@@ -356,4 +412,27 @@ struct MoonLit: Shape {
 /// عنوان التطبيق بخط الثلث
 struct AppTitle: View {
     var body: some View { Fit("app_title_t", 84, 40) }
+}
+
+
+/// زر الرجوع داخل الصفحة (للصفحات ذات العنوان الكبير بدل شريط التنقّل الذي كان يتداخل مع العنوان عند التمرير)
+struct BackRow: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        HStack {
+            CircleButton(icon: "chevron.backward", size: 40) { dismiss() }
+            Spacer()
+        }
+    }
+}
+
+/// السحب من حافة الشاشة للرجوع يبقى يعمل حتى مع إخفاء شريط التنقّل
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        viewControllers.count > 1
+    }
 }

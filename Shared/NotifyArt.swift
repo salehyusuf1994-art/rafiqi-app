@@ -47,25 +47,6 @@ enum NotifyArt {
         }
     }
 
-    /// بطاقة المباراة: الشعاران والنتيجة (النص مرتّب من اليسار لليمين كما يُرى)
-    static func match(home: String, away: String, score: String) -> Data? {
-        let dark = [UIColor(red: 0.06, green: 0.07, blue: 0.11, alpha: 1), UIColor(red: 0.14, green: 0.15, blue: 0.22, alpha: 1)]
-        return card(dark) { _, r in
-            let l = r.width * 0.34
-            // في العربي المستضيف يمين، وفي الإنجليزي يسار
-            let right = CGRect(x: r.width - l - 18, y: 40, width: l, height: l), left = CGRect(x: 18, y: 40, width: l, height: l)
-            if let a = SportsImages.image(home) { a.draw(in: Lang.isEN ? left : right) }
-            if let b = SportsImages.image(away) { b.draw(in: Lang.isEN ? right : left) }
-            let p = NSMutableParagraphStyle(); p.alignment = .center
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 64, weight: .heavy),
-                .foregroundColor: UIColor.white,
-                .paragraphStyle: p,
-            ]
-            (score as NSString).draw(in: CGRect(x: 0, y: r.height - 120, width: r.width, height: 90), withAttributes: attrs)
-        }
-    }
-
     /// يحوّل الصورة لمرفق (كل إشعار يحتاج نسخة خاصة لأن النظام ينقل الملف)
     static func attachment(_ data: Data?, id: String) -> UNNotificationAttachment? {
         guard let data else { return nil }
@@ -84,19 +65,14 @@ enum NotifyArt {
 enum NotifyKinds {
     static let prayer = "MIQAT_PRAYER"
     static let pre = "MIQAT_PRE"
-    static let match = "MIQAT_MATCH"
     static let snooze = "SNOOZE"
-    static let follow = "FOLLOW"
 
     static var categories: Set<UNNotificationCategory> {
         let snooze = UNNotificationAction(identifier: Self.snooze, title: L("ذكّرني بعد ١٠ دقائق"), options: [],
                                           icon: UNNotificationActionIcon(systemImageName: "clock.arrow.circlepath"))
-        let follow = UNNotificationAction(identifier: Self.follow, title: L("تابع المباراة مباشرة"), options: [.foreground],
-                                          icon: UNNotificationActionIcon(systemImageName: "bolt.fill"))
         return [
             UNNotificationCategory(identifier: prayer, actions: [], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: pre, actions: [snooze], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: match, actions: [follow], intentIdentifiers: [], options: []),
         ]
     }
 }

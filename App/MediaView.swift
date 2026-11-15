@@ -68,13 +68,13 @@ struct MediaView: View {
                 .frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 3) {
                 Text(s.title).font(Theme.title(17)).foregroundStyle(.white).lineLimit(1)
-                Text(s.subtitle).font(.caption).foregroundStyle(Theme.sub).lineLimit(1)
+                Text(s.subtitle).font(Theme.f(.caption)).foregroundStyle(Theme.sub).lineLimit(1)
                 if p.loading { ProgressView().controlSize(.mini).tint(Theme.gold) }
                 else if let at = p.sleepAt {
                     Label { Text(at, style: .timer).monospacedDigit() } icon: { Image(systemName: "moon.zzz.fill") }
-                        .font(.caption2).foregroundStyle(Theme.gold)
+                        .font(Theme.f(.caption2)).foregroundStyle(Theme.gold)
                 } else if p.sleepAtEnd {
-                    Label("يتوقف عند نهاية السورة", systemImage: "moon.zzz.fill").font(.caption2).foregroundStyle(Theme.gold)
+                    Label("يتوقف عند نهاية السورة", systemImage: "moon.zzz.fill").font(Theme.f(.caption2)).foregroundStyle(Theme.gold)
                 }
             }
             Spacer(minLength: 0)
@@ -119,7 +119,7 @@ struct MediaView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: Double(dl.fullDone), total: Double(max(1, dl.fullTotal))).tint(Theme.gold)
                     Text(verbatim: LF("جارٍ تنزيل المصحف: %@ من %@", ar(dl.fullDone), ar(dl.fullTotal)))
-                        .font(.caption).foregroundStyle(Theme.sub)
+                        .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 }
             }
         } footer: {
@@ -138,12 +138,12 @@ struct MediaView: View {
             ForEach(lists.lists) { pl in
                 NavigationLink { PlaylistView(id: pl.id, saved: $saved) } label: {
                     TileRow(title: pl.name, icon: "music.note.list", color: .pink,
-                            subtitle: LF("%@ إذاعة", ar(pl.stations.count)))
+                            subtitle: stationsText(pl.stations.count))
                 }
             }
             Button { lists.askNew() } label: {
                 Label("قائمة تشغيل جديدة", systemImage: "plus.circle.fill")
-                    .font(.subheadline).foregroundStyle(Theme.gold)
+                    .font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
             }
         } header: {
             Text("قوائم التشغيل")
@@ -164,14 +164,14 @@ struct MediaView: View {
         Section {
             if saved.isEmpty {
                 Text("اضغط النجمة بجانب أي إذاعة لتظهر هنا، أو أضف إذاعة برابطها.")
-                    .font(.footnote).foregroundStyle(Theme.sub)
+                    .font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
             }
             ForEach(saved) { s in StationRow(station: s, saved: $saved) }
             NavigationLink {
                 FavoritesManager(saved: $saved)
             } label: {
                 Label("ترتيب المفضلة وإضافة إذاعة برابط", systemImage: "slider.horizontal.3")
-                    .font(.subheadline).foregroundStyle(Theme.gold)
+                    .font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
             }
         } header: {
             Text("المفضلة")

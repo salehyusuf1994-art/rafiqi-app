@@ -96,8 +96,8 @@ enum Headers {
 
     /// قيم جاهزة لـ User-Agent
     static let agents: [(String, String)] = [
-        ("Safari آيفون", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"),
-        ("Chrome كمبيوتر", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
+        ("Safari (آيفون)", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"),
+        ("Chrome (كمبيوتر)", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"),
         ("VLC", "VLC/3.0.20 LibVLC/3.0.20"),
         ("Kodi", "Kodi/21.0 (Linux; Android 13) Android/13 Sys_CPU/aarch64 App_Bitness/64 Version/21.0"),
     ]
@@ -238,7 +238,7 @@ final class StreamTester: ObservableObject {
             guard token == t else { return }
             if M3UParser.isPlaylist(M3UParser.decode(d)) { state = .playlist; return }
             if code == 401 || code == 403 {
-                state = .failed(LF("الخادم رفض الطلب (%@). جرّب إضافة Referer أو User-Agent أو ترويسة المصادقة.", ar(code)))
+                state = .failed(LF("رفض الخادم الطلب (%@). جرّب إضافة Referer أو User-Agent أو ترويسة مصادقة.", ar(code)))
                 return
             }
             if code == 404 || code == 410 { state = .failed(LF("الرابط غير موجود (%@). ربما انتهى أو تغيّر.", ar(code))); return }
@@ -404,7 +404,7 @@ struct AddTVSheet: View {
                         Button(L(Headers.agents[i].0)) { agent = Headers.agents[i].1 }
                     }
                     if !agent.isEmpty { Divider(); Button("مسح", role: .destructive) { agent = "" } }
-                } label: { Image(systemName: "list.bullet.circle").font(.title3) }
+                } label: { Image(systemName: "list.bullet.circle").font(Theme.f(.title3)) }
             }
             TextField("Authorization: Bearer …\nCookie: …", text: $extra, axis: .vertical)
                 .lineLimit(2...6)
@@ -430,7 +430,7 @@ struct AddTVSheet: View {
             case .idle:
                 EmptyView()
             case .loading:
-                HStack { ProgressView(); Text("نتصل بالبث…").foregroundStyle(Theme.sub) }
+                HStack { ProgressView(); Text("جارٍ الاتصال بالبث…").foregroundStyle(Theme.sub) }
             case .ok:
                 VideoPlayer(player: tester.player)
                     .frame(height: 190)
@@ -438,16 +438,16 @@ struct AddTVSheet: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                 Label("الرابط يعمل", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             case .failed(let msg):
-                Label(msg, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.subheadline)
+                Label(msg, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(Theme.f(.subheadline))
             case .playlist:
                 VStack(alignment: .leading, spacing: 8) {
                     Label("هذا رابط قائمة M3U فيها عدة قنوات، وليس بث قناة واحدة.", systemImage: "list.bullet.rectangle")
-                        .font(.subheadline)
+                        .font(Theme.f(.subheadline))
                     Button("افتحه كقائمة M3U") {
                         listURL = url; mode = .playlist; tester.stop()
                         Task { await fetchList() }
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(Theme.f(.subheadline, .semibold))
                 }
             }
         }
@@ -507,10 +507,10 @@ struct AddTVSheet: View {
             }
             .buttonStyle(.borderless)
             if let e = listError {
-                Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.subheadline)
+                Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(Theme.f(.subheadline))
             }
             if let n = added {
-                Label(LF("أُضيفت %@ قناة", ar(n)), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                Label(LF("أُضيفت %@", channelsText(n)), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             }
         } footer: {
             Text("الصق رابط قائمة M3U، أو اختر ملفها من «الملفات» 📄، أو الصق نصّها 📋. تُقرأ أسماء القنوات وشعاراتها ومجموعاتها وترويساتها (http-referrer و http-user-agent).")
@@ -529,14 +529,14 @@ struct AddTVSheet: View {
                 }
                 TextField("بحث في القنوات", text: $query)
                 HStack {
-                    Button("تحديد الظاهر") { for e in shown where !e.drm { picked.insert(e.id) } }
+                    Button("تحديد المعروض") { for e in shown where !e.drm { picked.insert(e.id) } }
                     Spacer()
                     Button("إلغاء التحديد") { picked.removeAll() }
                 }
                 .buttonStyle(.borderless)
-                .font(.subheadline.weight(.semibold))
+                .font(Theme.f(.subheadline, .semibold))
             } header: {
-                Text(LF("%@ قناة في القائمة", ar(entries.count)))
+                Text(LF("%@ في القائمة", channelsText(entries.count)))
             }
 
             Section {
@@ -555,16 +555,16 @@ struct AddTVSheet: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                    .font(.title3).foregroundStyle(on ? Theme.gold : Theme.sub)
+                    .font(Theme.f(.title3)).foregroundStyle(on ? Theme.gold : Theme.sub)
                 TVLogo(channel: TVChannel(id: e.id.uuidString, name: e.name, cat: listCat, urls: [], logo: e.logo),
                        width: 52, height: 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: e.name).foregroundStyle(.white).lineLimit(1)
-                    if !e.group.isEmpty { Text(verbatim: e.group).font(.caption).foregroundStyle(Theme.sub).lineLimit(1) }
+                    if !e.group.isEmpty { Text(verbatim: e.group).font(Theme.f(.caption)).foregroundStyle(Theme.sub).lineLimit(1) }
                 }
                 Spacer(minLength: 0)
-                if !e.headers.isEmpty { Image(systemName: "lock.fill").font(.caption).foregroundStyle(Theme.sub) }
-                if e.drm { Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
+                if !e.headers.isEmpty { Image(systemName: "lock.fill").font(Theme.f(.caption)).foregroundStyle(Theme.sub) }
+                if e.drm { Image(systemName: "exclamationmark.triangle.fill").font(Theme.f(.caption)).foregroundStyle(.orange) }
             }
         }
         .buttonStyle(.plain)
@@ -588,7 +588,7 @@ struct AddTVSheet: View {
             let text = M3UParser.decode(d)
             if !M3UParser.isPlaylist(text) {
                 listError = text.contains("#EXT-X-") ? L("هذا رابط بث قناة واحدة (HLS) وليس قائمة؛ أضفه من «قناة واحدة».")
-                                                     : L("لم نجد قنوات في هذا الرابط.")
+                                                     : L("لا توجد قنوات في هذا الرابط.")
                 return
             }
             load(text)
@@ -604,7 +604,7 @@ struct AddTVSheet: View {
         group = nil
         query = ""
         added = nil
-        listError = entries.isEmpty ? L("لم نجد قنوات في هذه القائمة.") : nil
+        listError = entries.isEmpty ? L("لا توجد قنوات في هذه القائمة.") : nil
     }
 
     private func addPicked() {
@@ -682,7 +682,7 @@ struct CustomChannelsView: View {
                         if src != nil {
                             Button(role: .destructive) { confirm = .source(src) } label: {
                                 Label("حذف هذه القائمة كاملة", systemImage: "trash")
-                                    .font(.footnote.weight(.semibold)).foregroundStyle(.red)
+                                    .font(Theme.f(.footnote, .semibold)).foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
                             .padding(.top, 4)
@@ -742,11 +742,11 @@ struct CustomChannelsView: View {
             TVLogo(channel: c, width: 52, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: c.name).foregroundStyle(.white).lineLimit(1)
-                Text(verbatim: c.cat.title).font(.caption).foregroundStyle(Theme.sub)
+                Text(verbatim: c.cat.title).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             }
             Spacer(minLength: 0)
             if !editMode.isEditing {
-                Image(systemName: "play.circle.fill").font(.title3).foregroundStyle(Theme.gold)
+                Image(systemName: "play.circle.fill").font(Theme.f(.title3)).foregroundStyle(Theme.gold)
             }
         }
         .contentShape(Rectangle())
@@ -766,8 +766,8 @@ struct CustomChannelsView: View {
     private func confirmTitle(_ c: Confirm) -> String {
         switch c {
         case .source(let s):
-            return LF("حذف %@ قناة من «%@»", ar(list.filter { $0.source == s }.count), s ?? L("مضافة يدويًا"))
-        case .selected: return LF("حذف %@ قناة محددة", ar(selection.count))
+            return LF("حذف %@ من «%@»", channelsText(list.filter { $0.source == s }.count), s ?? L("مضافة يدويًا"))
+        case .selected: return LF("حذف المحدد (%@)", channelsText(selection.count))
         case .all: return LF("حذف كل القنوات المضافة (%@)", ar(list.count))
         }
     }

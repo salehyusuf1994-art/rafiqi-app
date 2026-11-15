@@ -36,7 +36,7 @@ final class TVRouter: ObservableObject {
             return
         }
         let vc = UIHostingController(rootView: TVPlayerScreen(channel: c, onClose: { TVRouter.shared.close() })
-            .environment(\.layoutDirection, Lang.dir).digitsLocale())
+            .environment(\.layoutDirection, Lang.dir).digitsLocale().font(Theme.f(.body)))
         vc.modalPresentationStyle = .fullScreen
         vc.overrideUserInterfaceStyle = .dark
         vc.view.backgroundColor = .black
@@ -88,6 +88,13 @@ enum OrientationLock {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         OrientationLock.mask
+    }
+
+    /// اكتمال التنزيلات والتطبيق في الخلفية
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        Task { @MainActor in
+            DownloadManager.shared.backgroundCompletion = completionHandler
+        }
     }
 }
 
@@ -319,10 +326,10 @@ struct TVPlayerScreen: View {
                 VStack(spacing: 10) {
                     Image(systemName: "antenna.radiowaves.left.and.right.slash").font(.system(size: 30)).foregroundStyle(.white.opacity(0.7))
                     Text("القناة غير متاحة الآن").font(Theme.title(16)).foregroundStyle(.white)
-                    Text("قد يكون البث متوقفًا مؤقتًا أو غير متاح في منطقتك.").font(.caption).foregroundStyle(.white.opacity(0.6))
+                    Text("قد يكون البث متوقفًا مؤقتًا أو غير متاح في منطقتك.").font(Theme.f(.caption)).foregroundStyle(.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                     Button { tv.retry() } label: {
-                        Label("إعادة المحاولة", systemImage: "arrow.clockwise").font(.subheadline.bold())
+                        Label("إعادة المحاولة", systemImage: "arrow.clockwise").font(Theme.f(.subheadline, .bold))
                             .foregroundStyle(.black).padding(.horizontal, 16).padding(.vertical, 8)
                             .background(Capsule().fill(Theme.gold))
                     }
@@ -352,7 +359,7 @@ struct TVPlayerScreen: View {
                 Text(verbatim: c.name).font(Theme.title(18)).foregroundStyle(.white).lineLimit(1)
                 HStack(spacing: 6) {
                     LiveBadge(on: !tv.loading && !tv.failed)
-                    Text(verbatim: c.cat.title).font(.caption).foregroundStyle(c.cat.color)
+                    Text(verbatim: c.cat.title).font(Theme.f(.caption)).foregroundStyle(c.cat.color)
                 }
             }
             TVLogo(channel: c, width: 52, height: 40)
@@ -387,7 +394,7 @@ struct TVPlayerScreen: View {
                                     TVLogo(channel: c, width: 92, height: 56)
                                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                                             .stroke(c.id == tv.channel.id ? Theme.gold : .clear, lineWidth: 2))
-                                    Text(verbatim: c.name).font(.caption2.weight(.semibold))
+                                    Text(verbatim: c.name).font(Theme.f(.caption2, .semibold))
                                         .foregroundStyle(c.id == tv.channel.id ? Theme.gold : .white.opacity(0.85))
                                         .lineLimit(1).frame(width: 92)
                                 }
@@ -402,7 +409,7 @@ struct TVPlayerScreen: View {
                 .onChange(of: tv.channel.id) { _, id in withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) } }
             }
             Text(verbatim: L("قنوات ") + tv.channel.cat.title)
-                .font(.caption).foregroundStyle(.white.opacity(0.5))
+                .font(Theme.f(.caption)).foregroundStyle(.white.opacity(0.5))
         }
         .padding(.top, 16)
     }
@@ -410,7 +417,7 @@ struct TVPlayerScreen: View {
     private func zapButton(_ title: String, _ icon: String, _ a: @escaping () -> Void) -> some View {
         Button(action: a) {
             Label(L(title), systemImage: icon)
-                .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                .font(Theme.f(.subheadline, .semibold)).foregroundStyle(.white)
                 .frame(maxWidth: .infinity).padding(.vertical, 11)
                 .background(Capsule().fill(Color.white.opacity(0.10)))
                 .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
@@ -515,7 +522,7 @@ struct TVSections: View {
                         Label(c.title, systemImage: c.icon).foregroundStyle(c.color)
                         Spacer()
                         Button { withAnimation(.snappy) { filter = c } } label: {
-                            Text("عرض الكل").font(.caption.weight(.semibold)).foregroundStyle(Theme.gold)
+                            Text("عرض الكل").font(Theme.f(.caption, .semibold)).foregroundStyle(Theme.gold)
                         }
                         .buttonStyle(.plain)
                     }
@@ -537,7 +544,7 @@ struct TVSections: View {
             if n > 0 {
                 Button { managing = true } label: {
                     TileRow(title: "القنوات المضافة", icon: "slider.horizontal.3", color: .orange,
-                            subtitle: LF("%@ قناة — حذف قناة أو قائمة كاملة", ar(n)))
+                            subtitle: LF("%@ — حذف قناة أو قائمة كاملة", channelsText(n)))
                 }
                 .buttonStyle(.plain)
                 .sheet(isPresented: $managing, onDismiss: { favs = TVChannels.favorites; rev += 1 }) { CustomChannelsView() }
@@ -568,7 +575,7 @@ struct TVSections: View {
                         }
                     }
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
-                Text(verbatim: c.name).font(.caption.weight(.semibold)).foregroundStyle(.white)
+                Text(verbatim: c.name).font(Theme.f(.caption, .semibold)).foregroundStyle(.white)
                     .lineLimit(1).minimumScaleFactor(0.8)
                     .frame(width: width)
             }

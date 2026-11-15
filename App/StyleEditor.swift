@@ -28,7 +28,7 @@ struct ChoiceTile<Icon: View>: View {
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(on ? Theme.gold.opacity(0.18) : Theme.card))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(on ? Theme.gold : Theme.stroke, lineWidth: on ? 1.5 : 1))
-            Text(title).font(.caption2.weight(on ? .semibold : .regular))
+            Text(title).font(Theme.f(.caption2, on ? .semibold : .regular))
                 .foregroundStyle(on ? Theme.gold : .white.opacity(0.8)).lineLimit(1)
         }
     }
@@ -86,7 +86,7 @@ struct StyleEditor: View {
                 }
                 ColorPicker(selection: Binding(get: { Palette.color(style.color) }, set: { style.color = Palette.rgb($0) }),
                             supportsOpacity: false) {
-                    Label("لون مخصّص", systemImage: "eyedropper.halffull").font(.subheadline).foregroundStyle(.white)
+                    Label("لون مخصّص", systemImage: "eyedropper.halffull").font(Theme.f(.subheadline)).foregroundStyle(.white)
                 }
             }
             if style.bg == .gradient {
@@ -104,11 +104,11 @@ struct StyleEditor: View {
             }
             if style.bg != .clear {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(style.bg == .glass ? "قوة التمويه" : "درجة التعتيم").font(.footnote).foregroundStyle(Theme.sub)
+                    Text(style.bg == .glass ? "قوة التمويه" : "درجة التعتيم").font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                     Slider(value: $style.strength, in: 0...1).tint(Theme.gold)
                 }
             }
-            Text(L(bgNote)).font(.caption).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+            Text(L(bgNote)).font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -138,7 +138,7 @@ struct StyleEditor: View {
                             }
                         }
                         .frame(height: 46)
-                        Text(f.title).font(.caption.weight(on ? .semibold : .regular))
+                        Text(f.title).font(Theme.f(.caption, on ? .semibold : .regular))
                             .foregroundStyle(on ? Theme.gold : Theme.sub)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 8)
@@ -175,11 +175,11 @@ struct StyleEditor: View {
             }
             if style.deco != .off {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("وضوح الزخرفة").font(.footnote).foregroundStyle(Theme.sub)
+                    Text("وضوح الزخرفة").font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                     Slider(value: $style.decoOpacity, in: 0.15...1).tint(Theme.gold)
                 }
             }
-            Text("تأخذ الزخرفة لون الخط نفسه.").font(.caption).foregroundStyle(Theme.sub)
+            Text("تأخذ الزخرفة لون الخط نفسه.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
         }
     }
 
@@ -192,7 +192,7 @@ struct StyleEditor: View {
                         Button { tint = p.2 } label: {
                             VStack(spacing: 2) {
                                 Swatch(fill: p.2, on: UIColor(p.2) == UIColor(tint) || Palette.same(Palette.rgb(p.2), Palette.rgb(tint)))
-                                Text(L(p.1)).font(.caption2).foregroundStyle(Theme.sub)
+                                Text(L(p.1)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
                             }
                         }
                         .buttonStyle(.plain)
@@ -200,7 +200,7 @@ struct StyleEditor: View {
                 }
             }
             ColorPicker(selection: $tint, supportsOpacity: false) {
-                Label("لون مخصّص", systemImage: "eyedropper.halffull").font(.subheadline).foregroundStyle(.white)
+                Label("لون مخصّص", systemImage: "eyedropper.halffull").font(Theme.f(.subheadline)).foregroundStyle(.white)
             }
         }
     }
@@ -250,15 +250,15 @@ struct GlobalStyleView: View {
                             reloadWidgets()
                             msg = "أُلغيت التصاميم الخاصة، وأصبحت كل الويدجت على التصميم العام."
                         } label: {
-                            Text("إلغاء التصاميم الخاصة (\(ar(customCount)))").font(.subheadline)
+                            Text("إلغاء التصاميم الخاصة (\(ar(customCount)))").font(Theme.f(.subheadline))
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                         }
                     }
                     if !msg.isEmpty {
-                        Label(L(msg), systemImage: "checkmark.circle.fill").font(.footnote).foregroundStyle(.green)
+                        Label(L(msg), systemImage: "checkmark.circle.fill").font(Theme.f(.footnote)).foregroundStyle(.green)
                     }
                     Text("يُطبَّق على جميع الويدجت، ويمكنك تخصيص أي ويدجت بمفردها من صفحتها في «الويدجت».")
-                        .font(.caption).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
+                        .font(Theme.f(.caption)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 30)
@@ -302,7 +302,7 @@ struct FontsAbout: View {
                         .frame(width: 96, height: 40)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(f.title).foregroundStyle(.white)
-                            Text(L(credit(f))).font(.caption).foregroundStyle(Theme.sub)
+                            Text(L(credit(f))).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                         }
                     }
                 }

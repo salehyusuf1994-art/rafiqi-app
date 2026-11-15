@@ -129,6 +129,7 @@ struct QiblaView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
+                BackRow()
                 PageHeader(title: "القبلة",
                            subtitle: Settings.placeName.isEmpty ? L("موقعك الحالي") : Settings.placeName)
 
@@ -150,7 +151,7 @@ struct QiblaView: View {
         .scrollIndicators(.hidden)
         .barSpace()
         .background(AppBackground())
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear { compass.start(); level.start() }
         .onDisappear { compass.stop(); level.stop() }
         .onChange(of: compass.heading) { _, h in
@@ -242,7 +243,7 @@ struct QiblaView: View {
                     Text(verbatim: "±\(ar(Int(compass.accuracy.rounded())))°").environment(\.layoutDirection, .leftToRight)
                 }
             }
-            .font(.caption).foregroundStyle(Theme.sub)
+            .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             .padding(.horizontal, 6)
         }
     }
@@ -250,7 +251,7 @@ struct QiblaView: View {
     func info(_ icon: String, _ title: String, _ value: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.gold)
-            Text(L(title)).font(.caption2).foregroundStyle(Theme.sub).lineLimit(1).minimumScaleFactor(0.8)
+            Text(L(title)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub).lineLimit(1).minimumScaleFactor(0.8)
             Text(verbatim: value).font(Theme.title(17)).foregroundStyle(.white)
                 .environment(\.layoutDirection, .leftToRight)
         }
@@ -261,7 +262,7 @@ struct QiblaView: View {
     func note(_ icon: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon).foregroundStyle(Theme.gold)
-            Text(L(text)).font(.footnote).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+            Text(L(text)).font(Theme.f(.footnote)).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .glassCard(padding: 14, radius: 20)
