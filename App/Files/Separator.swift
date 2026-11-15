@@ -76,7 +76,7 @@ enum Separator {
                     }
                 }
             }
-            let out = try model.prediction(from: MLDictionaryFeatureProvider(dictionary: [inName: input]))
+            let out = try await model.prediction(from: MLDictionaryFeatureProvider(dictionary: [inName: input]))
             guard let y = out.featureValue(for: outName)?.multiArrayValue else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
             func val(_ idx: Int) -> Float {
                 y.dataType == .float16 ? Float(y.dataPointer.bindMemory(to: Float16.self, capacity: y.count)[idx])
