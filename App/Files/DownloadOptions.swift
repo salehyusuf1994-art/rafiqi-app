@@ -239,13 +239,33 @@ struct DownloadOptionsSheet: View {
     let link: String
     @Environment(\.dismiss) private var dismiss
     var done: (String) -> Void
+    /// ملف اختير من داخل صفحة موقع: تُعرض خياراته مكان الصفحة (بدون فتح صفحة فوقها)
+    @State private var sub: SubLink?
+
+    struct SubLink: Equatable { let url: String; let referer: String? }
 
     var body: some View {
         NavigationStack {
-            DownloadOptionsPage(link: link, done: done, close: { dismiss() })
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } } }
+            Group {
+                if let sub {
+                    DownloadOptionsPage(link: sub.url, referer: sub.referer, done: done, close: { dismiss() }, open: open)
+                        .id(sub.url)
+                } else {
+                    DownloadOptionsPage(link: link, done: done, close: { dismiss() }, open: open)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } }
+                if sub != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { withAnimation { sub = nil } } label: { Label("رجوع", systemImage: "chevron.backward") }
+                    }
+                }
+            }
         }
     }
+
+    private func open(_ u: URL, _ referer: String?) { withAnimation { sub = SubLink(url: u.absoluteString, referer: referer) } }
 }
 
 /// محتوى خيارات التنزيل (بدون NavigationStack خاص، ليُفتح داخل الصفحة نفسها عند اختيار ملف من صفحة موقع)
@@ -255,10 +275,11 @@ struct DownloadOptionsPage: View {
     var referer: String? = nil
     @State private var probe: LinkProbe?
     @State private var error: String?
-    @State private var nested: URL?
     var done: (String) -> Void
-    /// يغلق صفحة الخيارات كلها (لا الصفحة الفرعية فقط) بعد بدء التنزيل
+    /// يغلق صفحة الخيارات كلها بعد بدء التنزيل
     var close: () -> Void
+    /// يعرض خيارات ملف وُجد في الصفحة (الرابط، والصفحة مصدرًا)
+    var open: (URL, String?) -> Void
 
     var body: some View {
             ScrollView {
@@ -283,9 +304,6 @@ struct DownloadOptionsPage: View {
             .background(AppBackground())
             .navigationTitle("خيارات التنزيل")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(isPresented: Binding(get: { nested != nil }, set: { if !$0 { nested = nil } })) {
-                if let u = nested { DownloadOptionsPage(link: u.absoluteString, referer: probe?.url.absoluteString, done: done, close: close) }
-            }
         .task {
             guard let u = LinkInspector.normalize(link) else { error = L("الرابط غير صالح."); return }
             do { probe = try await LinkInspector.probe(u, referer: referer) } catch { self.error = error.localizedDescription }
@@ -349,7 +367,7 @@ struct DownloadOptionsPage: View {
                         }
                     } else {
                         // بث أو ملف غير معروف الدقة: تُفتح خياراته (الجودات والتحويل)
-                        Button { NSLog("RFDBG page item tapped %@", it.url.absoluteString); nested = it.url } label: {
+                        Button { open(it.url, p.url.absoluteString) } label: {
                             HStack(spacing: 12) {
                                 Badge(name: icon(it.kind), size: 36)
                                 Text(verbatim: it.title).font(Theme.f(.body, .medium)).foregroundStyle(.white)
