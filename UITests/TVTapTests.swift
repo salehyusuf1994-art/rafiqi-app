@@ -71,4 +71,26 @@ final class TVTapTests: XCTestCase {
         print("TVTEST custom sheet player shown:", b)
         XCTAssertTrue(b, "custom channel from sheet did not open")
     }
+
+    /// أول تشغيل عادي: لازم يطلب التطبيق إذن الإشعارات
+    func testAsksNotificationPermission() throws {
+        let app = XCUIApplication()
+        app.launchArguments = []
+        app.launch()
+        let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        var found = false
+        for i in 0..<6 {
+            let a = sb.alerts.firstMatch
+            guard a.waitForExistence(timeout: 8) else { break }
+            let label = a.label
+            print("TVTEST alert:", label)
+            shot(app, "6_alert_\(i)")
+            if label.contains("إشعار") || label.localizedCaseInsensitiveContains("notification") { found = true }
+            let btn = a.buttons.element(boundBy: a.buttons.count > 1 ? 1 : 0)
+            btn.tap(); sleep(2)
+            if found { break }
+        }
+        print("TVTEST notification prompt shown:", found)
+        XCTAssertTrue(found, "notification permission was not requested")
+    }
 }

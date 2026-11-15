@@ -147,6 +147,14 @@ enum Notify {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
+    /// يطلب إذن الإشعارات أول مرة فقط (لو ما سبق سؤال المستخدم) — بدونه ما يظهر «الإشعارات» في إعدادات الآيفون أصلًا
+    @discardableResult
+    static func askIfNeeded() async -> Bool {
+        let s = await UNUserNotificationCenter.current().notificationSettings()
+        if s.authorizationStatus == .notDetermined { return await requestPermission() }
+        return s.authorizationStatus == .authorized || s.authorizationStatus == .provisional
+    }
+
     static func authorized() async -> Bool {
         let s = await UNUserNotificationCenter.current().notificationSettings()
         return s.authorizationStatus == .authorized || s.authorizationStatus == .provisional

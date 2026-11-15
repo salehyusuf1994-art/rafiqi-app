@@ -44,6 +44,7 @@ final class NotifyStore: ObservableObject {
                 return
             }
             Task {
+                _ = await Notify.askIfNeeded()
                 let ok = await AdhanAlarms.requestAccess()
                 await MainActor.run {
                     let final: Notify.SoundMode = ok ? .full : .part
@@ -92,6 +93,7 @@ final class NotifyStore: ObservableObject {
 
     func checkPermission() {
         Task {
+            if SHOT.isEmpty, Notify.enabled { _ = await Notify.askIfNeeded(); await Notify.reschedule() }
             let s = await UNUserNotificationCenter.current().notificationSettings()
             await MainActor.run { self.denied = s.authorizationStatus == .denied && Notify.enabled }
         }

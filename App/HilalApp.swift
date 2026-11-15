@@ -191,6 +191,8 @@ struct ContentView: View {
             TVBridge.open = { id in TVRouter.shared.show(id: id) }
             tvRouter.checkPending()
             Backdrop.ensureCrops()
+            // إذن الإشعارات: يُطلب عند أول تشغيل (التنبيهات مفعّلة افتراضيًا فلم يكن يُطلب أبدًا)
+            if SHOT.isEmpty, Notify.enabled || SportsPrefs.notifyBefore { await Notify.askIfNeeded() }
             await Notify.reschedule()
             // بيانات المباريات (والصور) إذا قدمت
             if Date().timeIntervalSince(SportsStore.load()?.updated ?? .distantPast) > 30 * 60 {
