@@ -33,7 +33,8 @@ final class CrawlTests: XCTestCase {
     func shot(_ name: String) {
         shotN += 1
         let png = XCUIScreen.main.screenshot().pngRepresentation
-        let safe = name.replacingOccurrences(of: "/", with: "_").prefix(60)
+        let bad = CharacterSet(charactersIn: "/\\<>:*?\"|\r\n")
+        let safe = String(name.unicodeScalars.map { bad.contains($0) ? "_" : Character($0) }).prefix(60)
         try? png.write(to: outDir().appendingPathComponent("\(tabName)_\(String(format: "%03d", shotN))_\(safe).png"))
     }
 
