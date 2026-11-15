@@ -208,4 +208,32 @@ final class TVTapTests: XCTestCase {
         sleep(10)
         print("TVTEST icon reverted:", orig.isSelected)
     }
+
+    /// تنزيل من صفحة موقع: الضغط على ملف وُجد في الصفحة يفتح خياراته (كان لا يستجيب)
+    func testPageFoundItemOpens() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-shot", "filesdl"]
+        app.launch()
+        sleep(3)
+        let field = app.textFields["رابط التحميل"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "link field missing")
+        field.tap()
+        field.typeText("https://raw.githubusercontent.com/salehyusuf1994-art/rafiqi-app/main/tools/testpage.html")
+        app.buttons["تنزيل"].firstMatch.tap()
+        let item = app.buttons.containing(NSPredicate(format: "label CONTAINS 'mov_bbb.mp4'")).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 40), "page items not listed")
+        shot(app, "13_page_items")
+        item.tap()
+        let best = app.buttons.containing(NSPredicate(format: "label CONTAINS 'أعلى جودة'")).firstMatch
+        let ok = best.waitForExistence(timeout: 40)
+        print("TVTEST page item opened:", ok)
+        shot(app, "14_page_item_options")
+        XCTAssertTrue(ok, "found item did not open its options")
+        best.tap()
+        sleep(3)
+        let closed = !best.exists
+        print("TVTEST download started & sheet closed:", closed)
+        shot(app, "15_page_item_downloading")
+        XCTAssertTrue(closed, "options sheet did not close after starting")
+    }
 }

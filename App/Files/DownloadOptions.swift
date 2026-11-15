@@ -56,9 +56,10 @@ enum LinkInspector {
         return .other
     }
 
-    static func probe(_ url: URL) async throws -> LinkProbe {
+    static func probe(_ url: URL, referer: String? = nil) async throws -> LinkProbe {
         var req = URLRequest(url: url)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
+        if let referer { req.setValue(referer, forHTTPHeaderField: "Referer") }
         req.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
         req.timeoutInterval = 20
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -140,13 +141,29 @@ enum LinkInspector {
 struct DownloadOptionsSheet: View {
     let link: String
     @Environment(\.dismiss) private var dismiss
-    @State private var probe: LinkProbe?
-    @State private var error: String?
-    @State private var sub: [URL: LinkProbe] = [:]
     var done: (String) -> Void
 
     var body: some View {
         NavigationStack {
+            DownloadOptionsPage(link: link, done: done, close: { dismiss() })
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } } }
+        }
+    }
+}
+
+/// محتوى خيارات التنزيل (بدون NavigationStack خاص، ليُفتح داخل الصفحة نفسها عند اختيار ملف من صفحة موقع)
+struct DownloadOptionsPage: View {
+    let link: String
+    /// الصفحة التي وُجد فيها الملف (كثير من المواقع ترفض التنزيل المباشر بدونها)
+    var referer: String? = nil
+    @State private var probe: LinkProbe?
+    @State private var error: String?
+    @State private var nested: URL?
+    var done: (String) -> Void
+    /// يغلق صفحة الخيارات كلها (لا الصفحة الفرعية فقط) بعد بدء التنزيل
+    var close: () -> Void
+
+    var body: some View {
             ScrollView {
                 VStack(spacing: 14) {
                     if let error {
@@ -169,11 +186,10 @@ struct DownloadOptionsSheet: View {
             .background(AppBackground())
             .navigationTitle("خيارات التنزيل")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } } }
-        }
+            .navigationDestination(item: $nested) { u in DownloadOptionsPage(link: u.absoluteString, referer: probe?.url.absoluteString, done: done, close: close) }
         .task {
             guard let u = LinkInspector.normalize(link) else { error = L("الرابط غير صالح."); return }
-            do { probe = try await LinkInspector.probe(u) } catch { self.error = error.localizedDescription }
+            do { probe = try await LinkInspector.probe(u, referer: referer) } catch { self.error = error.localizedDescription }
         }
     }
 
@@ -227,7 +243,7 @@ struct DownloadOptionsSheet: View {
                 Text(LF("وُجد في الصفحة %@:", itemsText(p.found.count))).font(Theme.f(.footnote, .bold)).foregroundStyle(Theme.sub)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ForEach(p.found, id: \.self) { u in
-                    NavigationLink { DownloadOptionsSheet(link: u.absoluteString, done: done) } label: {
+                    Button { nested = u } label: {
                         HStack(spacing: 10) {
                             Badge(name: icon(LinkInspector.kind(mime: nil, ext: u.pathExtension.lowercased())), size: 34)
                             Text(verbatim: u.lastPathComponent.removingPercentEncoding ?? u.lastPathComponent).font(Theme.f(.subheadline)).foregroundStyle(.white)
@@ -236,8 +252,9 @@ struct DownloadOptionsSheet: View {
                             Image(systemName: "chevron.forward").foregroundStyle(Theme.sub)
                         }
                         .padding(12).background(RoundedRectangle(cornerRadius: 14).fill(Theme.card))
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressStyle())
                 }
             }
             option("arrow.down.doc", L("حفظ الصفحة نفسها"), nil) { start(p.url.absoluteString, .none, name: (p.url.host ?? "page") + ".html") }
@@ -272,14 +289,14 @@ struct DownloadOptionsSheet: View {
     private func approx(_ bw: Int) -> String { LF("%@ م.ب/دقيقة تقريبًا", ar(String(format: "%.0f", Double(bw) * 60 / 8 / 1_000_000))) }
 
     private func start(_ url: String, _ post: PostProcess, name: String?) {
-        if DownloadManager.shared.add(url, name: name, post: post) { done(L("بدأ التنزيل")) }
-        dismiss()
+        if DownloadManager.shared.add(url, name: name, headers: referer.map { ["Referer": $0] } ?? [:], post: post) { done(L("بدأ التنزيل")) }
+        close()
     }
 
     private func startHLS(_ url: URL, name: String, post: PostProcess) {
-        HLSDownloader.shared.start(url, name: name, post: post)
+        HLSDownloader.shared.start(url, name: name, post: post, referer: referer)
         done(L("بدأ التنزيل"))
-        dismiss()
+        close()
     }
 
     private func icon(_ k: LinkProbe.Kind) -> String {
@@ -320,9 +337,11 @@ final class HLSDownloader: NSObject, AVAssetDownloadDelegate {
         session = AVAssetDownloadURLSession(configuration: cfg, assetDownloadDelegate: self, delegateQueue: .main)
     }
 
-    func start(_ url: URL, name: String, post: PostProcess) {
+    func start(_ url: URL, name: String, post: PostProcess, referer: String? = nil) {
         let id = DownloadManager.shared.addExternal(url: url.absoluteString, name: name, post: post)
-        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["User-Agent": LinkInspector.ua]])
+        var headers = ["User-Agent": LinkInspector.ua]
+        if let referer { headers["Referer"] = referer }
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         guard let t = session.makeAssetDownloadTask(asset: asset, assetTitle: name, assetArtworkData: nil, options: nil) else {
             DownloadManager.shared.externalFailed(id, L("تعذّر بدء تنزيل البث."))
             return
