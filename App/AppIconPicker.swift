@@ -100,14 +100,14 @@ struct AppIconPicker: View {
         }
     }
 
-    /// النظام يرفض الطلب أحيانًا إن جاء أثناء انتقال الشاشة، فيُعاد بعد لحظة (حتى ٣ مرات)
+    /// النظام يرفض الطلب أحيانًا إن جاء أثناء انتقال الشاشة أو قبل إغلاق تنبيه التغيير السابق، فيُعاد بمهلة متزايدة (حتى ٦ مرات)
     private func apply(_ id: String, attempt: Int, done: @escaping (Bool) -> Void) {
         UIApplication.shared.setAlternateIconName(id.isEmpty ? nil : id) { err in
             DispatchQueue.main.async {
                 guard let err else { done(true); return }
                 NSLog("RFDBG icon %@ attempt %d failed: %@", id, attempt, String(describing: err))
-                if attempt < 3 {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { apply(id, attempt: attempt + 1, done: done) }
+                if attempt < 6 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6 * Double(attempt)) { apply(id, attempt: attempt + 1, done: done) }
                 } else { done(false) }
             }
         }
