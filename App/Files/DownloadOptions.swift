@@ -330,6 +330,8 @@ struct DownloadOptionsPage: View {
     var inherited: LinkPreview? = nil
     @State private var probe: LinkProbe?
     @State private var frame: UIImage?
+    /// تعذّر تحميل صورة المعاينة: يُعرض الرأس المختصر بدل مربع فارغ
+    @State private var thumbFailed = false
     @State private var error: String?
     var done: (String) -> Void
     /// يغلق صفحة الخيارات كلها بعد بدء التنزيل
@@ -362,7 +364,7 @@ struct DownloadOptionsPage: View {
             .navigationBarTitleDisplayMode(.inline)
         // يُعاد الفحص كلما تغيّر الرابط (عند اختيار ملف من الصفحة أو الرجوع منها)
         .task(id: link) {
-            probe = nil; error = nil; frame = nil
+            probe = nil; error = nil; frame = nil; thumbFailed = false
             guard let u = LinkInspector.normalize(link) else { error = L("الرابط غير صالح."); return }
             do { probe = try await LinkInspector.probe(u, referer: referer) } catch { self.error = error.localizedDescription }
             // فيديو بلا صورة معاينة: لقطة من الفيديو نفسه
@@ -377,7 +379,7 @@ struct DownloadOptionsPage: View {
 
     @ViewBuilder private func header(_ p: LinkProbe) -> some View {
         let title = p.title ?? inherited?.title
-        if thumbURL(p) != nil || frame != nil {
+        if frame != nil || (thumbURL(p) != nil && !thumbFailed) {
             VStack(alignment: .leading, spacing: 10) {
                 preview(p)
                     .frame(maxWidth: .infinity).frame(height: 190)
@@ -405,12 +407,8 @@ struct DownloadOptionsPage: View {
         if let frame {
             Image(uiImage: frame).resizable().scaledToFill()
         } else if let u = thumbURL(p) {
-            AsyncImage(url: u) { ph in
-                switch ph {
-                case .success(let img): img.resizable().scaledToFill()
-                case .failure: Rectangle().fill(Theme.card).overlay(Image(systemName: icon(p.kind)).font(.system(size: 34)).foregroundStyle(Theme.sub))
-                default: Rectangle().fill(Theme.card).overlay(ProgressView().tint(Theme.gold))
-                }
+            RemoteImage(url: u, referer: referer ?? p.url.absoluteString, failed: { thumbFailed = true }) {
+                Rectangle().fill(Theme.card).overlay(ProgressView().tint(Theme.gold))
             }
         }
     }
@@ -475,7 +473,7 @@ struct DownloadOptionsPage: View {
                         // بث أو ملف غير معروف الدقة: تُفتح خياراته (الجودات والتحويل)
                         Button { open(it.url, p.url.absoluteString, LinkPreview(thumb: p.thumb, title: p.title)) } label: {
                             HStack(spacing: 12) {
-                                if it.kind == .video || it.kind == .hls, let t = p.thumb { RowThumb(url: t, icon: icon(it.kind)) }
+                                if it.kind == .video || it.kind == .hls, let t = p.thumb { RowThumb(url: t, icon: icon(it.kind), referer: p.url.absoluteString) }
                                 else { Badge(name: icon(it.kind), size: 36) }
                                 Text(verbatim: it.title).font(Theme.f(.body, .medium)).foregroundStyle(.white)
                                 Spacer()
@@ -514,7 +512,7 @@ struct DownloadOptionsPage: View {
     private func option(_ icon: String, _ title: String, _ detail: String?, thumb: URL? = nil, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             HStack(spacing: 12) {
-                if let thumb { RowThumb(url: thumb, icon: icon) } else { Badge(name: icon, size: 36) }
+                if let thumb { RowThumb(url: thumb, icon: icon, referer: probe?.url.absoluteString) } else { Badge(name: icon, size: 36) }
                 Text(verbatim: title).font(Theme.f(.body, .medium)).foregroundStyle(.white)
                 Spacer()
                 if let detail { Text(verbatim: detail).font(Theme.f(.caption)).foregroundStyle(Theme.sub) }
@@ -661,11 +659,9 @@ final class HLSDownloader: NSObject, AVAssetDownloadDelegate {
 private struct RowThumb: View {
     let url: URL
     let icon: String
+    var referer: String? = nil
     var body: some View {
-        AsyncImage(url: url) { ph in
-            if case .success(let img) = ph { img.resizable().scaledToFill() }
-            else { Rectangle().fill(Theme.card) }
-        }
+        RemoteImage(url: url, referer: referer) { Rectangle().fill(Theme.card) }
         .frame(width: 58, height: 38)
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
@@ -673,5 +669,50 @@ private struct RowThumb: View {
                 .padding(5).background(Circle().fill(.black.opacity(0.5)))
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// تحميل الصور المصغّرة كما يطلبها المتصفح (هوية المتصفح والصفحة المصدر)،
+/// لأن بعض المواقع ترفض عرض صورها بدونها؛ مع ذاكرة مؤقتة
+enum RemoteImageLoader {
+    nonisolated(unsafe) private static let cache = NSCache<NSURL, UIImage>()
+
+    static func load(_ url: URL, referer: String?) async -> UIImage? {
+        if let c = cache.object(forKey: url as NSURL) { return c }
+        let origin = url.scheme.flatMap { sc in url.host.map { "\(sc)://\($0)/" } }
+        // بالمصدر أولًا، ثم بدونه، ثم بموقع الصورة نفسه
+        for ref in [referer, nil, origin] as [String?] {
+            var req = URLRequest(url: url)
+            req.setValue(LinkInspector.ua, forHTTPHeaderField: "User-Agent")
+            req.setValue("image/avif,image/webp,image/png,image/jpeg,*/*", forHTTPHeaderField: "Accept")
+            if let ref { req.setValue(ref, forHTTPHeaderField: "Referer") }
+            req.timeoutInterval = 12
+            if let (data, resp) = try? await URLSession.shared.data(for: req),
+               ((resp as? HTTPURLResponse)?.statusCode ?? 200) < 400,
+               let img = UIImage(data: data) {
+                cache.setObject(img, forKey: url as NSURL)
+                return img
+            }
+        }
+        return nil
+    }
+}
+
+struct RemoteImage<Placeholder: View>: View {
+    let url: URL
+    var referer: String?
+    var failed: (() -> Void)? = nil
+    @ViewBuilder var placeholder: () -> Placeholder
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image { Image(uiImage: image).resizable().scaledToFill() }
+            else { placeholder() }
+        }
+        .task(id: url) {
+            image = nil
+            if let img = await RemoteImageLoader.load(url, referer: referer) { image = img } else { failed?() }
+        }
     }
 }
