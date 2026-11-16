@@ -548,4 +548,5 @@ T.update({
 "بث فيديو (عدة جودات)": "Video stream (multiple qualities)",
 "صفحة موقع": "Web page",
 "المقطع %@": "Clip %@",
+"الشاشة تبقى مضاءة حتى ينتهي. أبقِ التطبيق مفتوحًا.": "The screen stays on until it finishes. Keep the app open.",
 })

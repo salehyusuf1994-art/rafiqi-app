@@ -10,6 +10,7 @@ final class WiFiServer: ObservableObject {
     @Published private(set) var address: String?
     @Published private(set) var lastEvent: String?
     private var listener: NWListener?
+    private var awake = false
     let port: UInt16 = 8080
     private let queue = DispatchQueue(label: "rafiqi.wifi")
 
@@ -32,7 +33,7 @@ final class WiFiServer: ObservableObject {
             l.start(queue: queue)
             listener = l
             address = Self.wifiIP().map { "http://\($0):\(port)" }
-            UIApplication.shared.isIdleTimerDisabled = true
+            if !awake { KeepAwake.begin(); awake = true }
         } catch {
             lastEvent = L("تعذّر تشغيل النقل. تأكّد من الاتصال بشبكة واي فاي.")
         }
@@ -42,7 +43,7 @@ final class WiFiServer: ObservableObject {
         listener?.cancel()
         listener = nil
         running = false
-        UIApplication.shared.isIdleTimerDisabled = false
+        if awake { KeepAwake.end(); awake = false }
     }
 
     func note(_ s: String) { lastEvent = s; FileStore.shared.touch() }

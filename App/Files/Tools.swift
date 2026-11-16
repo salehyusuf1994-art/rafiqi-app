@@ -446,7 +446,7 @@ struct ToolHost: View {
         card {
             ProgressView(value: progress).tint(Theme.gold)
             Text(LF("جارٍ التنفيذ… %@٪", ar(Int(progress * 100)))).font(Theme.f(.subheadline)).foregroundStyle(.white)
-            note("أبقِ هذه الصفحة مفتوحة حتى ينتهي.")
+            note("الشاشة تبقى مضاءة حتى ينتهي. أبقِ التطبيق مفتوحًا.")
         }
     }
 
@@ -544,7 +544,10 @@ struct ToolHost: View {
         error = nil
         running = true
         progress = 0
-        defer { running = false; FileStore.shared.touch() }
+        // الشاشة تبقى مضاءة طوال المهمة (فصل الصوت قد يستغرق دقائق)
+        KeepAwake.begin()
+        let bg = KeepAwake.Background("rafiqi.tool")
+        defer { running = false; FileStore.shared.touch(); KeepAwake.end(); bg.finish() }
         let p: (Double) -> Void = { v in Task { @MainActor in progress = v } }
         do {
             switch tool {

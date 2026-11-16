@@ -1560,3 +1560,4 @@
 "مستند %@" = "Document %@";
 "ملف %@" = "File %@";
 "المقطع %@" = "Clip %@";
+"الشاشة تبقى مضاءة حتى ينتهي. أبقِ التطبيق مفتوحًا." = "The screen stays on until it finishes. Keep the app open.";
