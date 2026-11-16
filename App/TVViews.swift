@@ -15,8 +15,18 @@ final class TVRouter: ObservableObject {
         didSet { if open?.id != oldValue?.id || (open != nil && hosting == nil) { sync() } }
     }
     private weak var hosting: UIViewController?
+    /// مشغّل قائم يُعاد عرضه (الرجوع من النافذة العائمة) بدل بدء القناة من جديد
+    private var reuse: TVPlayback?
+    private var onShown: (() -> Void)?
 
     func close() { open = nil }
+
+    /// الرجوع من النافذة العائمة إلى شاشة البث بالمشغّل نفسه (بلا انقطاع)
+    func reopen(_ tv: TVPlayback, done: @escaping () -> Void) {
+        reuse = tv
+        onShown = done
+        open = tv.channel
+    }
 
     private func sync() {
         if let h = hosting {
@@ -35,13 +45,17 @@ final class TVRouter: ObservableObject {
             if tries < 30 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.presentIfNeeded(tries: tries + 1) } }
             return
         }
-        let vc = UIHostingController(rootView: TVPlayerScreen(channel: c, onClose: { TVRouter.shared.close() })
+        let existing = reuse?.channel.id == c.id ? reuse : nil
+        reuse = nil
+        let shown = onShown
+        onShown = nil
+        let vc = UIHostingController(rootView: TVPlayerScreen(channel: c, reuse: existing, onClose: { TVRouter.shared.close() })
             .environment(\.layoutDirection, Lang.dir).digitsLocale().font(Theme.f(.body)))
         vc.modalPresentationStyle = .fullScreen
         vc.overrideUserInterfaceStyle = .dark
         vc.view.backgroundColor = .black
         hosting = vc
-        top.present(vc, animated: true)
+        top.present(vc, animated: true) { shown?() }
     }
 
     private static func topController() -> UIViewController? {
@@ -115,10 +129,9 @@ final class TVPlayback: ObservableObject {
     init(_ c: TVChannel) { channel = c }
 
     func start() {
+        // نوقف القرآن أو الإذاعة أو الفيديو قبل البث، ونغلق أي قناة أخرى في النافذة العائمة
+        PlaybackGate.claim(.tv, tv: self)
         TVPlayback.current = self
-        // نوقف القرآن أو الإذاعة قبل البث
-        let a = AudioPlayer.shared
-        if a.state.playing && a.state.source != .music { a.pause() }
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
         try? AVAudioSession.sharedInstance().setActive(true)
         TVChannels.last = channel.id
@@ -135,9 +148,17 @@ final class TVPlayback: ObservableObject {
 
     func retry() { start() }
 
+    /// تحديث البث: يعيد تحميل الرابط الحالي فيرجع للحظة البث الآن (إذا تأخّر أو علق)
+    func refresh() {
+        PlaybackGate.claim(.tv, tv: self)
+        failed = false
+        tryCurrent()
+    }
+
     // ── التحكم (من الشاشة أو شاشة القفل) ──
     var isPlaying: Bool { player.rate > 0 }
     func play() {
+        PlaybackGate.claim(.tv, tv: self)
         try? AVAudioSession.sharedInstance().setActive(true)
         if player.currentItem == nil { start() } else { player.play() }
         updateNowPlaying()
@@ -217,18 +238,22 @@ final class TVPlayback: ObservableObject {
 
 /// المشغّل بأزرار النظام (تشغيل، AirPlay، ملء الشاشة)
 struct TVVideo: UIViewControllerRepresentable {
-    let player: AVPlayer
+    let tv: TVPlayback
+    var player: AVPlayer { tv.player }
 
     /// الصوت يكمل في الخلفية: النظام يوقف أي فيديو مربوط بالشاشة عند الخروج من التطبيق،
     /// فنفكّ المشغّل عن الشاشة عند الخروج (يكمل الصوت) ونعيده عند الرجوع
     @MainActor
-    final class Coordinator {
+    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
         weak var vc: AVPlayerViewController?
         let player: AVPlayer
+        let tv: TVPlayback
         private var wasPlaying = false
         private nonisolated(unsafe) var observers: [Any] = []
-        init(player: AVPlayer) {
-            self.player = player
+        init(tv: TVPlayback) {
+            self.tv = tv
+            self.player = tv.player
+            super.init()
             let nc = NotificationCenter.default
             observers.append(nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -238,9 +263,14 @@ struct TVVideo: UIViewControllerRepresentable {
             })
             observers.append(nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.vc?.player = nil
-                    if self.wasPlaying { self.player.play() }
+                    // النافذة العائمة تبدأ تلقائيًا عند الخروج: نتركها. وإن لم تبدأ (أوقفها المستخدم من الإعدادات) نكمل الصوت وحده
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                        MainActor.assumeIsolated {
+                            guard let self, !TVPiP.active, UIApplication.shared.applicationState == .background else { return }
+                            self.vc?.player = nil
+                            if self.wasPlaying { self.player.play() }
+                        }
+                    }
                 }
             })
             observers.append(nc.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -251,16 +281,44 @@ struct TVVideo: UIViewControllerRepresentable {
             })
         }
         deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
+
+        // ── النافذة العائمة ──
+        func playerViewControllerWillStartPictureInPicture(_ pvc: AVPlayerViewController) {
+            NSLog("RFDBG tv pip start")
+            TVPiP.active = true
+            TVPiP.restored = false
+            TVPiP.vc = pvc
+            TVPiP.tv = tv
+            TVPiP.coordinator = self
+        }
+        func playerViewControllerDidStartPictureInPicture(_ pvc: AVPlayerViewController) {
+            // من داخل التطبيق: تُغلق شاشة البث لتتصفح التطبيق والقناة تعمل في النافذة العائمة
+            if UIApplication.shared.applicationState == .active { TVRouter.shared.close() }
+        }
+        func playerViewController(_ pvc: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler done: @escaping (Bool) -> Void) {
+            if pvc.view.window != nil { done(true); return }
+            TVPiP.restored = true
+            TVRouter.shared.reopen(tv) { done(true) }
+        }
+        func playerViewControllerDidStopPictureInPicture(_ pvc: AVPlayerViewController) {
+            guard TVPiP.coordinator === self else { return }
+            let restored = TVPiP.restored || pvc.view.window != nil
+            TVPiP.clear()
+            // أُغلقت النافذة العائمة (✕) وشاشة البث مغلقة: تتوقف القناة
+            if !restored && TVRouter.shared.open == nil { tv.stop() }
+        }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(player: player) }
+    func makeCoordinator() -> Coordinator { Coordinator(tv: tv) }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
         context.coordinator.vc = vc
         vc.player = player
         vc.videoGravity = .resizeAspect
-        vc.allowsPictureInPicturePlayback = false
+        vc.allowsPictureInPicturePlayback = true
+        vc.canStartPictureInPictureAutomaticallyFromInline = true
+        vc.delegate = context.coordinator
         vc.updatesNowPlayingInfoCenter = false
         return vc
     }
@@ -278,8 +336,11 @@ struct TVPlayerScreen: View {
     @State private var favs = TVChannels.favorites
     private let onClose: (() -> Void)?
 
-    @MainActor init(channel: TVChannel, onClose: (() -> Void)? = nil) {
-        _tv = StateObject(wrappedValue: TVPlayback(channel))
+    private let reused: Bool
+
+    @MainActor init(channel: TVChannel, reuse: TVPlayback? = nil, onClose: (() -> Void)? = nil) {
+        _tv = StateObject(wrappedValue: reuse ?? TVPlayback(channel))
+        reused = reuse != nil
         self.onClose = onClose
     }
 
@@ -290,7 +351,7 @@ struct TVPlayerScreen: View {
                 Color.black.ignoresSafeArea()
                 if landscape {
                     video.ignoresSafeArea()
-                    closeButton.padding(16)
+                    HStack(spacing: 10) { closeButton; refreshButton }.padding(16)
                 } else {
                     VStack(spacing: 0) {
                         header
@@ -305,18 +366,27 @@ struct TVPlayerScreen: View {
         }
         .environment(\.colorScheme, .dark)
         .onAppear {
-            tv.start()
+            if reused {
+                // رجوع من النافذة العائمة: القناة نفسها تكمل بلا إعادة تحميل
+                PlaybackGate.claim(.tv, tv: tv)
+                TVPlayback.current = tv
+                tv.updateNowPlaying()
+            } else {
+                tv.start()
+            }
             OrientationLock.allowLandscape(true)
         }
         .onDisappear {
-            tv.stop()
             OrientationLock.allowLandscape(false)
+            // انتقلت للنافذة العائمة: تبقى تعمل حتى تُغلق
+            if TVPiP.active && TVPiP.tv === tv { return }
+            tv.stop()
         }
     }
 
     private var video: some View {
         ZStack {
-            TVVideo(player: tv.player)
+            TVVideo(tv: tv)
             if tv.loading && !tv.failed {
                 ProgressView().controlSize(.large).tint(.white)
             }
@@ -347,11 +417,22 @@ struct TVPlayerScreen: View {
         .buttonStyle(.plain)
     }
 
+    /// تحديث البث إذا تأخّر أو علق
+    private var refreshButton: some View {
+        Button { tv.refresh() } label: {
+            Image(systemName: "arrow.clockwise").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 38, height: 38).background(Circle().fill(.ultraThinMaterial))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("تحديث البث"))
+    }
+
     private var header: some View {
         let c = tv.channel
         let fav = favs.contains(c.id)
         return HStack(spacing: 12) {
             closeButton
+            refreshButton
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(verbatim: c.name).font(Theme.title(18)).foregroundStyle(.white).lineLimit(1)

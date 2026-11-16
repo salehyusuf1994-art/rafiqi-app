@@ -30,8 +30,9 @@ enum FileOpener {
     }
 
     static func presentVideo(_ url: URL, playlist: [URL]) {
-        AudioPlayer.shared.pause()
         let vc = VideoController(playlist: playlist, start: playlist.firstIndex(of: url) ?? 0)
+        // فيديو جديد: يوقف الصوت والقنوات، ويغلق أي فيديو سابق ولو كان في النافذة العائمة
+        PlaybackGate.claim(.video, video: vc)
         vc.modalPresentationStyle = .fullScreen
         top()?.present(vc, animated: true)
     }
@@ -81,7 +82,66 @@ final class PreviewSource: NSObject, QLPreviewControllerDataSource, QLPreviewCon
 
 // MARK: - مشغّل الفيديو: ضغطتان للتقديم/الترجيع، وترجمة SRT، والصورة داخل الصورة، والتالي تلقائيًا
 
-final class VideoController: AVPlayerViewController {
+final class VideoController: AVPlayerViewController, AVPlayerViewControllerDelegate {
+    /// كل مشغّلات الفيديو المفتوحة (ومنها ما في النافذة العائمة)، والذي يعمل الآن
+    private static let players = NSHashTable<VideoController>.weakObjects()
+    static weak var active: VideoController?
+    /// مشغّل في النافذة العائمة يبقى حيًّا حتى تُغلق
+    private static var floating: VideoController?
+    private var inPiP = false
+    private var statusObs: NSKeyValueObservation?
+
+    /// يوقف بقية الفيديوهات؛ «close» يغلقها نهائيًا (ومعها نافذتها العائمة) عند بدء فيديو أو قناة أخرى
+    static func stopOthers(except keep: VideoController?, close: Bool) {
+        for vc in players.allObjects where vc !== keep {
+            vc.player?.pause()
+            if close { vc.shutDown() }
+        }
+    }
+
+    private func shutDown() {
+        statusObs = nil
+        if let timeObs, let p = player { p.removeTimeObserver(timeObs); self.timeObs = nil }
+        if let endObs { NotificationCenter.default.removeObserver(endObs); self.endObs = nil }
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil   // يُغلق النافذة العائمة إن كانت مفتوحة
+        if Self.active === self { Self.active = nil }
+        if Self.floating === self { Self.floating = nil }
+        Self.players.remove(self)
+        if presentingViewController != nil && !isBeingDismissed { dismiss(animated: false) }
+    }
+
+    // ── أزرار شاشة القفل والسماعات أثناء الفيديو ──
+    func remotePlay() { player?.play() }
+    func remotePause() { player?.pause() }
+    func remoteToggle() { if let p = player { p.rate > 0 ? p.pause() : p.play() } }
+    func remoteSeek(by s: Double) { remoteSeek(to: max(0, (player?.currentTime().seconds ?? 0) + s)) }
+    func remoteSeek(to t: Double) { player?.seek(to: CMTime(seconds: t, preferredTimescale: 600)) }
+    func remoteStep(_ d: Int) { if playlist.indices.contains(index + d) { load(index + d) } }
+
+    // ── النافذة العائمة ──
+    func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        inPiP = true
+        Self.floating = self
+    }
+    func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        inPiP = false
+        // أُغلقت النافذة العائمة دون الرجوع للمشغّل: ينتهي الفيديو
+        if view.window == nil && presentingViewController == nil {
+            player?.pause()
+            if Self.active === self { Self.active = nil }
+        }
+        if Self.floating === self { Self.floating = nil }
+    }
+    /// «الرجوع إلى ملء الشاشة» من النافذة العائمة
+    func playerViewController(_ playerViewController: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+        if view.window != nil || presentingViewController != nil { completionHandler(true); return }
+        guard let top = FileOpener.top() else { completionHandler(false); return }
+        modalPresentationStyle = .fullScreen
+        top.present(self, animated: true) { completionHandler(true) }
+    }
+
     private let playlist: [URL]
     private var index: Int
     private let label = UILabel()
@@ -103,6 +163,8 @@ final class VideoController: AVPlayerViewController {
         try? AVAudioSession.sharedInstance().setActive(true)
         allowsPictureInPicturePlayback = true
         canStartPictureInPictureAutomaticallyFromInline = true
+        delegate = self
+        Self.players.add(self)
         updatesNowPlayingInfoCenter = true
 
         // الترجمة
@@ -167,6 +229,19 @@ final class VideoController: AVPlayerViewController {
         if let timeObs, let old = player { old.removeTimeObserver(timeObs); self.timeObs = nil }
         let p = AVPlayer(url: url)
         player = p
+        // بدأ التشغيل (أول مرة أو بعد إيقاف مؤقت): يتوقف أي صوت أو قناة أو فيديو آخر
+        statusObs = p.observe(\.timeControlStatus, options: [.new]) { [weak self] pl, _ in
+            guard pl.timeControlStatus == .playing else { return }
+            DispatchQueue.main.async { MainActor.assumeIsolated {
+                guard let self, self.player === pl else { return }
+                VideoController.active = self
+                if PlaybackGate.owner != .video || AudioPlayer.shared.state.playing || TVPlayback.current?.isPlaying == true {
+                    PlaybackGate.claim(.video, video: self)
+                } else {
+                    VideoController.stopOthers(except: self, close: false)
+                }
+            } }
+        }
         cues = Self.subtitles(for: url)
         label.text = nil
         timeObs = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] t in
@@ -228,7 +303,11 @@ final class VideoController: AVPlayerViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        if isBeingDismissed || presentingViewController == nil { player?.pause() }
+        // الإغلاق يوقف الفيديو، إلا إذا انتقل إلى النافذة العائمة
+        if !inPiP && Self.floating !== self && (isBeingDismissed || presentingViewController == nil) {
+            player?.pause()
+            if Self.active === self { Self.active = nil }
+        }
     }
 
     /// ترجمة بنفس اسم الفيديو (.srt أو .vtt) في المجلد نفسه

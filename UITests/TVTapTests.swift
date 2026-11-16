@@ -28,6 +28,27 @@ final class TVTapTests: XCTestCase {
         let close = app.buttons["xmark"].exists || app.images["xmark"].exists || app.staticTexts["القناة غير متاحة الآن"].exists
         print("TVTEST player shown:", close)
         XCTAssertTrue(close, "player did not open")
+
+        // تحديث البث: الشاشة تبقى والقناة تعيد التحميل
+        let refresh = app.buttons["تحديث البث"].firstMatch
+        XCTAssertTrue(refresh.waitForExistence(timeout: 3), "refresh button missing")
+        refresh.tap()
+        sleep(6)
+        shot(app, "3_after_refresh")
+        XCTAssertTrue(playerShown(app), "player closed after refresh")
+
+        // النافذة العائمة: زر النظام في عناصر المشغّل (يظهر بعد لمس الفيديو)
+        let video = app.otherElements.matching(NSPredicate(format: "identifier CONTAINS 'AVPlayerView' OR label CONTAINS 'فيديو' OR label CONTAINS 'Video'")).firstMatch
+        if video.exists { video.tap() } else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap() }
+        sleep(1)
+        let pip = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'picture' OR label CONTAINS 'صورة' OR identifier CONTAINS[c] 'pip'")).firstMatch
+        print("TVTEST pip button:", pip.exists, pip.exists ? pip.label : "")
+        if pip.exists && pip.isHittable {
+            pip.tap()
+            sleep(5)
+            shot(app, "4_tv_pip")
+            print("TVTEST after pip, player screen still shown:", playerShown(app))
+        }
     }
 
     private func playerShown(_ app: XCUIApplication) -> Bool {

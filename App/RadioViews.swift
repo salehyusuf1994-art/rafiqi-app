@@ -161,7 +161,7 @@ struct SleepMenu: View {
                     .font(.system(size: 10, weight: .medium)).foregroundStyle(Theme.sub).lineLimit(1)
                 }
             }
-            .frame(minWidth: label ? 64 : 28)
+            .frame(minWidth: label ? 54 : 28)
         }
     }
 }
@@ -225,13 +225,15 @@ struct RadioPlayerCard: View {
                     }
                 }
                 Spacer()
+                action("arrow.clockwise", "تحديث البث", on: false) { AudioPlayer.shared.refreshLive() }
+                Spacer()
                 SleepMenu()
                 Spacer()
                 VStack(spacing: 3) {
                     RoutePicker().frame(width: 26, height: 22)
                     Text("AirPlay").font(Theme.font(10, .medium)).foregroundStyle(Theme.sub)
                 }
-                .frame(minWidth: 64)
+                .frame(minWidth: 54)
                 Spacer()
                 if let st, let u = URL(string: st.url) {
                     ShareLink(item: u, subject: Text(st.name)) {
@@ -239,7 +241,7 @@ struct RadioPlayerCard: View {
                             Image(systemName: "square.and.arrow.up").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
                             Text("مشاركة").font(Theme.font(10, .medium)).foregroundStyle(Theme.sub)
                         }
-                        .frame(minWidth: 64)
+                        .frame(minWidth: 54)
                     }
                 }
             }
@@ -267,7 +269,7 @@ struct RadioPlayerCard: View {
                 Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(on ? Theme.gold : .white)
                 Text(L(title)).font(Theme.font(10, .medium)).foregroundStyle(Theme.sub).lineLimit(1)
             }
-            .frame(minWidth: 64)
+            .frame(minWidth: 54)
         }
         .buttonStyle(.plain)
     }
