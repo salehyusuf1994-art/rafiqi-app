@@ -132,7 +132,12 @@ struct SystemVolume: UIViewRepresentable {
 struct SleepMenu: View {
     @ObservedObject private var p = AudioPlayer.shared
     var label: Bool = true
+    /// زر دائري بنفس شكل أزرار المشغّل المصغّر وشاشة القناة
+    var round: Bool = false
+    /// خيار «عند نهاية السورة» (للقرآن فقط، لا للقنوات)
+    var surahEnd: Bool = true
     var body: some View {
+        let on = p.sleepAt != nil || p.sleepAtEnd
         Menu {
             if p.sleepAt != nil || p.sleepAtEnd {
                 Button(role: .destructive) { p.cancelSleep() } label: { Label("إلغاء المؤقّت", systemImage: "xmark") }
@@ -140,10 +145,18 @@ struct SleepMenu: View {
             ForEach([15, 30, 45, 60, 90], id: \.self) { m in
                 Button(LF("بعد %@ دقيقة", ar(m))) { p.sleep(minutes: m) }
             }
-            if p.state.source == .quran {
+            if surahEnd && p.state.source == .quran {
                 Button("عند نهاية السورة") { p.sleepAtEndOfSurah() }
             }
         } label: {
+            if round {
+                Image(systemName: on ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(on ? .black : .white)
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(on ? AnyShapeStyle(Theme.gold) : AnyShapeStyle(Theme.cardHi)))
+                    .accessibilityLabel(L("مؤقّت النوم"))
+            } else {
             VStack(spacing: 3) {
                 Image(systemName: p.sleepAt != nil || p.sleepAtEnd ? "moon.zzz.fill" : "moon.zzz")
                     .font(.system(size: 17, weight: .semibold))
@@ -162,6 +175,7 @@ struct SleepMenu: View {
                 }
             }
             .frame(minWidth: label ? 54 : 28)
+            }
         }
     }
 }

@@ -332,6 +332,9 @@ final class AudioPlayer: ObservableObject {
     /// يخفض الصوت تدريجيًا ثم يوقف
     private func fadeOutAndStop() async {
         sleepAt = nil; sleepTask = nil
+        // المؤقّت يوقف ما يعمل الآن: فيديو الملفات أو القناة أو الصوت
+        if let v = VideoController.active, PlaybackGate.owner == .video { v.remotePause(); return }
+        if PlaybackGate.owner == .tv, let tv = TVPlayback.current { tv.pause(); return }
         guard state.playing else { return }
         let v = player.volume
         for i in stride(from: 1.0, through: 0, by: -0.1) {

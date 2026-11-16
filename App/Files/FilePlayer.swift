@@ -121,9 +121,19 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     func remoteStep(_ d: Int) { if playlist.indices.contains(index + d) { load(index + d) } }
 
     // ── النافذة العائمة ──
+    private var playingAtPiP = false
     func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
         inPiP = true
         Self.floating = self
+        playingAtPiP = (player?.rate ?? 0) > 0 || player?.timeControlStatus == .waitingToPlayAtSpecifiedRate
+    }
+    /// بعد الانتقال للنافذة العائمة يكمل الفيديو (إغلاق شاشة المشغّل كان يوقفه)
+    func playerViewControllerDidStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        guard playingAtPiP else { return }
+        player?.play()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            MainActor.assumeIsolated { if let self, self.inPiP, (self.player?.rate ?? 0) == 0 { self.player?.play() } }
+        }
     }
     func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
         inPiP = false
@@ -214,6 +224,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
             lockButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
             lockButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
+        setupSleepButton()
         // ضغطتان: يمين/يسار الشاشة
         let dbl = UITapGestureRecognizer(target: self, action: #selector(doubleTap(_:)))
         dbl.numberOfTapsRequired = 2
@@ -259,6 +270,42 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
 
     private let blocker = UIView()
     private let lockButton = UIButton(type: .system)
+    private let sleepButton = UIButton(type: .system)
+
+    /// مؤقّت النوم: يوقف الفيديو بعد مدة
+    private func setupSleepButton() {
+        sleepButton.tintColor = .white
+        sleepButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        sleepButton.layer.cornerRadius = 22
+        sleepButton.translatesAutoresizingMaskIntoConstraints = false
+        sleepButton.accessibilityLabel = L("مؤقّت النوم")
+        sleepButton.showsMenuAsPrimaryAction = true
+        sleepButton.menu = UIMenu(title: L("مؤقّت النوم"), children: [UIDeferredMenuElement.uncached { [weak self] done in MainActor.assumeIsolated {
+            let a = AudioPlayer.shared
+            var items: [UIMenuElement] = []
+            if a.sleepAt != nil {
+                items.append(UIAction(title: L("إلغاء المؤقّت"), image: UIImage(systemName: "xmark"), attributes: .destructive) { _ in
+                    MainActor.assumeIsolated { a.cancelSleep(); self?.refreshSleepIcon() } })
+            }
+            for m in [15, 30, 45, 60, 90] {
+                items.append(UIAction(title: LF("بعد %@ دقيقة", ar(m))) { _ in MainActor.assumeIsolated { a.sleep(minutes: m); self?.refreshSleepIcon() } })
+            }
+            done(items)
+        } }])
+        view.addSubview(sleepButton)
+        NSLayoutConstraint.activate([
+            sleepButton.widthAnchor.constraint(equalToConstant: 44), sleepButton.heightAnchor.constraint(equalToConstant: 44),
+            sleepButton.centerXAnchor.constraint(equalTo: lockButton.centerXAnchor),
+            sleepButton.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -14),
+        ])
+        refreshSleepIcon()
+    }
+
+    private func refreshSleepIcon() {
+        let on = AudioPlayer.shared.sleepAt != nil
+        sleepButton.setImage(UIImage(systemName: on ? "moon.zzz.fill" : "moon.zzz", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
+        sleepButton.tintColor = on ? UIColor(Theme.gold) : .white
+    }
     private var locked = false
 
     @objc private func lockTap() {
@@ -280,6 +327,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         locked = on
         showsPlaybackControls = !on
         blocker.isHidden = !on
+        sleepButton.isHidden = on
         view.bringSubviewToFront(blocker)
         view.bringSubviewToFront(lockButton)
         lockButton.setImage(UIImage(systemName: on ? "lock.fill" : "lock.open", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)

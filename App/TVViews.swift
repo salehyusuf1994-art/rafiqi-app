@@ -283,8 +283,10 @@ struct TVVideo: UIViewControllerRepresentable {
         deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
 
         // ── النافذة العائمة ──
+        private var playingAtPiP = false
         func playerViewControllerWillStartPictureInPicture(_ pvc: AVPlayerViewController) {
             NSLog("RFDBG tv pip start")
+            playingAtPiP = player.rate > 0 || player.timeControlStatus != .paused
             TVPiP.active = true
             TVPiP.restored = false
             TVPiP.vc = pvc
@@ -294,6 +296,12 @@ struct TVVideo: UIViewControllerRepresentable {
         func playerViewControllerDidStartPictureInPicture(_ pvc: AVPlayerViewController) {
             // من داخل التطبيق: تُغلق شاشة البث لتتصفح التطبيق والقناة تعمل في النافذة العائمة
             if UIApplication.shared.applicationState == .active { TVRouter.shared.close() }
+            // إغلاق الشاشة لا يوقف البث في النافذة العائمة
+            if playingAtPiP {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    MainActor.assumeIsolated { if let self, TVPiP.active, self.player.rate == 0 { self.player.play() } }
+                }
+            }
         }
         func playerViewController(_ pvc: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler done: @escaping (Bool) -> Void) {
             if pvc.view.window != nil { done(true); return }
@@ -433,6 +441,7 @@ struct TVPlayerScreen: View {
         return HStack(spacing: 12) {
             closeButton
             refreshButton
+            SleepMenu(label: false, round: true, surahEnd: false)
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(verbatim: c.name).font(Theme.title(18)).foregroundStyle(.white).lineLimit(1)

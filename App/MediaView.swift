@@ -78,7 +78,7 @@ struct MediaView: View {
                 }
             }
             Spacer(minLength: 0)
-            if s.source != .music { SleepMenu(label: false).frame(minWidth: 30) }
+            if s.source != .music { SleepMenu(label: false, round: true) }
             HStack(spacing: 6) {
                 ctrl("backward.fill") { AudioPlayer.shared.previous() }
                 ctrl(s.playing ? "pause.fill" : "play.fill", big: true) { AudioPlayer.shared.toggle() }
