@@ -28,8 +28,8 @@ jobs:
           xcode-version: latest-stable
       - name: Fetch AI model
         run: |
-          pip3 install -q huggingface_hub --break-system-packages || pip3 install -q huggingface_hub
-          python3 -c "from huggingface_hub import snapshot_download; snapshot_download('gyoom/UVR-MDX-CoreML', allow_patterns=['UVR_MDXNET_9482.mlpackage/*'], local_dir='Resources/Models')" || echo "model download failed"
+          python3 -m venv "$RUNNER_TEMP/hf" && "$RUNNER_TEMP/hf/bin/pip" install -q huggingface_hub   # بيئة معزولة: تعمل على أجهزة ARM وIntel
+          "$RUNNER_TEMP/hf/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('gyoom/UVR-MDX-CoreML', allow_patterns=['UVR_MDXNET_9482.mlpackage/*'], local_dir='Resources/Models')" || echo "model download failed"
           rm -rf Resources/Models/.cache; ls Resources/Models || true
       - run: brew install xcodegen && xcodegen generate
       - name: Crawl
