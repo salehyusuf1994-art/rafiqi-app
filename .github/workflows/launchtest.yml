@@ -64,3 +64,9 @@ jobs:
           cp -R ../lout/* . 2>/dev/null || true
           git add -A && git -c user.name=ci -c user.email=ci@local commit -qm "launch test" && \
           git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} launchout
+      - name: Verdict
+        if: always()
+        run: |
+          if grep -q "BUILD FAILED" lout/build.log; then echo "::error::Release build failed"; grep -E "error:" lout/build.log | head; exit 1; fi
+          for i in 1 2 3; do if grep -q "NOT RUNNING" lout/running_$i.txt; then echo "::error::app not running after launch $i"; exit 1; fi; done
+          echo "app launched and stayed running 3/3"

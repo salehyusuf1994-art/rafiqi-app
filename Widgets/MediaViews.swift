@@ -195,18 +195,26 @@ struct Waveform: View {
     var height: CGFloat = 28
     var color: Color = .white
     var body: some View {
-        let seed = np.title.unicodeScalars.reduce(7) { ($0 &* 31 &+ Int($1.value)) % 100_003 }
-        let p = np.live ? 1.0 : (np.duration > 0 ? np.elapsed() / np.duration : 0)
+        let seed: Int = np.title.unicodeScalars.reduce(7) { (acc: Int, u: Unicode.Scalar) -> Int in (acc &* 31 &+ Int(u.value)) % 100_003 }
+        let p: Double = np.live ? 1.0 : (np.duration > 0 ? np.elapsed() / np.duration : 0)
         HStack(alignment: .center, spacing: 2) {
             ForEach(0..<count, id: \.self) { i in
-                let r = Double(abs((seed &* (i + 3) &* 7_919) % 97)) / 97
-                let h = height * CGFloat(0.18 + 0.82 * abs(sin(Double(i) * 0.55 + r * 3)) * (0.55 + 0.45 * r))
                 Capsule().fill(Double(i) < p * Double(count) ? color : color.opacity(0.28))
-                    .frame(width: 2.4, height: max(3, h))
+                    .frame(width: 2.4, height: barHeight(i, seed: seed))
             }
         }
         .frame(height: height)
         .environment(\.layoutDirection, .leftToRight)
+    }
+
+    /// ارتفاع العمود رقم i (مفصول في دالة مستقلة لتسريع فحص الأنواع في المترجم)
+    private func barHeight(_ i: Int, seed: Int) -> CGFloat {
+        let mixed: Int = (seed &* (i + 3) &* 7_919) % 97
+        let r: Double = Double(abs(mixed)) / 97
+        let wave: Double = abs(sin(Double(i) * 0.55 + r * 3))
+        let scale: Double = 0.55 + 0.45 * r
+        let h: CGFloat = height * CGFloat(0.18 + 0.82 * wave * scale)
+        return max(3, h)
     }
 }
 

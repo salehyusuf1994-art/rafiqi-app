@@ -54,3 +54,9 @@ jobs:
           cp -R ../uiout/* . 2>/dev/null || true
           git add -A && git -c user.name=ci -c user.email=ci@local commit -qm "ui test" && \
           git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} uiout
+      - name: Verdict
+        if: always()
+        run: |
+          grep -q "Executed" ui.log || { echo "::error::UI tests did not run (build failed)"; grep -E "error:" ui.log | head; exit 1; }
+          if grep -qE "Test Case .* failed" ui.log; then echo "::error::UI test failures"; grep -E "Test Case .* failed" ui.log; exit 1; fi
+          echo "all UI tests passed"
