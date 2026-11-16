@@ -241,4 +241,25 @@ final class TVTapTests: XCTestCase {
         shot(app, "15_page_item_downloading")
         XCTAssertTrue(closed, "options sheet did not close after starting")
     }
+
+    /// منشور x.com: يظهر مقطع المنشور نفسه بجوداته مع صورته وعنوانه
+    func testXPostQualities() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-shot", "filesdl"]
+        app.launch()
+        sleep(3)
+        let field = app.textFields["رابط التحميل"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "link field missing")
+        field.tap()
+        field.typeText("https://x.com/onetakenews/status/2121782437982441589")
+        app.buttons["تنزيل"].firstMatch.tap()
+        let q = app.buttons.containing(NSPredicate(format: "label CONTAINS 'جودة' AND label CONTAINS 'p'")).firstMatch
+        let ok = q.waitForExistence(timeout: 40)
+        let title = app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'One Take'")).firstMatch.exists
+        let n = app.buttons.matching(NSPredicate(format: "label CONTAINS 'جودة' AND label CONTAINS 'p'")).count
+        print("TVTEST x qualities:", ok, "count:", n, "title:", title, ok ? q.label : "")
+        shot(app, "16_x_post")
+        XCTAssertTrue(ok, "x post qualities missing")
+        XCTAssertTrue(title, "x post title missing")
+    }
 }

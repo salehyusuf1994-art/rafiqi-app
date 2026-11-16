@@ -50,6 +50,8 @@ struct FoundItem: Identifiable, Hashable {
     /// دقة الفيديو (٧٢٠ لـ 720p) إن عُرفت من الرابط
     var height: Int?
     var size: Int64?
+    /// رقم المقطع إن كان في المنشور أكثر من مقطع
+    var group: Int? = nil
 
     /// «جودة عالية • 720p»، «صوت MP3»، «صورة JPG»…
     var title: String {
@@ -57,7 +59,7 @@ struct FoundItem: Identifiable, Hashable {
         switch kind {
         case .video:
             guard let h = height else { return ext.isEmpty ? L("فيديو") : LF("فيديو %@", ext) }
-            return FoundItem.tier(h) + " • " + "\(h)p"
+            return (group.map { LF("المقطع %@", ar($0)) + " • " } ?? "") + FoundItem.tier(h) + " • " + "\(h)p"
         case .hls: return L("بث فيديو (عدة جودات)")
         case .audio: return ext.isEmpty ? L("صوت") : LF("صوت %@", ext)
         case .image: return ext.isEmpty ? L("صورة") : LF("صورة %@", ext == "JPEG" ? "JPG" : ext)
@@ -108,6 +110,8 @@ enum LinkInspector {
     }
 
     static func probe(_ url: URL, referer: String? = nil) async throws -> LinkProbe {
+        // منشور x.com: مقطع المنشور نفسه من بيانات التضمين (لا كل مقاطع الصفحة)
+        if XExtractor.statusID(url) != nil, let x = await XExtractor.probe(url) { return x }
         var req = URLRequest(url: url)
         req.setValue(ua, forHTTPHeaderField: "User-Agent")
         if let referer { req.setValue(referer, forHTTPHeaderField: "Referer") }
@@ -538,7 +542,9 @@ struct DownloadOptionsPage: View {
     private func fileName(_ it: FoundItem, page: LinkProbe) -> String {
         let ext = it.url.pathExtension.isEmpty ? "mp4" : it.url.pathExtension
         let site = (page.url.host ?? "").replacingOccurrences(of: "www.", with: "")
-        if let h = it.height { return "\(site) \(h)p.\(ext)" }
+        // عنوان المقطع (مثل «One Take») أوضح من اسم الموقع
+        let base = page.title.map { String($0.prefix(40)).replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: .whitespaces) } ?? site
+        if let h = it.height { return "\(base) \(h)p.\(ext)" }
         return it.url.lastPathComponent.removingPercentEncoding ?? it.url.lastPathComponent
     }
 

@@ -547,4 +547,5 @@ T.update({
 "مستند": "Document",
 "بث فيديو (عدة جودات)": "Video stream (multiple qualities)",
 "صفحة موقع": "Web page",
+"المقطع %@": "Clip %@",
 })
