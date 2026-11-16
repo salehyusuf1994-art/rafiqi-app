@@ -2,13 +2,18 @@ name: UI test (simulator)
 
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: "macOS runner label (use macos-15-intel when arm64 runners are saturated)"
+        type: string
+        default: macos-15
 
 permissions:
   contents: write
 
 jobs:
   uitest:
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner || 'macos-15' }}
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4

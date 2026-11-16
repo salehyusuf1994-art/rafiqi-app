@@ -6,6 +6,10 @@ on:
     paths-ignore: [".github/workflows/voices*.yml", "ci/voices*.py", ".github/workflows/transcribe.yml", "ci/transcribe.py", "ci/inbox/**"]
   workflow_dispatch:
     inputs:
+      runner:
+        description: "macOS runner label (use macos-15-intel when arm64 runners are saturated)"
+        type: string
+        default: macos-15
       shots:
         description: "App screenshots (simulator) — costs ~3 extra minutes"
         type: boolean
@@ -20,7 +24,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner || 'macos-15' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
