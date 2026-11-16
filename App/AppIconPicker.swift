@@ -15,6 +15,7 @@ enum AppIcons {
         Choice(id: "AppIcon-Navy", title: "ليلي ذهبي", preview: "IconPreview-Navy"),
         Choice(id: "AppIcon-Glass", title: "أزرق ليلي", preview: "IconPreview-Glass"),
         Choice(id: "AppIcon-Light", title: "أزرق فاتح", preview: "IconPreview-Light"),
+        Choice(id: "AppIcon-Silver", title: "أسود فضي", preview: "IconPreview-Silver"),
     ]
     /// الأيقونة المستخدمة الآن (تُحفظ عند تغييرها وتُطابق مع النظام عند فتح الصفحة)
     static var currentID: String {

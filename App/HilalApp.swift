@@ -341,7 +341,8 @@ struct SettingsView: View {
     var header: some View {
         Section {
             HStack(spacing: 14) {
-                Image(iconPreview).resizable().scaledToFit().frame(width: 58, height: 58)
+                // شعار رفيقي ثابت هنا (الأيقونة الأصلية) مهما تغيّرت أيقونة الشاشة الرئيسية
+                Image("AppIconPreview").resizable().scaledToFit().frame(width: 58, height: 58)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card))
                 VStack(alignment: .leading, spacing: 3) {

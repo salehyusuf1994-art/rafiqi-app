@@ -1549,6 +1549,7 @@
 "ليلي ذهبي" = "Midnight Gold";
 "أزرق ليلي" = "Night Blue";
 "أزرق فاتح" = "Light Blue";
+"أسود فضي" = "Silver Black";
 "هذا الجهاز لا يدعم تغيير الأيقونة." = "This device doesn’t support changing the icon.";
 "تعذّر تغيير الأيقونة، حاول مرة أخرى." = "Couldn’t change the icon. Please try again.";
 "يظهر تنبيه من النظام بعد التغيير، وهذا طبيعي. الأيقونة الجديدة تظهر فورًا على الشاشة الرئيسية وفي الإشعارات." = "The system shows a notice after the change — that’s normal. The new icon appears right away on the Home Screen and in notifications.";
