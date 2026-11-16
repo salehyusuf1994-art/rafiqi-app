@@ -34,7 +34,13 @@ struct LinkProbe {
     var found: [URL] = []
     /// تفاصيل ما وُجد في الصفحة (النوع والدقة والحجم) لعرضه بعناوين واضحة
     var items: [FoundItem] = []
+    /// صورة المعاينة وعنوان الصفحة (من وسوم og/twitter)
+    var thumb: URL?
+    var title: String?
 }
+
+/// معاينة تنتقل من الصفحة إلى ملف اختير منها
+struct LinkPreview: Equatable { var thumb: URL?; var title: String? }
 
 /// ملف وُجد داخل صفحة موقع
 struct FoundItem: Identifiable, Hashable {
@@ -131,7 +137,9 @@ enum LinkInspector {
             p.kind = .page
             var full = data
             if data.count >= 65536, let more = try? await URLSession.shared.data(from: final).0 { full = more }
-            p.found = scanPage(String(decoding: full, as: UTF8.self), base: final)
+            let html = String(decoding: full, as: UTF8.self)
+            p.found = scanPage(html, base: final)
+            (p.thumb, p.title) = meta(html, base: final)
             p.items = await details(p.found, referer: final.absoluteString)
         }
         return p
@@ -212,6 +220,52 @@ enum LinkInspector {
     }
 
     /// روابط الملفات داخل صفحة الموقع (الوسوم og، وعناصر الفيديو والصوت، والروابط المباشرة)
+    /// صورة المعاينة والعنوان من وسوم الصفحة
+    static func meta(_ html: String, base: URL) -> (URL?, String?) {
+        func first(_ pats: [String]) -> String? {
+            for p in pats {
+                guard let re = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]),
+                      let m = re.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+                      let r = Range(m.range(at: 1), in: html) else { continue }
+                let v = decode(String(html[r])).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !v.isEmpty { return v }
+            }
+            return nil
+        }
+        func tag(_ attr: String, _ names: String) -> [String] {
+            [#"<meta[^>]+\#(attr)=["'](?:\#(names))["'][^>]+content=["']([^"']+)["']"#,
+             #"<meta[^>]+content=["']([^"']+)["'][^>]+\#(attr)=["'](?:\#(names))["']"#]
+        }
+        let img = first(tag("property", "og:image|og:image:url|og:image:secure_url") + tag("name", "twitter:image|twitter:image:src"))
+        let title = first(tag("property", "og:title") + tag("name", "twitter:title") + [#"<title[^>]*>([^<]+)</title>"#])
+        return (img.flatMap { URL(string: $0, relativeTo: base)?.absoluteURL }, title.map { String($0.prefix(120)) })
+    }
+
+    static func decode(_ s: String) -> String {
+        var t = s.replacingOccurrences(of: "\\/", with: "/")
+        for (a, b) in [("&amp;", "&"), ("&quot;", "\""), ("&#39;", "'"), ("&#x27;", "'"), ("&lt;", "<"), ("&gt;", ">"), ("&nbsp;", " ")] {
+            t = t.replacingOccurrences(of: a, with: b)
+        }
+        return t
+    }
+
+    /// لقطة من الفيديو نفسه عند عدم وجود صورة معاينة
+    static func frame(_ url: URL, referer: String?) async -> UIImage? {
+        var headers = ["User-Agent": ua]
+        if let referer { headers["Referer"] = referer }
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        let gen = AVAssetImageGenerator(asset: asset)
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 720, height: 720)
+        return await withTaskGroup(of: UIImage?.self) { g in
+            g.addTask { (try? await gen.image(at: CMTime(seconds: 1, preferredTimescale: 600)).image).map { UIImage(cgImage: $0) } }
+            g.addTask { try? await Task.sleep(nanoseconds: 8_000_000_000); return nil }   // مهلة ٨ ثوانٍ
+            let r = await g.next() ?? nil
+            g.cancelAll()
+            return r
+        }
+    }
+
     static func scanPage(_ html: String, base: URL) -> [URL] {
         var found: [String] = []
         let patterns = [
@@ -242,11 +296,11 @@ struct DownloadOptionsSheet: View {
     /// ملف اختير من داخل صفحة موقع: تُعرض خياراته مكان الصفحة (بدون فتح صفحة فوقها)
     @State private var sub: SubLink?
 
-    struct SubLink: Equatable { let url: String; let referer: String? }
+    struct SubLink: Equatable { let url: String; let referer: String?; let preview: LinkPreview? }
 
     var body: some View {
         NavigationStack {
-            DownloadOptionsPage(link: sub?.url ?? link, referer: sub?.referer, done: done, close: { dismiss() }, open: open)
+            DownloadOptionsPage(link: sub?.url ?? link, referer: sub?.referer, inherited: sub?.preview, done: done, close: { dismiss() }, open: open)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } }
                 if sub != nil {
@@ -258,7 +312,9 @@ struct DownloadOptionsSheet: View {
         }
     }
 
-    private func open(_ u: URL, _ referer: String?) { withAnimation { sub = SubLink(url: u.absoluteString, referer: referer) } }
+    private func open(_ u: URL, _ referer: String?, _ preview: LinkPreview?) {
+        withAnimation { sub = SubLink(url: u.absoluteString, referer: referer, preview: preview) }
+    }
 }
 
 /// محتوى خيارات التنزيل (بدون NavigationStack خاص، ليُفتح داخل الصفحة نفسها عند اختيار ملف من صفحة موقع)
@@ -266,13 +322,16 @@ struct DownloadOptionsPage: View {
     let link: String
     /// الصفحة التي وُجد فيها الملف (كثير من المواقع ترفض التنزيل المباشر بدونها)
     var referer: String? = nil
+    /// صورة الصفحة وعنوانها إن كان الملف مختارًا من صفحة موقع
+    var inherited: LinkPreview? = nil
     @State private var probe: LinkProbe?
+    @State private var frame: UIImage?
     @State private var error: String?
     var done: (String) -> Void
     /// يغلق صفحة الخيارات كلها بعد بدء التنزيل
     var close: () -> Void
     /// يعرض خيارات ملف وُجد في الصفحة (الرابط، والصفحة مصدرًا)
-    var open: (URL, String?) -> Void
+    var open: (URL, String?, LinkPreview?) -> Void
 
     var body: some View {
             ScrollView {
@@ -299,17 +358,64 @@ struct DownloadOptionsPage: View {
             .navigationBarTitleDisplayMode(.inline)
         // يُعاد الفحص كلما تغيّر الرابط (عند اختيار ملف من الصفحة أو الرجوع منها)
         .task(id: link) {
-            probe = nil; error = nil
+            probe = nil; error = nil; frame = nil
             guard let u = LinkInspector.normalize(link) else { error = L("الرابط غير صالح."); return }
             do { probe = try await LinkInspector.probe(u, referer: referer) } catch { self.error = error.localizedDescription }
+            // فيديو بلا صورة معاينة: لقطة من الفيديو نفسه
+            if let p = probe, p.kind == .video, inherited?.thumb == nil {
+                frame = await LinkInspector.frame(p.url, referer: referer)
+            }
         }
     }
 
-    private func header(_ p: LinkProbe) -> some View {
+    /// صورة المعاينة: من الصفحة، أو الصورة نفسها، أو لقطة من الفيديو
+    private func thumbURL(_ p: LinkProbe) -> URL? { p.thumb ?? inherited?.thumb ?? (p.kind == .image ? p.url : nil) }
+
+    @ViewBuilder private func header(_ p: LinkProbe) -> some View {
+        let title = p.title ?? inherited?.title
+        if thumbURL(p) != nil || frame != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                preview(p)
+                    .frame(maxWidth: .infinity).frame(height: 190)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay {
+                        if p.kind == .video || p.kind == .hls || p.kind == .page {
+                            Image(systemName: "play.circle.fill").font(.system(size: 46))
+                                .symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.45))
+                                .shadow(radius: 6)
+                        }
+                    }
+                Text(verbatim: title ?? p.name).font(Theme.f(.headline)).foregroundStyle(.white).lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Text(verbatim: [p.url.host?.replacingOccurrences(of: "www.", with: ""), kindTitle(p.kind), p.size.map { sizeText($0) }]
+                        .compactMap { $0 }.joined(separator: " · "))
+                    .font(Theme.f(.caption)).foregroundStyle(Theme.sub).lineLimit(1)
+            }
+            .glassCard(padding: 12)
+        } else {
+            plainHeader(p, title: title)
+        }
+    }
+
+    @ViewBuilder private func preview(_ p: LinkProbe) -> some View {
+        if let frame {
+            Image(uiImage: frame).resizable().scaledToFill()
+        } else if let u = thumbURL(p) {
+            AsyncImage(url: u) { ph in
+                switch ph {
+                case .success(let img): img.resizable().scaledToFill()
+                case .failure: Rectangle().fill(Theme.card).overlay(Image(systemName: icon(p.kind)).font(.system(size: 34)).foregroundStyle(Theme.sub))
+                default: Rectangle().fill(Theme.card).overlay(ProgressView().tint(Theme.gold))
+                }
+            }
+        }
+    }
+
+    private func plainHeader(_ p: LinkProbe, title: String?) -> some View {
         HStack(spacing: 12) {
             Badge(name: icon(p.kind), size: 46, active: true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: p.name).font(Theme.f(.headline)).foregroundStyle(.white).lineLimit(2)
+                Text(verbatim: title ?? p.name).font(Theme.f(.headline)).foregroundStyle(.white).lineLimit(2)
                 Text(verbatim: [kindTitle(p.kind), p.size.map { sizeText($0) }].compactMap { $0 }.joined(separator: " · "))
                     .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             }
@@ -357,14 +463,16 @@ struct DownloadOptionsPage: View {
                 ForEach(p.items) { it in
                     if direct(it) {
                         // ملف معروف النوع والدقة: يبدأ تنزيله مباشرة
-                        option(icon(it.kind), it.title, it.size.map { sizeText($0) }) {
+                        option(icon(it.kind), it.title, it.size.map { sizeText($0) },
+                               thumb: it.kind == .video ? p.thumb : it.kind == .image ? it.url : nil) {
                             start(it.url.absoluteString, .none, name: fileName(it, page: p), referer: p.url.absoluteString)
                         }
                     } else {
                         // بث أو ملف غير معروف الدقة: تُفتح خياراته (الجودات والتحويل)
-                        Button { open(it.url, p.url.absoluteString) } label: {
+                        Button { open(it.url, p.url.absoluteString, LinkPreview(thumb: p.thumb, title: p.title)) } label: {
                             HStack(spacing: 12) {
-                                Badge(name: icon(it.kind), size: 36)
+                                if it.kind == .video || it.kind == .hls, let t = p.thumb { RowThumb(url: t, icon: icon(it.kind)) }
+                                else { Badge(name: icon(it.kind), size: 36) }
                                 Text(verbatim: it.title).font(Theme.f(.body, .medium)).foregroundStyle(.white)
                                 Spacer()
                                 if let sz = it.size { Text(verbatim: sizeText(sz)).font(Theme.f(.caption)).foregroundStyle(Theme.sub) }
@@ -381,7 +489,7 @@ struct DownloadOptionsPage: View {
                 }
                 // صوت MP3 من الفيديو (من أصغر نسخة: الصوت نفسه بتنزيل أقل)
                 if let v = p.items.last(where: { $0.kind == .video && $0.height != nil }) {
-                    option("music.note", L("صوت MP3"), v.size.map { sizeText($0) }) {
+                    option("music.note", L("صوت MP3"), v.size.map { sizeText($0) }, thumb: p.thumb) {
                         start(v.url.absoluteString, .mp3, name: fileName(v, page: p), referer: p.url.absoluteString)
                     }
                 }
@@ -399,10 +507,10 @@ struct DownloadOptionsPage: View {
         }
     }
 
-    private func option(_ icon: String, _ title: String, _ detail: String?, _ run: @escaping () -> Void) -> some View {
+    private func option(_ icon: String, _ title: String, _ detail: String?, thumb: URL? = nil, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             HStack(spacing: 12) {
-                Badge(name: icon, size: 36)
+                if let thumb { RowThumb(url: thumb, icon: icon) } else { Badge(name: icon, size: 36) }
                 Text(verbatim: title).font(Theme.f(.body, .medium)).foregroundStyle(.white)
                 Spacer()
                 if let detail { Text(verbatim: detail).font(Theme.f(.caption)).foregroundStyle(Theme.sub) }
@@ -540,5 +648,24 @@ final class HLSDownloader: NSObject, AVAssetDownloadDelegate {
             try? FileManager.default.removeItem(at: package)
             dm.externalFailed(id, L("تعذّر تحويل البث (قد يكون محميًا)."))
         }
+    }
+}
+
+/// صورة مصغّرة في صف التنزيل مع رمز نوعه فوقها
+private struct RowThumb: View {
+    let url: URL
+    let icon: String
+    var body: some View {
+        AsyncImage(url: url) { ph in
+            if case .success(let img) = ph { img.resizable().scaledToFill() }
+            else { Rectangle().fill(Theme.card) }
+        }
+        .frame(width: 58, height: 38)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            Image(systemName: icon).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                .padding(5).background(Circle().fill(.black.opacity(0.5)))
+        }
+        .accessibilityHidden(true)
     }
 }
