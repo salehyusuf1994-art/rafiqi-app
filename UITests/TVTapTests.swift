@@ -51,6 +51,20 @@ final class TVTapTests: XCTestCase {
         }
     }
 
+    /// يفتح الإعدادات ويمرّر حتى يظهر الصف، مع صورة وتشخيص إن لم يُعثر عليه
+    private func settingsRow(_ app: XCUIApplication, _ prefix: String, tag: String) -> XCUIElement {
+        app.buttons["الإعدادات"].firstMatch.tap()
+        sleep(2)
+        shot(app, "settings_" + tag)
+        let row = app.buttons.containing(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
+        for _ in 0..<8 where !(row.exists && row.isHittable) { app.swipeUp(); sleep(1) }
+        if !row.exists {
+            shot(app, "settings_" + tag + "_missing")
+            print("TVTEST settings row missing:", prefix, String(app.debugDescription.prefix(4000)))
+        }
+        return row
+    }
+
     private func playerShown(_ app: XCUIApplication) -> Bool {
         app.buttons["xmark"].exists || app.images["xmark"].exists || app.staticTexts["القناة غير متاحة الآن"].exists
     }
@@ -180,10 +194,7 @@ final class TVTapTests: XCTestCase {
         sleep(3)
         let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         for _ in 0..<3 { let a = sb.alerts.firstMatch; if a.waitForExistence(timeout: 3) { a.buttons.element(boundBy: a.buttons.count > 1 ? 1 : 0).tap() } }
-        app.buttons["الإعدادات"].firstMatch.tap()
-        sleep(2)
-        let row = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'طريقة حساب الأوقات'")).firstMatch
-        for _ in 0..<6 where !row.isHittable { app.swipeUp(); sleep(1) }
+        let row = settingsRow(app, "طريقة حساب الأوقات", tag: "method")
         row.tap()
         sleep(2)
         let mwl = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'رابطة العالم الإسلامي'")).firstMatch
@@ -205,10 +216,7 @@ final class TVTapTests: XCTestCase {
         sleep(3)
         let sb = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         for _ in 0..<3 { let a = sb.alerts.firstMatch; if a.waitForExistence(timeout: 3) { a.buttons.element(boundBy: a.buttons.count > 1 ? 1 : 0).tap() } }
-        app.buttons["الإعدادات"].firstMatch.tap()
-        sleep(2)
-        let row = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'أيقونة التطبيق'")).firstMatch
-        for _ in 0..<6 where !row.isHittable { app.swipeUp(); sleep(1) }
+        let row = settingsRow(app, "أيقونة التطبيق", tag: "icon")
         row.tap()
         sleep(2)
         let gold = app.buttons["كحلي ذهبي"].firstMatch
