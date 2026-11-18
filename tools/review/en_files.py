@@ -787,3 +787,4 @@ T.update({
 'تُحذف كل نسخ المسح المحفوظة للتعديل. الملفات المحفوظة في «إدارة الملفات» لا تتأثر.': 'All scans saved for editing will be deleted. Files saved in Files are not affected.',
 'تذكير بملف': 'File reminder',
 })
+T.update({'آخر تحديث للطقس': 'Weather last updated'})

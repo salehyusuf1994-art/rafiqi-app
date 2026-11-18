@@ -333,6 +333,7 @@ struct R3NaqshView: View {
                     if let img = Calli.png(ring) {
                         Image(uiImage: img).renderingMode(.template).resizable().interpolation(.high).scaledToFit()
                             .foregroundStyle(Color.white.opacity(0.34))
+                            .accessibilityHidden(true)
                             .frame(width: s * 0.98, height: s * 0.98)
                             .position(c)
                     }

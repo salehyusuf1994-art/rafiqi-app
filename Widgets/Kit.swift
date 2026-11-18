@@ -96,8 +96,20 @@ struct CImg: View {
                 .foregroundStyle(TXT)
                 .frame(width: b.width * s, height: b.height * s)
                 .opacity(opacity)
+                .calliLabel(name)
         } else {
             Color.clear.frame(width: 1, height: 1)
+        }
+    }
+}
+
+extension View {
+    /// صورة الخط تُقرأ بنصها لقارئ الشاشة (VoiceOver)؛ والزخرفة بلا نص تُتجاهل
+    @ViewBuilder func calliLabel(_ name: String) -> some View {
+        if let t = Lang.isEN ? Words.en(name) : Words.text(name) {
+            self.accessibilityLabel(Text(verbatim: t))
+        } else {
+            self.accessibilityHidden(true)
         }
     }
 }
@@ -110,6 +122,7 @@ struct CArt: View {
         if let u = Calli.img(name, wf) {
             Image(uiImage: u).renderingMode(.template).resizable().interpolation(.high).scaledToFit()
                 .foregroundStyle(TXT)
+                .calliLabel(name)
         }
     }
 }
@@ -407,9 +420,9 @@ struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelinePr
             return Timeline(entries: [first], policy: .after(now.addingTimeInterval(3600)))
         case .weather:
             let w = await Weather.load()
-            // مدخلات عند تغيّر الصلاة خلال نصف الساعة (لويدجت الطقس التي تعرض الصلاة القادمة)
-            let marks = Prayer.boundaries(from: now, hours: 0.5).map { $0.addingTimeInterval(1) }
-            return Timeline(entries: [e(now, w)] + marks.map { e($0, w) }, policy: .after(now.addingTimeInterval(30 * 60)))
+            // كل ساعة (ضمن حصة التحديث اليومية)، ومدخلات عند تغيّر الصلاة خلالها (لويدجت الطقس التي تعرض الصلاة القادمة)
+            let marks = Prayer.boundaries(from: now, hours: 1).map { $0.addingTimeInterval(1) }
+            return Timeline(entries: [e(now, w)] + marks.map { e($0, w) }, policy: .after(now.addingTimeInterval(60 * 60)))
         }
     }
 }
@@ -525,9 +538,15 @@ struct Root<Content: View>: View {
                 ZStack {
                     DecoView(kind: entry.style.deco, opacity: entry.style.decoOpacity)
                     content()
+                    // الطقس أقدم من ٣ ساعات (بلا إنترنت): نوضح وقت آخر تحديث بدل عرضه كأنه الآن
+                    if let w = entry.weather, !entry.inApp, entry.date.timeIntervalSince1970 - w.t > 3 * 3600 {
+                        StaleWeatherBadge(updated: Date(timeIntervalSince1970: w.t))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(7)
+                    }
                 }
                 .environment(\.untintIcons, !accented)
-                .modifier(TintInk(tint: entry.tint, accented: accented, bright: inkBright(entry)))
+                .modifier(TintInk(tint: entry.tint, accented: accented, bright: Tint.isAuto(entry.tint) && !accented && inkBright(entry)))
                 .overlayPreferenceValue(UntintedIcons.self) { UntintedOverlay(items: $0) }
                 .widgetAccentable(accented)
                 .frame(width: W, height: H)
@@ -546,6 +565,23 @@ struct Root<Content: View>: View {
 }
 
 /// لون خط الويدجت: لون عادي بالضرب، أو «زجاجي» محفور، أو «تلقائي» (زجاجي فوق الداكن وأبيض فوق الفاتح)
+/// شارة صغيرة بوقت آخر تحديث للطقس (تظهر فقط إذا كانت البيانات قديمة)
+struct StaleWeatherBadge: View {
+    let updated: Date
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "clock.arrow.circlepath").font(.system(size: 8, weight: .semibold))
+            Text(verbatim: hm12(updated)).font(digitFont(9, bold: true))
+        }
+        .foregroundStyle(Color.white.opacity(0.7))
+        .padding(.horizontal, 5).padding(.vertical, 2)
+        .background(Capsule().fill(Color.black.opacity(0.25)))
+        .environment(\.layoutDirection, .leftToRight)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: L("آخر تحديث للطقس") + " " + hm12(updated)))
+    }
+}
+
 struct TintInk: ViewModifier {
     let tint: Color
     var accented = false
@@ -607,7 +643,7 @@ func inkBright(_ e: HEntry) -> Bool {
     if e.inApp || e.calibrating { return false }
     let st = e.style, k = st.strength
     func lum(_ c: [Double]) -> Double { c.count >= 3 ? 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] : 0 }
-    let wall = Backdrop.image(slot: e.slot, size: e.size).flatMap { imageLuminance($0) }
+    let wall = Backdrop.luminance(slot: e.slot, size: e.size, compute: imageLuminance)
     var v: Double
     switch st.bg {
     case .dark: return false

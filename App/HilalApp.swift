@@ -271,6 +271,9 @@ struct ContentView: View {
             }
         }
         .onChange(of: filesRouter.openTab) { _, on in if on { tab = 5; filesRouter.openTab = false } }
+        // تغيّر توقيت الجوال (سفر) أو تعديل الوقت: الويدجت تُعاد حسابها فورًا بدل انتظار تحديثها التالي
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in reloadWidgets() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in reloadWidgets() }
         .onChange(of: phase) { _, p in
             // لقطة «آخر الملفات» و«المساحة» لويدجت الأدوات
             if p == .background { FilesWidgetSnapshot.write() }

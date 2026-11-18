@@ -107,9 +107,32 @@ enum Backdrop {
 
     static func image(slot: Slot, size: CGSize) -> UIImage? {
         guard hasWallpaper, let f = frame(for: slot, size: size),
-              let u = AppGroup.container?.appendingPathComponent(f.file),
-              let data = try? Data(contentsOf: u) else { return nil }
-        return UIImage(data: data)
+              let u = AppGroup.container?.appendingPathComponent(f.file) else { return nil }
+        // الويدجت تحضّر عشرات اللحظات دفعة واحدة: نقرأ الصورة مرة واحدة، ونعيد قراءتها فقط إذا تغيّر الملف
+        let stamp = ((try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast).timeIntervalSince1970
+        let key = u.path
+        imgLock.lock(); defer { imgLock.unlock() }
+        if let c = imgCache[key], c.stamp == stamp { return c.img }
+        guard let data = try? Data(contentsOf: u), let img = UIImage(data: data) else { imgCache[key] = nil; return nil }
+        if imgCache.count > 6 { imgCache.removeAll() }
+        imgCache[key] = (stamp, img, nil)
+        return img
+    }
+    private static let imgLock = NSLock()
+    nonisolated(unsafe) private static var imgCache: [String: (stamp: Double, img: UIImage, lum: Double?)] = [:]
+
+    /// سطوع الخلفية تحت الويدجت (يُحسب مرة لكل صورة ثم يُحفظ)
+    static func luminance(slot: Slot, size: CGSize, compute: (UIImage) -> Double?) -> Double? {
+        guard let img = image(slot: slot, size: size), let f = frame(for: slot, size: size),
+              let u = AppGroup.container?.appendingPathComponent(f.file) else { return nil }
+        imgLock.lock()
+        if let c = imgCache[u.path], c.img === img, let l = c.lum { imgLock.unlock(); return l }
+        imgLock.unlock()
+        let l = compute(img)
+        imgLock.lock()
+        if let c = imgCache[u.path], c.img === img { imgCache[u.path] = (c.stamp, c.img, l) }
+        imgLock.unlock()
+        return l
     }
 
     /// يحوّل أي صورة لمقاس الشاشة: لقطة الشاشة تبقى كما هي، والصورة العادية تتقص من الوسط مثل ما يعرضها الآيفون

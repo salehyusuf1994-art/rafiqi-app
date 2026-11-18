@@ -1381,8 +1381,11 @@ private struct FileTile2: View {
             }
             .frame(width: 74, height: 56)
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Color.white.opacity(0.2), lineWidth: 0.6))
+            // الصورة والاسم يُخفيان والجوال مقفل (StandBy وشاشة القفل)
+            .privacySensitive()
             Text(verbatim: (file.name as NSString).deletingPathExtension)
                 .font(R2.font(11, .bold)).foregroundStyle(.white).lineLimit(1).truncationMode(.middle)
+                .privacySensitive()
             Text(verbatim: when).font(R2.font(9.5)).foregroundStyle(Color.white.opacity(R2.past)).lineLimit(1)
         }
         .frame(maxWidth: .infinity)
