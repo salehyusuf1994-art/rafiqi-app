@@ -24,15 +24,17 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 TimelineView(.periodic(from: .now, by: 15)) { tl in
-                    VStack(spacing: 18) {
+                    // الرئيسية مبنية من الويدجت نفسها بحجم أكبر (التصميم المعتمد): نفس الخط والخامة في كل مكان
+                    let W = min(UIScreen.main.bounds.width - 32, 520)
+                    VStack(spacing: 14) {
                         brandHeader
-                        NextPrayerHero(date: tl.date, weather: weather)
-                        // ذكر الوقت والمناسبة القادمة بدل اختصارات كانت تكرر الأزرار وشريط التبويب
-                        DhikrCard(date: tl.date, openAudio: { openTab(4) })
-                        PrayerTimesCard(date: tl.date) { path.append(.timetable) }
-                        OccasionCard(date: tl.date) { path.append(.calendar) }
-                        TodayCard(date: tl.date)
-                        NightCard(date: tl.date)
+                        HomeWidget(id: "r2.today", family: .systemMedium, width: W, date: tl.date, weather: weather) { path.append(.timetable) }
+                        HStack(spacing: 12) {
+                            HomeWidget(id: "r2.occ", family: .systemSmall, width: (W - 12) / 2, date: tl.date, weather: weather) { path.append(.calendar) }
+                            HomeWidget(id: "r2.next", family: .systemSmall, width: (W - 12) / 2, date: tl.date, weather: weather) { path.append(.timetable) }
+                        }
+                        HomeWidget(id: "r2.dhikr", family: .systemMedium, width: W, date: tl.date, weather: weather) {}
+                        HomeWidget(id: "r2.playerm", family: .systemMedium, width: W, date: tl.date, weather: weather) { openTab(4) }
                         // تعريف بالويدجت يظهر حتى تزور المعرض أول مرة (تبويب الويدجت موجود دائمًا)
                         if !widgetsSeen {
                             WidgetsPromo(home: { widgetsSeen = true; GalleryNav.shared.lock = false; openGallery() },
@@ -80,6 +82,25 @@ struct HomeView: View {
             CircleButton(icon: "location.north.line.fill") { path.append(.qibla) }
         }
         .padding(.top, 4)
+    }
+}
+
+/// ويدجت معروضة داخل التطبيق بعرض الشاشة، والضغط عليها يفتح صفحتها (أزرارها الداخلية تعمل كما في الشاشة الرئيسية)
+private struct HomeWidget: View {
+    let id: String
+    let family: WidgetFamily
+    let width: CGFloat
+    let date: Date
+    let weather: WeatherData?
+    var open: () -> Void
+    var body: some View {
+        let s = WidgetPreview.size(family)
+        let k = width / s.width
+        WidgetPreview(info: Catalog.info(id), family: family, date: date, weather: weather, tint: Tint.appColor)
+            .scaleEffect(k)
+            .frame(width: width, height: s.height * k)
+            .contentShape(RoundedRectangle(cornerRadius: 24 * k, style: .continuous))
+            .onTapGesture { open() }
     }
 }
 
