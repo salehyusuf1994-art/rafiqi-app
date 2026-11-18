@@ -740,9 +740,8 @@ enum Weather {
         let c = cached()
         if let c, c.days != nil, Date().timeIntervalSince1970 - c.t < 20 * 60,
            abs((c.la ?? Settings.lat) - Settings.lat) < 0.05, abs((c.lo2 ?? Settings.lng) - Settings.lng) < 0.05 { return c }
-        // الخصوصية: الموقع يُرسل مقرّبًا إلى منزلتين (~١ كم) — الطقس لا يتغيّر بهذا الفرق
-        let la = String(format: "%.2f", Settings.lat), lo = String(format: "%.2f", Settings.lng)
-        let s = "https://api.open-meteo.com/v1/forecast?latitude=\(la)&longitude=\(lo)"
+        // الموقع الدقيق (اختيار صالح: بدون تقريب)
+        let s = "https://api.open-meteo.com/v1/forecast?latitude=\(Settings.lat)&longitude=\(Settings.lng)"
             + "&current=temperature_2m,apparent_temperature,weather_code,is_day,relative_humidity_2m,wind_speed_10m"
             + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max"
             + "&forecast_days=7&timezone=auto&timeformat=unixtime"
