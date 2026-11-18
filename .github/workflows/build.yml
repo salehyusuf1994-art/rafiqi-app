@@ -39,8 +39,10 @@ jobs:
       - name: Fetch AI separation model (UVR MDX-Net, MIT)
         run: |
           python3 -m venv "$RUNNER_TEMP/hf" && "$RUNNER_TEMP/hf/bin/pip" install -q huggingface_hub   # بيئة معزولة: تعمل على أجهزة ARM وIntel
-          "$RUNNER_TEMP/hf/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('gyoom/UVR-MDX-CoreML', allow_patterns=['UVR_MDXNET_9482.mlpackage/*'], local_dir='Resources/Models')" || echo "model download failed"
+          "$RUNNER_TEMP/hf/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('gyoom/UVR-MDX-CoreML', allow_patterns=['UVR_MDXNET_9482.mlpackage/*'], local_dir='Resources/Models')"
           rm -rf Resources/Models/.cache; ls Resources/Models || true
+          # بدون النموذج تختفي ميزة «عزل الصوت» بصمت — نوقف البناء بدل ذلك
+          test -f Resources/Models/UVR_MDXNET_9482.mlpackage/Manifest.json || { echo "::error::AI separation model missing"; exit 1; }
           ls -la Resources/Models/UVR_MDXNET_9482.mlpackage 2>/dev/null || true
       - name: Generate project
         run: xcodegen generate
@@ -226,3 +228,17 @@ jobs:
         with:
           name: build-log
           path: build.log
+      - name: Unit tests (prayer times, Hijri, Qibla — independent reference data)
+        timeout-minutes: 30
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          c=[x for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']]
+          p=[x for x in c if 'Pro Max' in x['name']] or c
+          print(p[-1]['udid'])")
+          set -o pipefail
+          xcodebuild test -project Hilal.xcodeproj -scheme Hilal -destination "id=$UDID" -derivedDataPath unitbuild \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -only-testing:HilalTests > unit.log 2>&1 || true
+          grep -E "Test Case|error:|Executed" unit.log | tail -40 | tee unit_summary.txt
+          grep -q "Executed .* with 0 failures" unit.log || { echo "::error::Unit tests failed or did not run"; exit 1; }

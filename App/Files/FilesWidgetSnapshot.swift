@@ -14,6 +14,8 @@ enum FilesWidgetSnapshot {
     static func write() {
         guard !running else { return }
         running = true
+        // مهلة خلفية من النظام حتى تكتمل الكتابة بعد الخروج من التطبيق
+        let bg = KeepAwake.Background("rafiqi.files.snapshot")
         let store = FileStore.shared
         let root = store.root, trash = store.trash
         let lockedKeys = store.meta.locked
@@ -42,6 +44,7 @@ enum FilesWidgetSnapshot {
                 WFilesStore.save(final)
                 RafiqiKinds.reload()
                 running = false
+                bg.finish()
             }
         }
     }

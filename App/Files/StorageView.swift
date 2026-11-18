@@ -119,8 +119,8 @@ struct StorageView: View {
             let fm = FileManager.default
             var files: [FileItem] = []
             if let e = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .creationDateKey], options: [.skipsHiddenFiles]) {
-                for case let u as URL in e {
-                    if u.standardizedFileURL.path.hasPrefix(trash.standardizedFileURL.path) { continue }
+                while let u = e.nextObject() as? URL {
+                    if FileStore.isInside(u, trash) { continue }
                     let v = try? u.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .creationDateKey])
                     if v?.isDirectory == true { continue }
                     files.append(FileItem(url: u, name: u.lastPathComponent, isDir: false, size: Int64(v?.fileSize ?? 0),

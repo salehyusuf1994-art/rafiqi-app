@@ -200,7 +200,7 @@ final class DownloadManager: NSObject, ObservableObject {
 
     func fileURL(_ it: DLItem) -> URL? {
         guard let f = it.file else { return nil }
-        let u = FileStore.shared.root.appendingPathComponent(f)
+        let u = FileStore.shared.url(forKey: f)
         return FileManager.default.fileExists(atPath: u.path) ? u : nil
     }
 

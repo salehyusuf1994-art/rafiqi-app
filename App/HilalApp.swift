@@ -167,8 +167,8 @@ struct ContentView: View {
             if t.hasPrefix("file:") {
                 let rel = String(t.dropFirst(5)).removingPercentEncoding ?? String(t.dropFirst(5))
                 let u = FileStore.shared.root.appendingPathComponent(rel)
-                // لا يُقبل مسار يخرج من مجلد الملفات
-                guard u.standardizedFileURL.path.hasPrefix(FileStore.shared.root.standardizedFileURL.path) else { return }
+                // لا يُقبل مسار يخرج من مجلد الملفات (الويدجت لا تعرض ما في الخزنة أصلًا)
+                guard FileStore.isInside(u, FileStore.shared.root) else { return }
                 tab = 5; filesRouter.path = []; filesRouter.page = .files; filesRouter.openFile = u
             }
         }

@@ -158,7 +158,8 @@ enum Tasbih {
     private static var d: UserDefaults { AppGroup.defaults }
     static func dayKey(_ t: Date) -> String {
         let c = Cal.gregCal.dateComponents([.year, .month, .day], from: t)
-        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+        // بأصفار حتى يكون الترتيب النصي ترتيبًا زمنيًا (حذف الأيام الأقدم)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
     static var count: Int { d.integer(forKey: "tsb_now") }
     static var days: [String: Int] { (d.dictionary(forKey: "tsb_days") as? [String: Int]) ?? [:] }

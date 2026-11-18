@@ -1,5 +1,6 @@
 import SwiftUI
 import Network
+import Security
 
 // MARK: - نقل الملفات عبر الواي فاي: خادم ويب صغير داخل التطبيق يفتحه الكمبيوتر من المتصفح
 
@@ -14,16 +15,31 @@ final class WiFiServer: ObservableObject {
     let port: UInt16 = 8080
     private let queue = DispatchQueue(label: "rafiqi.wifi")
 
-    /// رمز الدخول (٦ أرقام) يتغيّر مع كل تشغيل؛ يُطلب في متصفح الكمبيوتر
+    /// رمز الدخول (٨ أرقام) يتغيّر مع كل تشغيل؛ يُطلب في متصفح الكمبيوتر
     @Published private(set) var code = ""
+    /// بصمة شهادة التشفير — يطابقها المستخدم في المتصفح
+    @Published private(set) var fingerprint = ""
     private var idleTimer: Timer?
 
     func start() {
         guard listener == nil else { return }
-        code = String(format: "%06d", Int.random(in: 0...999_999))
+        // التشفير إلزامي: بدون عنوان واي فاي أو شهادة لا يعمل النقل أبدًا (لا رجوع لـ HTTP)
+        guard let ip = Self.wifiIP() else { lastEvent = L("تعذّر تشغيل النقل. تأكّد من الاتصال بشبكة واي فاي."); return }
+        guard let tls = WiFiTLS.identity(ip: ip), let secID = sec_identity_create(tls.identity) else {
+            lastEvent = L("تعذّر تجهيز التشفير، فلم يُشغَّل النقل.")
+            return
+        }
+        var bytes = [UInt8](repeating: 0, count: 4)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        let r = bytes.reduce(0) { ($0 << 8) | Int($1) } % 100_000_000
+        code = String(format: "%08d", r)
+        fingerprint = tls.fingerprint
         WiFiGuard.reset(code: code)
         do {
-            let params = NWParameters.tcp
+            let tlsOpts = NWProtocolTLS.Options()
+            sec_protocol_options_set_local_identity(tlsOpts.securityProtocolOptions, secID)
+            sec_protocol_options_set_min_tls_protocol_version(tlsOpts.securityProtocolOptions, .TLSv12)
+            let params = NWParameters(tls: tlsOpts, tcp: NWProtocolTCP.Options())
             params.allowLocalEndpointReuse = true
             let l = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
             l.newConnectionHandler = { conn in HTTPConn(conn: conn).start() }
@@ -38,7 +54,7 @@ final class WiFiServer: ObservableObject {
             }
             l.start(queue: queue)
             listener = l
-            address = Self.wifiIP().map { "http://\($0):\(port)" }
+            address = "https://\(ip):\(port)"
             if !awake { KeepAwake.begin(); awake = true }
             // يتوقف تلقائيًا بعد ١٠ دقائق بلا استخدام، أو بعد محاولات رمز خاطئة كثيرة
             idleTimer?.invalidate()
@@ -60,6 +76,7 @@ final class WiFiServer: ObservableObject {
     func stop() {
         idleTimer?.invalidate(); idleTimer = nil
         code = ""
+        fingerprint = ""
         WiFiGuard.reset(code: nil)
         listener?.cancel()
         listener = nil
@@ -95,8 +112,25 @@ enum WiFiGuard {
     nonisolated(unsafe) private static var code: String?
     nonisolated(unsafe) private static var fails = 0
     nonisolated(unsafe) private static var last = Date()
+    /// جلسات المتصفح: رمز عشوائي ٣٢ بايت يُعطى بعد إدخال الرمز الصحيح (لا يُحفظ رمز الدخول في المتصفح)
+    nonisolated(unsafe) private static var sessions: Set<String> = []
 
-    static func reset(code c: String?) { lock.lock(); code = c; fails = 0; last = Date(); lock.unlock() }
+    static func reset(code c: String?) { lock.lock(); code = c; fails = 0; last = Date(); sessions = []; lock.unlock() }
+    /// يتحقق من الرمز ويرجع جلسة جديدة
+    static func login(_ given: String?) -> String? {
+        guard check(given) else { return nil }
+        var b = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, b.count, &b) == errSecSuccess else { return nil }
+        let t = Data(b).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        lock.lock(); sessions.insert(t); lock.unlock()
+        return t
+    }
+    static func valid(_ token: String?) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard code != nil, fails < 10, let token, sessions.contains(token) else { return false }
+        last = Date()
+        return true
+    }
     static var blocked: Bool { lock.lock(); defer { lock.unlock() }; return fails >= 10 }
     static var lastActivity: Date { lock.lock(); defer { lock.unlock() }; return last }
     /// يتحقق من الرمز؛ بعد ١٠ محاولات خاطئة يُرفض كل شيء حتى يُعاد التشغيل
@@ -154,14 +188,19 @@ final class HTTPConn {
         let q = Dictionary((comps?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         let rel = q["path"] ?? ""
         guard let dir = safe(rel) else { return reply(403, "text/plain", Data("forbidden".utf8)) }
-        // رمز الدخول: يُرسل في الكوكي بعد كتابته في الصفحة
+        // الجلسة: رمز عشوائي في كوكي محمي (HttpOnly وSecure وSameSite=Strict)، لا رمز الدخول نفسه
         let cookie = (headers["cookie"] ?? "").split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { $0.hasPrefix("rfq=") }.map { String($0.dropFirst(4)) }
+            .first { $0.hasPrefix("rfs=") }.map { String($0.dropFirst(4)) }
         if method == "POST" && path == "/login" {
-            let ok = WiFiGuard.check(q["code"])
-            return reply(ok ? 200 : 401, "text/plain", Data((ok ? "ok" : "no").utf8))
+            // الرمز في جسم الطلب (لا في الرابط حتى لا يُحفظ في سجل المتصفح)؛ قد يصل الجسم في حزمة لاحقة
+            let need = min(64, Int(headers["content-length"] ?? "0") ?? 0)
+            return readAll(body, need: need) { [self] full in
+                let given = String(decoding: full, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !given.isEmpty, let token = WiFiGuard.login(given) else { return reply(401, "text/plain", Data("no".utf8)) }
+                reply(200, "text/plain", Data("ok".utf8), extra: "Set-Cookie: rfs=\(token); Path=/; HttpOnly; Secure; SameSite=Strict\r\n")
+            }
         }
-        guard WiFiGuard.check(cookie) else {
+        guard WiFiGuard.valid(cookie) else {
             return path == "/" ? reply(200, "text/html; charset=utf-8", Data(loginPage().utf8))
                                : reply(401, "text/plain", Data("code required".utf8))
         }
@@ -194,11 +233,22 @@ final class HTTPConn {
         }
     }
 
+    /// يكمل قراءة جسم طلب صغير حتى طوله المعلن
+    private func readAll(_ have: Data, need: Int, _ done: @escaping (Data) -> Void) {
+        guard have.count < need else { return done(have) }
+        conn.receive(minimumIncompleteLength: 1, maximumLength: need - have.count) { [self] data, _, end, err in
+            var d = have
+            if let data { d.append(data) }
+            if d.count >= need || end || err != nil { done(d) } else { readAll(d, need: need, done) }
+        }
+    }
+
     /// يمنع الخروج من مجلد الملفات أو الوصول إلى المخفي
     private func safe(_ rel: String) -> URL? {
         let clean = rel.split(separator: "/").filter { $0 != ".." && $0 != "." && !$0.hasPrefix(".") }.joined(separator: "/")
         let u = clean.isEmpty ? root : root.appendingPathComponent(clean)
-        return u.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path) ? u : nil
+        let p = u.standardizedFileURL.path, r = root.standardizedFileURL.path
+        return p == r || p.hasPrefix(r + "/") ? u : nil
     }
 
     private func unique(_ name: String, in dir: URL) -> URL {
@@ -246,7 +296,7 @@ final class HTTPConn {
         guard let h = try? FileHandle(forReadingFrom: u),
               let size = (try? u.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else { return reply(404, "text/plain", Data()) }
         let name = u.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "file"
-        let head = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: \(size)\r\nContent-Disposition: attachment; filename*=UTF-8''\(name)\r\nConnection: close\r\n\r\n"
+        let head = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: \(size)\r\nContent-Disposition: attachment; filename*=UTF-8''\(name)\r\nConnection: close\r\n\(Self.secureHeaders)\r\n"
         conn.send(content: Data(head.utf8), completion: .contentProcessed { [self] _ in pump(h) })
     }
 
@@ -262,9 +312,13 @@ final class HTTPConn {
         })
     }
 
-    private func reply(_ code: Int, _ type: String, _ body: Data) {
+    /// ترويسات أمان ثابتة لكل رد
+    private static let secureHeaders = "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\n"
+        + "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'\r\n"
+
+    private func reply(_ code: Int, _ type: String, _ body: Data, extra: String = "") {
         let status = code == 200 ? "OK" : "Error"
-        var d = Data("HTTP/1.1 \(code) \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n".utf8)
+        var d = Data("HTTP/1.1 \(code) \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\(Self.secureHeaders)\(extra)\r\n".utf8)
         d.append(body)
         conn.send(content: d, completion: .contentProcessed { [self] _ in conn.cancel() })
     }
@@ -280,9 +334,9 @@ final class HTTPConn {
         input{font-size:28px;letter-spacing:8px;text-align:center;width:100%;box-sizing:border-box;padding:10px;border-radius:12px;border:1px solid #3a3b47;background:#0b0c12;color:#fff;direction:ltr}
         button{margin-top:14px;width:100%;background:#e3c27f;color:#000;border:0;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer}#e{color:#f77;min-height:20px}</style></head><body>
         <div class="c"><h1>رفيقي — ملفاتي</h1><p>اكتب الرمز الظاهر في صفحة النقل على الجوال</p>
-        <input id="k" inputmode="numeric" maxlength="6" autofocus><button onclick="go()">دخول</button><p id="e"></p></div>
-        <script>function go(){var k=document.getElementById('k').value.trim();fetch('/login?code='+encodeURIComponent(k),{method:'POST'}).then(function(r){
-        if(r.ok){document.cookie='rfq='+k+';path=/;SameSite=Strict';location.reload()}else{document.getElementById('e').textContent='الرمز غير صحيح'}})}
+        <input id="k" inputmode="numeric" maxlength="8" autocomplete="off" autofocus><button onclick="go()">دخول</button><p id="e"></p></div>
+        <script>function go(){var k=document.getElementById('k').value.replace(/\\s/g,'');fetch('/login',{method:'POST',body:k,credentials:'same-origin'}).then(function(r){
+        if(r.ok){location.reload()}else{document.getElementById('e').textContent='الرمز غير صحيح'}})}
         document.getElementById('k').onkeydown=function(e){if(e.key==='Enter')go()}</script></body></html>
         """
     }
@@ -357,6 +411,13 @@ struct WiFiTransferView: View {
                                 .accessibilityIdentifier("wifiCode")
                             Text("لا تعطِ الرمز لأحد. المجلدات المقفلة لا تظهر في النقل.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                                 .multilineTextAlignment(.center)
+                            Divider().overlay(Theme.edge).padding(.vertical, 4)
+                            Label("الاتصال مشفّر (HTTPS)", systemImage: "lock.fill").font(Theme.f(.subheadline, .bold)).foregroundStyle(.green)
+                            Text("سيحذّرك المتصفح أول مرة لأن الشهادة صادرة من جوالك لا من جهة عامة؛ اختر «متقدم» ثم «متابعة». للتأكد أنه جوالك: بصمة الشهادة في المتصفح تبدأ بـ").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                                .multilineTextAlignment(.center)
+                            Text(verbatim: server.fingerprint).font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(.white)
+                                .textSelection(.enabled)
+                                .environment(\.layoutDirection, .leftToRight)
                         }
                         .frame(maxWidth: .infinity).glassCard(padding: 18)
                     } else if server.running {

@@ -33,8 +33,10 @@ jobs:
       - name: Fetch AI model
         run: |
           python3 -m venv "$RUNNER_TEMP/hf" && "$RUNNER_TEMP/hf/bin/pip" install -q huggingface_hub   # بيئة معزولة: تعمل على أجهزة ARM وIntel
-          "$RUNNER_TEMP/hf/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('gyoom/UVR-MDX-CoreML', allow_patterns=['UVR_MDXNET_9482.mlpackage/*'], local_dir='Resources/Models')" || echo "model download failed"
+          "$RUNNER_TEMP/hf/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('gyoom/UVR-MDX-CoreML', allow_patterns=['UVR_MDXNET_9482.mlpackage/*'], local_dir='Resources/Models')"
           rm -rf Resources/Models/.cache; ls Resources/Models || true
+          # بدون النموذج تختفي ميزة «عزل الصوت» بصمت — نوقف البناء بدل ذلك
+          test -f Resources/Models/UVR_MDXNET_9482.mlpackage/Manifest.json || { echo "::error::AI separation model missing"; exit 1; }
       - run: brew install xcodegen && xcodegen generate
       - name: Crawl
         continue-on-error: true

@@ -40,7 +40,7 @@ final class FilePlaylists: ObservableObject {
 
     /// الملفات الموجودة فعلًا (المحذوفة أو المنقولة تُتجاهل)
     func urls(_ p: FilePlaylist) -> [URL] {
-        p.items.map { FileStore.shared.root.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+        p.items.map { FileStore.shared.url(forKey: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
 

@@ -49,6 +49,12 @@ targets:
         buildPhase: resources
       - path: Resources/ksa_cities.json
         buildPhase: resources
+      - path: Resources/Privacy/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      # تراخيص الخطوط المفتوحة (OFL تشترط إرفاقها مع الخط)
+      - path: Resources/Licenses
+        type: folder
+        buildPhase: resources
       - path: Resources/Models
         optional: true
         excludes:
@@ -81,6 +87,8 @@ targets:
         buildPhase: resources
       - path: Resources/ksa_cities.json
         buildPhase: resources
+      - path: Resources/Privacy/PrivacyInfo.xcprivacy
+        buildPhase: resources
     settings:
       base:
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
@@ -89,6 +97,19 @@ targets:
         INFOPLIST_FILE: Widgets/Info.plist
         CODE_SIGN_ENTITLEMENTS: Widgets/HilalWidgets.entitlements
         SKIP_INSTALL: "YES"
+  HilalTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: UnitTests
+    dependencies:
+      - target: Hilal
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.hilal.widgets.unittests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Hilal.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Hilal"
+        BUNDLE_LOADER: "$(TEST_HOST)"
   HilalUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -109,4 +130,5 @@ schemes:
         HilalWidgets: all
     test:
       targets:
+        - HilalTests
         - HilalUITests

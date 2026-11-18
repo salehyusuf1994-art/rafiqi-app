@@ -39,7 +39,7 @@ final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
         // تذكير بملف: نفتحه في «إدارة الملفات»
         if let rel = response.notification.request.content.userInfo["file"] as? String {
             Task { @MainActor in
-                let u = FileStore.shared.root.appendingPathComponent(rel)
+                let u = FileStore.shared.url(forKey: rel)
                 FilesRouter.shared.page = .files
                 FilesRouter.shared.path = []
                 FilesRouter.shared.openTab = true
