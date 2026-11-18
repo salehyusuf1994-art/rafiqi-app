@@ -285,6 +285,42 @@ enum DesignLarge: String, AppEnum {
     ]
 }
 
+struct RafiqiSmallIntent: WidgetConfigurationIntent, Positioned {
+    static let title: LocalizedStringResource = "إعداد الويدجت"
+    static let description = IntentDescription("اختر الويدجت باسمها، ثم التقويم والمكان والخلفية والخط.")
+    @Parameter(title: "الويدجت", default: .day) var design: DesignSmall
+    @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
+    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
+    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
+    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
+    @Parameter(title: "الخط", default: .app) var font: FontOpt
+    @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
+    var designID: String? { design.rawValue }
+    var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
+    var bgOpt: BgOpt { bg }
+    var fontOpt: FontOpt { font }
+    var mediaOpt: String { source == .current ? "" : source.rawValue }
+    init() {}
+}
+
+struct RafiqiMediumIntent: WidgetConfigurationIntent, Positioned {
+    static let title: LocalizedStringResource = "إعداد الويدجت"
+    static let description = IntentDescription("اختر الويدجت باسمها، ثم التقويم والمكان والخلفية والخط.")
+    @Parameter(title: "الويدجت", default: .date) var design: DesignMedium
+    @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
+    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
+    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
+    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
+    @Parameter(title: "الخط", default: .app) var font: FontOpt
+    @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
+    var designID: String? { design.rawValue }
+    var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
+    var bgOpt: BgOpt { bg }
+    var fontOpt: FontOpt { font }
+    var mediaOpt: String { source == .current ? "" : source.rawValue }
+    init() {}
+}
+
 struct RafiqiLargeIntent: WidgetConfigurationIntent, Positioned {
     static let title: LocalizedStringResource = "إعداد الويدجت"
     static let description = IntentDescription("اختر الويدجت باسمها، ثم التقويم والمكان والخلفية والخط.")

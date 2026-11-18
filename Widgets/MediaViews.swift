@@ -270,7 +270,7 @@ struct Vinyl: View {
 }
 
 /// بكرة الكاسيت: حلقة شريط داكنة وبكرة بستة أسنان
-private struct Reel: View {
+private struct TapeReel: View {
     let tape: CGFloat   // نصف قطر الشريط الملفوف
     let hub: CGFloat
     var body: some View {
@@ -320,8 +320,8 @@ struct Cassette: View {
                 RoundedRectangle(cornerRadius: h * 0.12, style: .continuous).fill(Color.black.opacity(0.72))
                     .frame(width: w * 0.62, height: h * 0.32).position(x: w / 2, y: h * 0.46)
                 // البكرتان: الشريط ينتقل من اليسرى إلى اليمنى مع التقدّم
-                Reel(tape: rMin + (rMax - rMin) * CGFloat(1 - p), hub: h * 0.075).position(x: w * 0.32, y: h * 0.46)
-                Reel(tape: rMin + (rMax - rMin) * CGFloat(p), hub: h * 0.075).position(x: w * 0.68, y: h * 0.46)
+                TapeReel(tape: rMin + (rMax - rMin) * CGFloat(1 - p), hub: h * 0.075).position(x: w * 0.32, y: h * 0.46)
+                TapeReel(tape: rMin + (rMax - rMin) * CGFloat(p), hub: h * 0.075).position(x: w * 0.68, y: h * 0.46)
                 RoundedRectangle(cornerRadius: h * 0.12, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.6)
                     .frame(width: w * 0.62, height: h * 0.32).position(x: w / 2, y: h * 0.46)
                 // القاعدة شبه المنحرفة
