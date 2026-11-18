@@ -379,10 +379,11 @@ final class FileStore: ObservableObject {
 
     /// إعادة تسمية أو نقل مجلد عادي: ينتقل توأمه في الخزنة معه
     private func moveTwin(from a: URL, to b: URL) {
-        guard isUnderRoot(a), isUnderRoot(b) else { return }
+        guard isUnderRoot(a) else { return }
         let ta = vault.appendingPathComponent(key(a), isDirectory: true)
         guard fm.fileExists(atPath: ta.path) else { return }
-        let tb = vault.appendingPathComponent(key(b), isDirectory: true)
+        // نُقل المجلد إلى داخل مجلد مقفل: مجلداته المقفلة تصبح داخله مباشرة (كلها في الخزنة)
+        let tb = inVault(b) ? b : vault.appendingPathComponent(key(b), isDirectory: true)
         try? fm.createDirectory(at: tb.deletingLastPathComponent(), withIntermediateDirectories: true)
         if !fm.fileExists(atPath: tb.path) {
             try? fm.moveItem(at: ta, to: tb)
