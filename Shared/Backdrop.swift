@@ -114,7 +114,8 @@ enum Backdrop {
         imgLock.lock(); defer { imgLock.unlock() }
         if let c = imgCache[key], c.stamp == stamp { return c.img }
         guard let data = try? Data(contentsOf: u), let img = UIImage(data: data) else { imgCache[key] = nil; return nil }
-        if imgCache.count > 6 { imgCache.removeAll() }
+        // حد ذاكرة الويدجت صغير (~٣٠ ميجا): صورتان فقط في الذاكرة
+        if imgCache.count >= 2 { imgCache.removeAll() }
         imgCache[key] = (stamp, img, nil)
         return img
     }

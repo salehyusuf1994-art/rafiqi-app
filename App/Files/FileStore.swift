@@ -474,7 +474,20 @@ final class FileStore: ObservableObject {
     func sanitize(_ s: String) -> String {
         let bad = CharacterSet(charactersIn: "/:\\")
         let t = s.components(separatedBy: bad).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.hasPrefix(".") ? "_" + t.dropFirst() : t
+        return Self.capName(t.hasPrefix(".") ? "_" + t.dropFirst() : t)
+    }
+
+    /// النظام لا يقبل اسمًا فوق ٢٥٥ بايت (الحرف العربي بايتان): نقصّ إلى ٢٠٠ بايت مع الحفاظ على الامتداد،
+    /// فيبقى هامش لـ«(٢)» ولامتداد يُضاف بعدها (مثل .pdf)
+    static func capName(_ name: String, maxBytes: Int = 200) -> String {
+        guard name.utf8.count > maxBytes else { return name }
+        let ext = (name as NSString).pathExtension
+        let keepExt = !ext.isEmpty && ext.utf8.count <= 10
+        var base = keepExt ? (name as NSString).deletingPathExtension : name
+        let budget = maxBytes - (keepExt ? ext.utf8.count + 1 : 0)
+        while base.utf8.count > budget { base.removeLast() }   // يحذف حرفًا كاملًا (لا يقطع حرفًا عربيًا من نصفه)
+        base = base.trimmingCharacters(in: .whitespaces)
+        return keepExt ? base + "." + ext : base
     }
 
     /// إعادة التسمية مع الحفاظ على الامتداد إن لم يكتبه المستخدم

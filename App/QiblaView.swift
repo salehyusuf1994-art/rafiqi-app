@@ -125,13 +125,19 @@ struct QiblaView: View {
     /// الفرق بين اتجاه الجوال والقبلة (−١٨٠…١٨٠)
     private var diff: Double { (qibla - compass.heading + 540).truncatingRemainder(dividingBy: 360) - 180 }
     private var flat: Bool { level.tilt < 30 }
+    /// الاسم المكتوب يطابق مصدر الحساب: إن كان الاتجاه من موقع الجوال وهو بعيد عن المدينة المختارة يُكتب «موقعك الحالي»
+    private var placeLabel: String {
+        if let c = compass.coord, abs(c.latitude - Settings.lat) > 0.05 || abs(c.longitude - Settings.lng) > 0.05 {
+            return L("موقعك الحالي")
+        }
+        return Settings.placeName.isEmpty ? L("موقعك الحالي") : Settings.placeName
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
                 BackRow()
-                PageHeader(title: "القبلة",
-                           subtitle: Settings.placeName.isEmpty ? L("موقعك الحالي") : Settings.placeName)
+                PageHeader(title: "القبلة", subtitle: placeLabel)
 
                 status
                 compassFace
