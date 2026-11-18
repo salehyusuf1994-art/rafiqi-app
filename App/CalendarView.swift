@@ -2,7 +2,8 @@ import SwiftUI
 
 // MARK: - تقويم أم القرى
 // يعتمد على جداول تقويم أم القرى الرسمية (مدينة الملك عبدالعزيز للعلوم والتقنية) المضمّنة في نظام iOS،
-// وهي نفسها المعتمدة في المملكة للتواريخ الرسمية. التعديل اليدوي للتاريخ في الإعدادات لا يُطبّق هنا.
+// وهي نفسها المعتمدة في المملكة للتواريخ الرسمية. التعديل اليدوي للتاريخ (±يومين) يُطبّق هنا أيضًا
+// حتى يطابق التقويم الرئيسية والويدجت.
 
 enum UQ {
     static var hijri: Calendar {
@@ -12,6 +13,19 @@ enum UQ {
     }
     static var greg: Calendar { Cal.gregCal }
 
+    /// تعديل المستخدم بالثواني (يوم = ٨٦٤٠٠)
+    static var off: TimeInterval { Double(Settings.hijriOffset) * 86400 }
+    /// التاريخ الهجري لليوم (مع التعديل)
+    static func h(_ d: Date) -> DateComponents { hijri.dateComponents([.year, .month, .day], from: d.addingTimeInterval(off)) }
+    /// أول يوم (بالتاريخ الفعلي) وطول الشهر الهجري أو الميلادي الذي فيه «d»
+    static func month(of d: Date, hijriMode: Bool) -> (first: Date, len: Int) {
+        let c = hijriMode ? hijri : greg
+        let sd = hijriMode ? d.addingTimeInterval(off) : d
+        let start = c.dateInterval(of: .month, for: sd)?.start ?? sd
+        let len = c.range(of: .day, in: .month, for: sd)?.count ?? 30
+        return (hijriMode ? start.addingTimeInterval(-off) : start, len)
+    }
+
     static func monthName(_ m: Int, hijri: Bool) -> String {
         let i = max(0, min(11, m - 1))
         if Lang.isEN { return hijri ? Words.hmEN[i] : Words.gmEN[i] }
@@ -20,7 +34,7 @@ enum UQ {
 
     /// المناسبات (هجري: شهر/يوم — ميلادي: شهر/يوم)
     static func occasion(_ d: Date) -> (String, Bool)? {
-        let h = hijri.dateComponents([.month, .day], from: d), g = greg.dateComponents([.month, .day], from: d)
+        let h = Self.h(d), g = greg.dateComponents([.month, .day], from: d)
         let hm = h.month ?? 0, hd = h.day ?? 0
         switch (hm, hd) {
         case (1, 1): return ("رأس السنة الهجرية", true)
@@ -77,7 +91,7 @@ struct UmmAlQuraView: View {
 
                 VStack(spacing: 6) {
                     if Settings.hijriOffset != 0 {
-                        Text(LF("تعديلك اليدوي للتاريخ (%@) يُطبّق على الويدجت فقط، ويعرض هذا التقويم التاريخ الرسمي.", offsetLabel))
+                        Text(LF("يُطبّق تعديلك اليدوي للتاريخ (%@) على هذا التقويم كما في الرئيسية والويدجت.", offsetLabel))
                             .font(Theme.f(.caption)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
                     }
                     Link(destination: URL(string: "https://www.ummulqura.org.sa")!) {
@@ -102,13 +116,12 @@ struct UmmAlQuraView: View {
 
     // ── الشهر ──
     var monthCard: some View {
-        let c = cal
-        let first = c.dateInterval(of: .month, for: anchor)?.start ?? anchor
-        let len = c.range(of: .day, in: .month, for: first)?.count ?? 30
+        let (first, len) = UQ.month(of: anchor, hijriMode: hijriMode)
+        let g = UQ.greg
         let lead = Cal.weekday(first)
         let rows = Int(ceil(Double(lead + len) / 7))
-        let mc = c.dateComponents([.year, .month], from: first)
-        let last = c.date(byAdding: .day, value: len - 1, to: first) ?? first
+        let mc = hijriMode ? UQ.h(first) : g.dateComponents([.year, .month], from: first)
+        let last = g.date(byAdding: .day, value: len - 1, to: first) ?? first
         let other = otherSpan(first, last)
         return VStack(spacing: 12) {
             HStack {
@@ -134,7 +147,7 @@ struct UmmAlQuraView: View {
                     HStack(spacing: 0) {
                         ForEach(0..<7, id: \.self) { col in
                             let k = r * 7 + col - lead
-                            if k >= 0 && k < len, let d = c.date(byAdding: .day, value: k, to: first) {
+                            if k >= 0 && k < len, let d = g.date(byAdding: .day, value: k, to: first) {
                                 dayCell(d, col: col)
                             } else {
                                 Color.clear.frame(maxWidth: .infinity).frame(height: 50)
@@ -154,8 +167,9 @@ struct UmmAlQuraView: View {
     }
 
     func dayCell(_ d: Date, col: Int) -> some View {
-        let main = cal.component(.day, from: d)
-        let alt = (hijriMode ? UQ.greg : UQ.hijri).component(.day, from: d)
+        let hd = UQ.h(d).day ?? 1, gd = UQ.greg.component(.day, from: d)
+        let main = hijriMode ? hd : gd
+        let alt = hijriMode ? gd : hd
         let isToday = Cal.gregCal.isDateInToday(d)
         let isSel = Cal.gregCal.isDate(d, inSameDayAs: selected)
         let occ = UQ.occasion(d)
@@ -182,14 +196,19 @@ struct UmmAlQuraView: View {
 
     func shift(_ n: Int) {
         withAnimation(.snappy) {
-            anchor = cal.date(byAdding: .month, value: n, to: anchor) ?? anchor
+            // ننتقل من منتصف الشهر الحالي حتى لا يتأثر بطول الشهر أو التعديل
+            let (first, _) = UQ.month(of: anchor, hijriMode: hijriMode)
+            let mid = first.addingTimeInterval(14 * 86400)
+            let base = hijriMode ? mid.addingTimeInterval(UQ.off) : mid
+            let moved = cal.date(byAdding: .month, value: n, to: base) ?? base
+            anchor = hijriMode ? moved.addingTimeInterval(-UQ.off) : moved
         }
     }
 
     /// أسماء أشهر التقويم الآخر في هذا الشهر
     func otherSpan(_ a: Date, _ b: Date) -> String {
-        let oc = hijriMode ? UQ.greg : UQ.hijri
-        let ca = oc.dateComponents([.year, .month], from: a), cb = oc.dateComponents([.year, .month], from: b)
+        let ca = hijriMode ? UQ.greg.dateComponents([.year, .month], from: a) : UQ.h(a)
+        let cb = hijriMode ? UQ.greg.dateComponents([.year, .month], from: b) : UQ.h(b)
         let n1 = UQ.monthName(ca.month ?? 1, hijri: !hijriMode), n2 = UQ.monthName(cb.month ?? 1, hijri: !hijriMode)
         let y = ar(cb.year ?? 0) + (hijriMode ? "" : (Lang.isEN ? " AH" : " هـ"))
         return ca.month == cb.month ? "\(n1) \(y)" : "\(n1) – \(n2) \(y)"
@@ -197,7 +216,7 @@ struct UmmAlQuraView: View {
 
     // ── اليوم المختار ──
     var dayCard: some View {
-        let h = UQ.hijri.dateComponents([.year, .month, .day], from: selected)
+        let h = UQ.h(selected)
         let g = UQ.greg.dateComponents([.year, .month, .day], from: selected)
         let wd = Lang.isEN ? Words.wdEN[Cal.weekday(selected)] : Words.wd[Cal.weekday(selected)]
         let times = Prayer.dayTimes(selected)
@@ -235,13 +254,11 @@ struct UmmAlQuraView: View {
 
     // ── مناسبات الشهر ──
     var occasionsCard: some View {
-        let c = cal
-        let first = c.dateInterval(of: .month, for: anchor)?.start ?? anchor
-        let len = c.range(of: .day, in: .month, for: first)?.count ?? 30
+        let (first, len) = UQ.month(of: anchor, hijriMode: hijriMode)
         var list: [(Date, String)] = []
         var seen = Set<String>()
         for k in 0..<len {
-            if let d = c.date(byAdding: .day, value: k, to: first), let o = UQ.occasion(d), o.1, !seen.contains(o.0) {
+            if let d = UQ.greg.date(byAdding: .day, value: k, to: first), let o = UQ.occasion(d), o.1, !seen.contains(o.0) {
                 seen.insert(o.0)
                 list.append((d, o.0))
             }
@@ -251,7 +268,7 @@ struct UmmAlQuraView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("مناسبات الشهر").font(Theme.title(17)).foregroundStyle(.white)
                     ForEach(Array(list.enumerated()), id: \.offset) { _, it in
-                        let h = UQ.hijri.dateComponents([.month, .day], from: it.0)
+                        let h = UQ.h(it.0)
                         let g = UQ.greg.dateComponents([.month, .day], from: it.0)
                         HStack(spacing: 10) {
                             Circle().fill(Theme.gold).frame(width: 7, height: 7)
@@ -272,9 +289,9 @@ struct UmmAlQuraView: View {
 
 struct DateConverter: View {
     @State private var toGreg = true
-    @State private var hd = UQ.hijri.component(.day, from: Date())
-    @State private var hm = UQ.hijri.component(.month, from: Date())
-    @State private var hy = UQ.hijri.component(.year, from: Date())
+    @State private var hd = UQ.h(Date()).day ?? 1
+    @State private var hm = UQ.h(Date()).month ?? 1
+    @State private var hy = UQ.h(Date()).year ?? 1448
     @State private var gDate = Date()
 
     var body: some View {
@@ -316,14 +333,15 @@ struct DateConverter: View {
         guard let first = c.date(from: DateComponents(year: hy, month: hm, day: 1)) else { return "—" }
         let len = c.range(of: .day, in: .month, for: first)?.count ?? 30
         if hd > len { return LF("شهر %@ في هذه السنة %@ يومًا فقط", UQ.monthName(hm, hijri: true), ar(len)) }
-        guard let d = c.date(byAdding: .day, value: hd - 1, to: first) else { return "—" }
+        guard let d0 = c.date(byAdding: .day, value: hd - 1, to: first) else { return "—" }
+        let d = d0.addingTimeInterval(-UQ.off)
         let g = UQ.greg.dateComponents([.year, .month, .day], from: d)
         let wd = Lang.isEN ? Words.wdEN[Cal.weekday(d)] : Words.wd[Cal.weekday(d)]
         return "\(wd) \(ar(g.day ?? 1)) \(UQ.monthName(g.month ?? 1, hijri: false)) \(ar(g.year ?? 0))"
     }
 
     var gregToHijri: String {
-        let h = UQ.hijri.dateComponents([.year, .month, .day], from: gDate)
+        let h = UQ.h(gDate)
         let wd = Lang.isEN ? Words.wdEN[Cal.weekday(gDate)] : Words.wd[Cal.weekday(gDate)]
         return "\(wd) \(ar(h.day ?? 1)) \(UQ.monthName(h.month ?? 1, hijri: true)) \(ar(h.year ?? 0))\(Lang.isEN ? " AH" : " هـ")"
     }

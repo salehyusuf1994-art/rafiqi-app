@@ -94,7 +94,7 @@ enum TVChannels {
         TVChannel(id: "AlGhadTV.eg", name: "الغد", cat: .news, urls: ["https://eazyvwqssi.erbvr.com/alghadtv/alghadtv.m3u8"], logo: "https://i.imgur.com/ga6NXb9.png"),
         TVChannel(id: "KTVNews.kw", name: "كويت الأخبار", cat: .news, urls: ["https://kwtkbta.cdn.mangomolo.com/kb/smil:kb.stream.smil/chunklist.m3u8", "https://kwtktvata.cdn.mangomolo.com/ktva/smil:ktva.stream.smil/chunklist.m3u8", "https://cdn-globecast.akamaized.net/live/eds/ktv_al_akhbar/hls_roku/ktv_al_akhbar.m3u8"], logo: "https://i.imgur.com/erZ0Ol1.png"),
         TVChannel(id: "OmanTVMubashir.om", name: "عُمان مباشر", cat: .news, urls: ["https://partwota.cdn.mgmlcdn.com/omlive/smil:omlive.stream.smil/chunklist.m3u8"], logo: "https://i.imgur.com/UkQTR5b.png"),
-        TVChannel(id: "AlMashhad.ae", name: "المشهد", cat: .news, urls: ["https://amg30483-amg30483c23-amgplt0794.playout.now3.amagi.tv/ts-ap-s1-n1/playlist/amg30483-amg30483c23-amgplt0794/playlist.m3u8?ads.appname=[APP_NAME]&ads.appstoreurl=[APP_STOREURL]&ads.appversion=[APP_VERSION]&ads.bundleid=[APP_BUNDLE]&ads.coppa=0&ads.country=[COUNTRY]&ads.deviceid=[DEVICE_ID]&ads.devicemake=[DEVICE_MAKE]&ads.devicemodel=[DEVICE_MODEL]&ads.devicetype=[DEVICE_TYPE]&ads.donotsell=[DNS]&ads.fck=[FCK]&ads.gdpr=[GDPR]&ads.gdprconsent=[GDPR_CONSENT]&ads.givn=[NONCE]&ads.ic=[IC]&ads.ifa=[IFA]&ads.ifatype=[IFA_TYPE]&ads.ip=[IP]&ads.lat=[LMT]&ads.network_name=[networkname]&ads.targetad=[TARGETAD_ALLOWED]&ads.ua=[UA]&ads.usprivacy=[US_PRIVACY]&ads.viewsize=[VIEWSIZE]"], logo: "https://i.imgur.com/6G6fxs5.png"),
+        TVChannel(id: "AlMashhad.ae", name: "المشهد", cat: .news, urls: ["https://amg30483-amg30483c23-amgplt0794.playout.now3.amagi.tv/ts-ap-s1-n1/playlist/amg30483-amg30483c23-amgplt0794/playlist.m3u8", "https://amg30483-amg30483c23-amgplt0794.playout.now3.amagi.tv/ts-ap-s1-n1/playlist/amg30483-amg30483c23-amgplt0794/playlist.m3u8?ads.appname=[APP_NAME]&ads.appstoreurl=[APP_STOREURL]&ads.appversion=[APP_VERSION]&ads.bundleid=[APP_BUNDLE]&ads.coppa=0&ads.country=[COUNTRY]&ads.deviceid=[DEVICE_ID]&ads.devicemake=[DEVICE_MAKE]&ads.devicemodel=[DEVICE_MODEL]&ads.devicetype=[DEVICE_TYPE]&ads.donotsell=[DNS]&ads.fck=[FCK]&ads.gdpr=[GDPR]&ads.gdprconsent=[GDPR_CONSENT]&ads.givn=[NONCE]&ads.ic=[IC]&ads.ifa=[IFA]&ads.ifatype=[IFA_TYPE]&ads.ip=[IP]&ads.lat=[LMT]&ads.network_name=[networkname]&ads.targetad=[TARGETAD_ALLOWED]&ads.ua=[UA]&ads.usprivacy=[US_PRIVACY]&ads.viewsize=[VIEWSIZE]"], logo: "https://i.imgur.com/6G6fxs5.png"),
         TVChannel(id: "Medi1TVArabic.ma", name: "ميدي 1 تي في", cat: .news, urls: ["https://cdn.live.easybroadcast.io/abr_corp/83_medi1tv-arabic_g90v4ec/playlist.m3u8", "https://cdn.live.easybroadcast.io/abr_corp/83_medi1tv-arabic_g90v4ec/playlist_dvr.m3u8"], logo: "https://i.imgur.com/3YsZPY6.jpeg"),
         TVChannel(id: "AlArabiyaBusiness.ae", name: "العربية أسواق", cat: .news, urls: ["https://live.alarabiya.net/alarabiapublish/aswaaq.smil/playlist.m3u8"], logo: "https://shahid.mbc.net/mediaObject/73142189-aeca-4f65-8977-d769c91e2573?height=auto&width=600&croppingPoint=&version=1&type=png"),
         TVChannel(id: "CNBCArabiya.ae", name: "CNBC عربية", cat: .news, urls: ["https://cnbc-live.akamaized.net/cnbc/master.m3u8"], logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/CNBC_Arabia_2025.svg/960px-CNBC_Arabia_2025.svg.png"),
@@ -118,7 +118,6 @@ enum TVChannels {
         TVChannel(id: "KTVSportPlus.kw", name: "الكويت الرياضية بلس", cat: .sports, urls: ["https://kwtsplta.cdn.mangomolo.com/spl/smil:spl.stream.smil/chunklist.m3u8"], logo: "https://i.imgur.com/l4oX0gf.png"),
         TVChannel(id: "AlIraqiaSport.iq", name: "العراقية الرياضية", cat: .sports, urls: ["https://imn-live.esite-lab.com/hls/iraqia-sports-1.m3u8"], logo: "https://i.imgur.com/DrrlxTO.png"),
         TVChannel(id: "BahrainSports1.bh", name: "البحرين الرياضية", cat: .sports, urls: ["https://5c7b683162943.streamlock.net/live/ngrp:sportsone_all/playlist.m3u8"], logo: "https://i.imgur.com/fBpLsbC.png"),
-        TVChannel(id: "ElHeddafTV.dz", name: "الهدّاف", cat: .sports, urls: ["https://live.elheddaftv.com:8081/elheddaftv/index.m3u8"], logo: "https://i.imgur.com/cDkIDIA.png"),
         TVChannel(id: "SharjahSports.ae", name: "الشارقة الرياضية", cat: .sports, urls: ["https://svs.itworkscdn.net/smc4sportslive/smc4tv.smil/playlist.m3u8"], logo: "https://i.imgur.com/CsEElsJ.png"),
         TVChannel(id: "OmanSportsTV.om", name: "عُمان الرياضية", cat: .sports, urls: ["https://partneta.cdn.mgmlcdn.com/omsport/smil:omsport.stream.smil/chunklist.m3u8"], logo: "https://i.imgur.com/1omi7p8.png"),
         TVChannel(id: "JordanSport.jo", name: "الأردن الرياضية", cat: .sports, urls: ["https://jrtv-live.ercdn.net/jordansporthd/jordansporthd.m3u8"], logo: "https://i.imgur.com/2EmrZPQ.png"),
@@ -144,7 +143,6 @@ enum TVChannels {
         TVChannel(id: "AtfalMawahebTV.sa", name: "أطفال ومواهب", cat: .kids, urls: ["https://5aafcc5de91f1.streamlock.net/atfal1.com/atfal2/playlist.m3u8", "https://5d658d7e9f562.streamlock.net/atfal1.com/atfal2/playlist.m3u8"], logo: "https://i.imgur.com/Y2BqP9m.png"),
         TVChannel(id: "SpacetoonArabic.ae", name: "سبيستون", cat: .kids, urls: ["https://live-uae-next.spacetoongo.com/ST_MENA_NEXT/hls/r9p2hjipmw2kl.m3u8"], logo: "https://upload.wikimedia.org/wikipedia/en/2/2b/Spacetoon_logo.png", referer: "https://spacetoon.com"),
         TVChannel(id: "AmouYazidTV.dz", name: "عمو يزيد", cat: .kids, urls: ["http://mkstream.servehttp.com:1940/AmouYazid/ay1/playlist.m3u8"], logo: "https://i.imgur.com/L8UPGPC.png"),
-        TVChannel(id: "PalestineEdu.ps", name: "فلسطين التعليمية", cat: .kids, urls: ["https://pbc.furrera.ps/PalestineEDU/index.m3u8"], logo: "https://i.imgur.com/AwVHXyC.png"),
     ]
 
     private static var d: UserDefaults { AppGroup.defaults }
@@ -194,10 +192,6 @@ enum TVChannels {
         custom = custom.filter { !ids.contains($0.id) }
         favorites = favorites.filter { !ids.contains($0) }
     }
-    /// حذف كل القنوات المستوردة من قائمة واحدة
-    static func removeSource(_ src: String?) {
-        removeCustom(Set(custom.filter { $0.source == src }.map(\.id)))
-    }
 
     static func channel(_ id: String) -> TVChannel? { all.first { $0.id == id } }
     static func list(_ cat: TVCat) -> [TVChannel] { all.filter { $0.cat == cat } }
@@ -207,7 +201,6 @@ enum TVChannels {
         get { d.stringArray(forKey: "tv_favs") ?? [] }
         set { d.set(newValue, forKey: "tv_favs") }
     }
-    static func isFav(_ id: String) -> Bool { favorites.contains(id) }
     static func toggle(_ id: String) {
         var f = favorites
         if let i = f.firstIndex(of: id) { f.remove(at: i) } else { f.append(id) }
@@ -312,20 +305,26 @@ enum LogoCache {
     private static func isLight(_ img: UIImage) -> Bool {
         let n = 24
         var px = [UInt8](repeating: 0, count: n * n * 4)
-        guard let cg = img.cgImage,
-              let ctx = CGContext(data: &px, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4,
-                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return false }
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: n, height: n))
-        var sum = 0.0, cnt = 0.0
+        guard let cg = img.cgImage else { return false }
+        // الذاكرة تبقى صالحة طوال الرسم (كان المؤشر يُمرَّر لحظة الإنشاء فقط)
+        let drawn = px.withUnsafeMutableBytes { raw -> Bool in
+            guard let ctx = CGContext(data: raw.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: n, height: n))
+            return true
+        }
+        guard drawn else { return false }
+        var sum = 0.0, cnt = 0.0, white = 0.0
         for i in stride(from: 0, to: px.count, by: 4) where px[i + 3] > 128 {
             let a = Double(px[i + 3]) / 255
             let l = (0.299 * Double(px[i]) + 0.587 * Double(px[i + 1]) + 0.114 * Double(px[i + 2])) / 255 / a
             sum += l; cnt += 1
+            if l > 0.86 { white += 1 }
         }
         // صورة بلا شفافية (مربع كامل) لها خلفيتها الخاصة: لا نغيّر شيئًا
         guard cnt > 0, cnt < Double(n * n) * 0.97 else { return false }
-        return sum / cnt > 0.82
+        // شعار أغلبه أبيض (مثل «الحدث»: كتابة بيضاء وزوايا حمراء) يحتاج بطاقة داكنة
+        return sum / cnt > 0.82 || white / cnt > 0.45
     }
 
     /// ينزّل الشعارات الناقصة (مصغّرة إلى ١٢٠ نقطة) — من التطبيق فقط

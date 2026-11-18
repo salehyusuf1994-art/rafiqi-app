@@ -166,8 +166,15 @@ func channelsText(_ n: Int) -> String {
 func stationsText(_ n: Int) -> String {
     countText(n, one: "إذاعة واحدة", two: "إذاعتان", few: "إذاعات", many: "إذاعة", en: n == 1 ? "station" : "stations")
 }
-func pointsText(_ n: Int) -> String {
-    countText(n, one: "نقطة واحدة", two: "نقطتان", few: "نقاط", many: "نقطة", en: n == 1 ? "pt" : "pts")
+/// «١:٠٥:٠٩» — العدّاد بالساعات دائمًا (حتى «٠:١٤:١٠» تحت الساعة)
+func hmsText(_ seconds: TimeInterval) -> String {
+    let s = max(0, Int(seconds.rounded(.up)))
+    func two(_ n: Int) -> String { (n < 10 ? ar("0") : "") + ar(n) }
+    return ar(s / 3600) + ":" + two((s % 3600) / 60) + ":" + two(s % 60)
+}
+
+func pagesText(_ n: Int) -> String {
+    countText(n, one: "صفحة واحدة", two: "صفحتان", few: "صفحات", many: "صفحة", en: n == 1 ? "page" : "pages")
 }
 
 struct DMY { let d: Int; let m: Int; let y: Int }
@@ -344,7 +351,8 @@ enum Prayer {
         return ev.sorted { $0.time < $1.time }
     }
 
-    static func state(at now: Date, sunrise: Bool = false) -> (prev: PTime, next: PTime, progress: Double) {
+    /// الوقت القادم (يشمل الشروق كما في الرئيسية، حتى لا تختلف الويدجت عن بعضها)
+    static func state(at now: Date, sunrise: Bool = true) -> (prev: PTime, next: PTime, progress: Double) {
         let ev = events(around: now, sunrise: sunrise)
         let k = ev.firstIndex { $0.time > now } ?? (ev.count - 1)
         let next = ev[k], prev = ev[max(0, k - 1)]

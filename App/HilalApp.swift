@@ -20,7 +20,7 @@ struct HilalApp: App {
         }
         // أوامر ويدجت الوسائط وشاشة القفل تُنفَّذ هنا حتى لو فُتح التطبيق في الخلفية
         AudioPlayer.shared.configure()
-        // المتابعة المباشرة للمباريات (تبدأ من الويدجت حتى والتطبيق في الخلفية)
+        // إشعارات الصلاة وأزرارها
         UNUserNotificationCenter.current().delegate = NotifDelegate.shared
         NotifDelegate.registerCategories()
         // الأذان كاملًا كمنبّه (iOS 26.1+)
@@ -468,9 +468,9 @@ struct SettingsView: View {
 
     var offsetText: String {
         if offset == 0 { return "" }
+        // «+يوم واحد» / «−يومان»
         let sign = offset > 0 ? "+" : "−"
-        let unit = L(abs(offset) == 1 ? "يوم" : "يومان")
-        return "  (" + sign + ar(abs(offset)) + " " + unit + ")"
+        return "  (" + sign + daysText(abs(offset)) + ")"
     }
 
     var hijriToday: String {

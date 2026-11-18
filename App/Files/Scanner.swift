@@ -9,6 +9,7 @@ import ZIPFoundation
 import WebKit
 import PhotosUI
 import AVFoundation
+import NaturalLanguage
 
 // MARK: - الماسح الضوئي: مسح متعدد الصفحات، هوية، كتاب، باركود، نص، ترجمة — ثم محرر وتصدير
 
@@ -188,7 +189,8 @@ enum ScanProcessor {
             let cc = CIFilter.colorControls(); cc.inputImage = o; cc.contrast = f == .ink ? 1.3 : 1.45; cc.saturation = f == .magic ? 1.15 : 0; cc.brightness = f == .ink ? 0.06 : 0
             o = cc.outputImage ?? o
             if f == .bw {
-                let t = CIFilter.colorThreshold(); t.inputImage = o; t.threshold = 0.62
+                // عتبة تتكيّف مع إضاءة الصفحة (بدل رقم ثابت): أقل قليلًا من متوسط سطوع الورقة بعد إزالة الظلال
+                let t = CIFilter.colorThreshold(); t.inputImage = o; t.threshold = adaptiveThreshold(o)
                 o = t.outputImage ?? o
             }
             return o.cropped(to: img.extent)
@@ -199,27 +201,74 @@ enum ScanProcessor {
         }
     }
 
+    /// متوسط سطوع الصفحة → عتبة الأبيض والأسود
+    static func adaptiveThreshold(_ img: CIImage) -> Float {
+        let avg = CIFilter.areaAverage(); avg.inputImage = img; avg.extent = img.extent
+        guard let out = avg.outputImage else { return 0.62 }
+        var px = [UInt8](repeating: 0, count: 4)
+        ctx.render(out, toBitmap: &px, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+        let lum = (0.299 * Float(px[0]) + 0.587 * Float(px[1]) + 0.114 * Float(px[2])) / 255
+        return min(0.78, max(0.42, lum * 0.8))
+    }
+
+    /// اللغات التي يدعمها التعرّف على النص في هذا الجهاز (العربية أولًا إن وُجدت)
+    static let ocrLanguages: [String] = {
+        let r = VNRecognizeTextRequest()
+        r.recognitionLevel = .accurate
+        let supported = (try? r.supportedRecognitionLanguages()) ?? []
+        let wanted = ["ar-SA", "ar", "en-US"].filter { w in supported.contains { $0 == w || $0.hasPrefix(w + "-") } }
+        return wanted.isEmpty ? ["en-US"] : wanted
+    }()
+    static var supportsArabicOCR: Bool { ocrLanguages.contains { $0.hasPrefix("ar") } }
+
     static func ocr(_ img: UIImage) -> [VNRecognizedTextObservation] {
         guard let cg = img.cgImage else { return [] }
         let r = VNRecognizeTextRequest()
         r.recognitionLevel = .accurate
         r.usesLanguageCorrection = true
-        r.recognitionLanguages = ["ar-SA", "en-US"]
-        try? VNImageRequestHandler(cgImage: cg).perform([r])
+        r.recognitionLanguages = ocrLanguages
+        do { try VNImageRequestHandler(cgImage: cg, orientation: CGImagePropertyOrientation(img.imageOrientation)).perform([r]) }
+        catch { NSLog("RFDBG ocr failed %@", error.localizedDescription) }
         return r.results ?? []
+    }
+
+    /// صفحة بحجم معقول على القرص بدل الذاكرة: تُصغّر إلى ٢٨٠٠ بكسل (التصدير لا يتجاوز ٢٦٠٠) وتُحفظ JPEG
+    /// ثم تُقرأ من الملف فيستطيع النظام تفريغها من الذاكرة عند الحاجة
+    static func compact(_ img: UIImage) -> UIImage {
+        let maxSide: CGFloat = 2800
+        let px = CGSize(width: img.size.width * img.scale, height: img.size.height * img.scale)
+        let k = min(1, maxSide / max(px.width, px.height))
+        let size = CGSize(width: (px.width * k).rounded(), height: (px.height * k).rounded())
+        let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = true
+        let small = UIGraphicsImageRenderer(size: size, format: f).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("scan-pages", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let u = dir.appendingPathComponent(UUID().uuidString + ".jpg")
+        guard let d = small.jpegData(compressionQuality: 0.92), (try? d.write(to: u)) != nil,
+              let back = UIImage(contentsOfFile: u.path) else { return small }
+        return back
     }
 
     static func text(of img: UIImage) -> String { ocr(img).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n") }
 
-    /// بطاقة الهوية: الوجهان على صفحة A4
+    /// بطاقة الهوية: الوجهان على صفحة A4 بالمقاس الحقيقي للبطاقة (٨٥٫٦ × ٥٤ مم) — تُطبع بحجمها الأصلي
+    /// الصفحة ٣٠٠ نقطة في البوصة: ١ مم ≈ ١١٫٨١ بكسل. الجواز (صورة أعرض/أكبر) يأخذ عرض ١٢٥ مم
     static func idSheet(_ front: UIImage, _ back: UIImage?) -> UIImage {
+        let mm: CGFloat = 2480 / 210
         let page = CGSize(width: 2480, height: 3508)
         return UIGraphicsImageRenderer(size: page, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { c in
             UIColor.white.setFill(); c.fill(CGRect(origin: .zero, size: page))
-            let w = page.width * 0.62
-            for (i, img) in [front, back].compactMap({ $0 }).enumerated() {
-                let h = w * img.size.height / max(1, img.size.width)
-                img.draw(in: CGRect(x: (page.width - w) / 2, y: page.height * (i == 0 ? 0.12 : 0.55), width: w, height: h))
+            let imgs = [front, back].compactMap { $0 }
+            for (i, img) in imgs.enumerated() {
+                let ratio = img.size.height / max(1, img.size.width)
+                // نسبة البطاقة ١٫٥٨٥؛ لو كانت الصورة أقرب لصفحة الجواز نكبّرها
+                let w = (abs(1 / max(ratio, 0.01) - 1.585) < 0.25 ? 85.6 : 125) * mm
+                let h = w * ratio
+                let y = imgs.count == 1 ? (page.height - h) / 2 : (i == 0 ? page.height * 0.30 - h / 2 : page.height * 0.62 - h / 2)
+                let r = CGRect(x: (page.width - w) / 2, y: y, width: w, height: h)
+                img.draw(in: r)
+                UIColor(white: 0.85, alpha: 1).setStroke()
+                let b = UIBezierPath(roundedRect: r.insetBy(dx: -2, dy: -2), cornerRadius: 3 * mm); b.lineWidth = 2; b.stroke()
             }
         }
     }
@@ -227,10 +276,37 @@ enum ScanProcessor {
     /// صفحتا الكتاب: تقسيم عمودي (العربي: اليمنى أولًا)
     static func splitBook(_ img: UIImage) -> [UIImage] {
         guard let cg = img.cgImage else { return [img] }
-        let w = cg.width / 2
+        let w = gutter(cg)
         guard let l = cg.cropping(to: CGRect(x: 0, y: 0, width: w, height: cg.height)),
               let r = cg.cropping(to: CGRect(x: w, y: 0, width: cg.width - w, height: cg.height)) else { return [img] }
         return [UIImage(cgImage: r, scale: 1, orientation: img.imageOrientation), UIImage(cgImage: l, scale: 1, orientation: img.imageOrientation)]
+    }
+}
+
+extension ScanProcessor {
+    /// مكان خط التجليد: أغمق عمود في الثلث الأوسط من الصورة (ظل الكعب)، وإلا المنتصف
+    static func gutter(_ cg: CGImage) -> Int {
+        let sw = 360, sh = max(1, Int(CGFloat(cg.height) * 360 / CGFloat(max(1, cg.width))))
+        var buf = [UInt8](repeating: 0, count: sw * sh)
+        let drawn = buf.withUnsafeMutableBytes { raw -> Bool in
+            guard let c = CGContext(data: raw.baseAddress, width: sw, height: sh, bitsPerComponent: 8, bytesPerRow: sw,
+                                    space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            c.draw(cg, in: CGRect(x: 0, y: 0, width: sw, height: sh))
+            return true
+        }
+        guard drawn else { return cg.width / 2 }
+        var best = sw / 2, bestV = Int.max
+        for x in (sw / 3)...(sw * 2 / 3) {
+            var sum = 0
+            // نتجاهل الهوامش العلوية والسفلية
+            for y in (sh / 8)..<(sh * 7 / 8) { sum += Int(buf[y * sw + x]) }
+            if sum < bestV { bestV = sum; best = x }
+        }
+        // العمود المختار يجب أن يكون أغمق بوضوح من المتوسط، وإلا نقسم من المنتصف
+        let rows = max(1, sh * 3 / 4)
+        let avg = (0..<sw).map { x in (sh / 8..<sh * 7 / 8).reduce(0) { $0 + Int(buf[$1 * sw + x]) } }.reduce(0, +) / sw
+        guard Double(bestV) / Double(rows) < Double(avg) / Double(rows) * 0.93 else { return cg.width / 2 }
+        return best * cg.width / sw
     }
 }
 
@@ -262,45 +338,65 @@ enum ScanExporter {
         return L("مسح") + " " + f.string(from: Date())
     }
 
-    /// يرجع الملفات الناتجة
-    @MainActor
-    static func export(_ pages: [ScanPage], as fmt: ScanExport, name: String, paper: Int, quality: CGFloat, searchable: Bool, password: String) async throws -> [URL] {
-        let store = FileStore.shared
-        let base = store.sanitize(name.isEmpty ? defaultName() : name)
-        let dir = folder
+    /// يرجع الملفات الناتجة. يعمل في الخلفية صفحةً صفحة (لا تتجمّد الشاشة ولا تمتلئ الذاكرة)، ويبلّغ بالتقدّم
+    static func export(_ pages: [ScanPage], as fmt: ScanExport, name: String, paper: Int, quality: CGFloat, searchable: Bool, password: String,
+                       progress: @escaping @Sendable (Int, Int) -> Void = { _, _ in }) async throws -> [URL] {
+        let (base, dir) = await MainActor.run { (FileStore.shared.sanitize(name.isEmpty ? defaultName() : name), folder) }
+        func unique(_ n: String) async -> URL { await MainActor.run { FileStore.shared.unique(n, in: dir) } }
         let side: CGFloat = quality > 0.8 ? 2600 : (quality > 0.55 ? 2000 : 1400)
-        let imgs = pages.map { ScanProcessor.render($0, maxSide: side) }
+        let total = pages.count
+        func page(_ i: Int) -> UIImage {
+            progress(i + 1, total)
+            return autoreleasepool { ScanProcessor.render(pages[i], maxSide: side) }
+        }
         switch fmt {
         case .jpg:
-            return imgs.enumerated().compactMap { i, img in
-                let u = store.unique(imgs.count > 1 ? "\(base) (\(i + 1)).jpg" : "\(base).jpg", in: dir)
-                return (try? img.jpegData(compressionQuality: quality)?.write(to: u)) != nil ? u : nil
+            var out: [URL] = []
+            for i in pages.indices {
+                let img = page(i)
+                let u = await unique(total > 1 ? "\(base) (\(i + 1)).jpg" : "\(base).jpg")
+                if (try? img.jpegData(compressionQuality: quality)?.write(to: u)) != nil { out.append(u) }
             }
+            return out
         case .longImage:
-            let w = imgs.map(\.size.width).max() ?? 1000
-            let h = imgs.reduce(0) { $0 + $1.size.height * w / max(1, $1.size.width) }
+            // عرض موحّد بحسب أعرض صفحة؛ نرسم كل صفحة ثم نتركها
+            let sizes = pages.map { p -> CGSize in
+                let s = p.source.size; let r = ((p.rotation % 180) + 180) % 180 == 90
+                return r ? CGSize(width: s.height, height: s.width) : s
+            }
+            let w = min(side, sizes.map(\.width).max() ?? 1000)
+            let h = sizes.reduce(0) { $0 + $1.height * w / max(1, $1.width) }
             let long = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { _ in
                 var y: CGFloat = 0
-                for img in imgs { let ih = img.size.height * w / max(1, img.size.width); img.draw(in: CGRect(x: 0, y: y, width: w, height: ih)); y += ih }
+                for i in pages.indices {
+                    autoreleasepool {
+                        let img = page(i)
+                        let ih = img.size.height * w / max(1, img.size.width)
+                        img.draw(in: CGRect(x: 0, y: y, width: w, height: ih)); y += ih
+                    }
+                }
             }
-            let u = store.unique("\(base).jpg", in: dir)
+            let u = await unique("\(base).jpg")
             try long.jpegData(compressionQuality: quality)?.write(to: u)
             return [u]
         case .txt:
-            let t = imgs.map { ScanProcessor.text(of: $0) }.joined(separator: "\n\n— — —\n\n")
-            let u = store.unique("\(base).txt", in: dir)
-            try t.write(to: u, atomically: true, encoding: .utf8)
+            var parts: [String] = []
+            for i in pages.indices { parts.append(autoreleasepool { ScanProcessor.text(of: page(i)) }) }
+            let u = await unique("\(base).txt")
+            try parts.joined(separator: "\n\n— — —\n\n").write(to: u, atomically: true, encoding: .utf8)
             return [u]
         case .docx:
-            let paras = imgs.map { ScanProcessor.text(of: $0) }
-            let u = store.unique("\(base).docx", in: dir)
+            var paras: [String] = []
+            for i in pages.indices { paras.append(autoreleasepool { ScanProcessor.text(of: page(i)) }) }
+            let u = await unique("\(base).docx")
             try writeDocx(paras, to: u)
             return [u]
         case .pdf:
             let a4 = CGSize(width: 595, height: 842), letter = CGSize(width: 612, height: 792)
             let data = NSMutableData()
             UIGraphicsBeginPDFContextToData(data, .zero, [kCGPDFContextCreator as String: "Rafiqi"])
-            for img in imgs {
+            for i in pages.indices { autoreleasepool {
+                let img = page(i)
                 let pageSize = paper == 0 ? a4 : (paper == 1 ? letter : CGSize(width: 595, height: 595 * img.size.height / max(1, img.size.width)))
                 UIGraphicsBeginPDFPageWithInfo(CGRect(origin: .zero, size: pageSize), nil)
                 let k = min(pageSize.width / img.size.width, pageSize.height / img.size.height)
@@ -318,12 +414,16 @@ enum ScanExporter {
                         let font = UIFont.systemFont(ofSize: max(4, box.height * 0.8))
                         let natural = (s as NSString).size(withAttributes: [.font: font]).width
                         let scaled = UIFont.systemFont(ofSize: max(3, font.pointSize * min(1.5, box.width / max(1, natural))))
-                        (s as NSString).draw(in: box, withAttributes: [.font: scaled, .foregroundColor: UIColor(white: 1, alpha: 0.01)])
+                        // نص غير مرئي فعلًا (وضع الكتابة «مخفي» في PDF) — يُبحث فيه ويُنسخ ولا يظهر أبدًا
+                        let g = UIGraphicsGetCurrentContext()
+                        g?.saveGState(); g?.setTextDrawingMode(.invisible)
+                        (s as NSString).draw(in: box, withAttributes: [.font: scaled, .foregroundColor: UIColor.black])
+                        g?.restoreGState()
                     }
                 }
-            }
+            } }
             UIGraphicsEndPDFContext()
-            let u = store.unique("\(base).pdf", in: dir)
+            let u = await unique("\(base).pdf")
             if !password.isEmpty, let doc = PDFDocument(data: data as Data) {
                 doc.write(to: u, withOptions: [.userPasswordOption: password, .ownerPasswordOption: password])
             } else {
@@ -378,6 +478,9 @@ struct ScannerHome: View {
     @State private var translateText: String?
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showPhotos = false
+    @State private var busy = false
+    @State private var projectID: UUID?
+    @State private var recentKey = UUID()
 
     var body: some View {
         NavigationStack {
@@ -409,6 +512,23 @@ struct ScannerHome: View {
                     if let translateText {
                         TranslatePanel(source: translateText)
                     }
+                    if busy {
+                        HStack(spacing: 10) { ProgressView().tint(Theme.gold); Text("يعالج الصفحات…").font(Theme.f(.subheadline)).foregroundStyle(.white) }
+                            .frame(maxWidth: .infinity).glassCard(padding: 14)
+                    }
+                    if (mode == .text || mode == .translate) && !ScanProcessor.supportsArabicOCR {
+                        Text("التعرّف على النص العربي غير متاح في هذا الجهاز؛ سيُقرأ النص الإنجليزي فقط.").font(Theme.f(.caption)).foregroundStyle(.orange)
+                    }
+                    RecentScans { p in
+                        busy = true
+                        Task {
+                            let loaded = await Task.detached(priority: .userInitiated) { ScanProjects.load(p.id) }.value
+                            busy = false
+                            projectID = p.id
+                            pages = loaded
+                        }
+                    }
+                    .id(recentKey)
                     Text("كل المعالجة على جوالك: لا تُرفع صورك ولا مستنداتك إلى أي خادم.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                 }
                 .padding(16)
@@ -417,8 +537,8 @@ struct ScannerHome: View {
             .navigationTitle("الماسح الضوئي")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("إغلاق") { dismiss() } } }
-            .navigationDestination(isPresented: Binding(get: { !pages.isEmpty }, set: { if !$0 { pages = [] } })) {
-                ScanEditor(pages: $pages) { dismiss() }
+            .navigationDestination(isPresented: Binding(get: { !pages.isEmpty }, set: { if !$0 { pages = []; projectID = nil; recentKey = UUID() } })) {
+                ScanEditor(pages: $pages, projectID: projectID) { dismiss() }
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
@@ -435,12 +555,18 @@ struct ScannerHome: View {
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 30, matching: .images)
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
+            busy = true
             Task {
                 var imgs: [UIImage] = []
                 for it in items {
-                    if let d = try? await it.loadTransferable(type: Data.self), let img = UIImage(data: d) {
-                        // اكتشاف حواف الورقة في الصورة وتصحيحها
-                        if let q = ScanProcessor.detectQuad(img) { imgs.append(ScanProcessor.perspective(img, q)) } else { imgs.append(img) }
+                    if let d = try? await it.loadTransferable(type: Data.self) {
+                        // اكتشاف حواف الورقة في الصورة وتصحيحها (في الخلفية)
+                        let img: UIImage? = await Task.detached(priority: .userInitiated) {
+                            guard let img = UIImage(data: d) else { return nil }
+                            let fixed = ScanProcessor.detectQuad(img).map { ScanProcessor.perspective(img, $0) } ?? img
+                            return ScanProcessor.compact(fixed)
+                        }.value
+                        if let img { imgs.append(img) }
                     }
                 }
                 photoItems = []
@@ -457,21 +583,37 @@ struct ScannerHome: View {
         showCamera = true
     }
 
+    /// المعالجة الثقيلة (تصغير الصفحات، تقسيم الكتاب، التعرّف على النص) في الخلفية؛ الشاشة لا تتجمّد
     private func handle(_ imgs: [UIImage]) {
-        guard !imgs.isEmpty else { return }
-        switch mode {
-        case .document, .qr:
-            pages += imgs.map { ScanPage(source: $0) }
-        case .idCard:
-            if imgs.count >= 2 { pages = [ScanPage(source: ScanProcessor.idSheet(imgs[0], imgs[1]), filter: .auto)] }
-            else if let f = idFront { pages = [ScanPage(source: ScanProcessor.idSheet(f, imgs[0]), filter: .auto)]; idFront = nil }
-            else { idFront = imgs[0]; resultText = L("صُوّر الوجه. اضغط «هوية وجواز» مرة أخرى لتصوير الظهر."); }
-        case .book:
-            pages += imgs.flatMap { ScanProcessor.splitBook($0) }.map { ScanPage(source: $0) }
-        case .text:
-            resultText = imgs.map { ScanProcessor.text(of: $0) }.joined(separator: "\n\n")
-        case .translate:
-            translateText = imgs.map { ScanProcessor.text(of: $0) }.joined(separator: "\n\n")
+        guard !imgs.isEmpty else { busy = false; return }
+        busy = true
+        let m = mode, front = idFront
+        Task {
+            switch m {
+            case .document, .qr:
+                let out = await Task.detached(priority: .userInitiated) { imgs.map { img in autoreleasepool { ScanProcessor.compact(img) } } }.value
+                pages += out.map { ScanPage(source: $0) }
+            case .idCard:
+                if imgs.count >= 2 || front != nil {
+                    let a = front ?? imgs[0], b = front == nil ? imgs[1] : imgs[0]
+                    let sheet = await Task.detached(priority: .userInitiated) { ScanProcessor.compact(ScanProcessor.idSheet(a, b)) }.value
+                    idFront = nil
+                    pages = [ScanPage(source: sheet, filter: .auto)]
+                } else {
+                    idFront = imgs[0]; resultText = L("صُوّر الوجه. اضغط «هوية وجواز» مرة أخرى لتصوير الظهر.")
+                }
+            case .book:
+                let out = await Task.detached(priority: .userInitiated) {
+                    imgs.flatMap { img in autoreleasepool { ScanProcessor.splitBook(img).map { ScanProcessor.compact($0) } } }
+                }.value
+                pages += out.map { ScanPage(source: $0) }
+            case .text, .translate:
+                let t = await Task.detached(priority: .userInitiated) {
+                    imgs.map { img in autoreleasepool { ScanProcessor.text(of: img) } }.joined(separator: "\n\n")
+                }.value
+                if m == .text { resultText = t } else { translateText = t }
+            }
+            busy = false
         }
     }
 }
@@ -495,7 +637,35 @@ struct DocCamera: UIViewControllerRepresentable {
     }
 }
 
-/// القراءة المباشرة: باركود/QR أو نص
+/// يحمل الكاميرا الحيّة ويبدأ المسح بعد ظهورها فعلًا (البدء قبلها قد يفشل بصمت)
+final class LiveScanHost: UIViewController {
+    let scanner: DataScannerViewController
+    init(_ s: DataScannerViewController) { scanner = s; super.init(nibName: nil, bundle: nil) }
+    required init?(coder: NSCoder) { fatalError() }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        addChild(scanner)
+        scanner.view.frame = view.bounds
+        scanner.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(scanner.view)
+        scanner.didMove(toParent: self)
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !scanner.isScanning else { return }
+        guard DataScannerViewController.isAvailable else {
+            let a = UIAlertController(title: L("الكاميرا غير متاحة"), message: L("اسمح لرفيقي باستخدام الكاميرا من الإعدادات."), preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: L("الإعدادات"), style: .default) { _ in
+                if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) } })
+            a.addAction(UIAlertAction(title: L("إغلاق"), style: .cancel))
+            present(a, animated: true)
+            return
+        }
+        try? scanner.startScanning()
+    }
+}
+
+/// القراءة المباشرة: باركود/QR (تلقائيًا بمجرد ظهوره) أو نص (بالضغط عليه)
 struct LiveScanner: UIViewControllerRepresentable {
     let text: Bool
     let close: () -> Void
@@ -505,16 +675,24 @@ struct LiveScanner: UIViewControllerRepresentable {
         let vc = DataScannerViewController(recognizedDataTypes: types, qualityLevel: .accurate, recognizesMultipleItems: false,
                                            isHighFrameRateTrackingEnabled: false, isHighlightingEnabled: true)
         vc.delegate = context.coordinator
-        vc.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { _ in context.coordinator.close() })
-        try? vc.startScanning()
-        return UINavigationController(rootViewController: vc)
+        let host = LiveScanHost(vc)
+        host.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { _ in context.coordinator.close() })
+        return UINavigationController(rootViewController: host)
     }
     func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
 
     final class Coord: NSObject, DataScannerViewControllerDelegate {
         let close: () -> Void
+        private var shown = false
         init(close: @escaping () -> Void) { self.close = close }
+        /// الباركود يُقرأ تلقائيًا أول ما يظهر
+        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            guard !shown, let first = addedItems.first, case .barcode = first else { return }
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            self.dataScanner(dataScanner, didTapOn: first)
+        }
         func dataScanner(_ dataScanner: DataScannerViewController, didTapOn item: RecognizedItem) {
+            guard !shown else { return }
             var value = ""
             switch item {
             case .barcode(let b): value = b.payloadStringValue ?? ""
@@ -522,12 +700,21 @@ struct LiveScanner: UIViewControllerRepresentable {
             @unknown default: break
             }
             guard !value.isEmpty else { return }
+            shown = true
+            dataScanner.stopScanning()
             let a = UIAlertController(title: nil, message: value, preferredStyle: .actionSheet)
-            a.addAction(UIAlertAction(title: L("نسخ"), style: .default) { _ in UIPasteboard.general.string = value })
+            a.addAction(UIAlertAction(title: L("نسخ"), style: .default) { [weak self] _ in
+                UIPasteboard.general.string = value
+                self?.shown = false
+                try? dataScanner.startScanning()
+            })
             if let u = URL(string: value), u.scheme?.hasPrefix("http") == true {
                 a.addAction(UIAlertAction(title: L("فتح الرابط"), style: .default) { _ in UIApplication.shared.open(u) })
             }
-            a.addAction(UIAlertAction(title: L("إلغاء"), style: .cancel))
+            a.addAction(UIAlertAction(title: L("مسح آخر"), style: .cancel) { [weak self] _ in
+                self?.shown = false
+                try? dataScanner.startScanning()
+            })
             dataScanner.present(a, animated: true)
         }
     }
@@ -563,9 +750,25 @@ struct TranslatePanel: View {
     @State private var go = false
     @State private var cues: [(Double, Double, String)] = []
 
+    /// لغة النص المصوّر تُكتشف تلقائيًا (بدل افتراض أنها عكس لغة الترجمة)
+    private var detected: String {
+        let r = NLLanguageRecognizer(); r.processString(source)
+        return r.dominantLanguage?.rawValue ?? "ar"
+    }
+    private static let targets: [(String, String)] = [("ar", "العربية"), ("en", "English"), ("fr", "Français"), ("tr", "Türkçe"), ("ur", "اردو"), ("id", "Indonesia")]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("", selection: $target) { Text("English").tag("en"); Text("العربية").tag("ar") }.pickerStyle(.segmented)
+            HStack {
+                Text(verbatim: L("لغة النص:") + " " + (Locale.current.localizedString(forLanguageCode: detected) ?? detected))
+                    .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                Spacer()
+                Picker(L("ترجم إلى"), selection: $target) {
+                    ForEach(Self.targets.filter { $0.0 != detected }, id: \.0) { Text(verbatim: $0.1).tag($0.0) }
+                }
+                .tint(Theme.gold)
+            }
+            .onAppear { target = detected == "ar" ? "en" : "ar" }
             HStack(alignment: .top, spacing: 10) {
                 column(L("الأصل"), source)
                 column(L("الترجمة"), translated ?? (go ? L("جارٍ الترجمة…") : "—"))
@@ -580,7 +783,7 @@ struct TranslatePanel: View {
             if let translated { ResultText(title: L("الترجمة"), text: translated) }
         }
         .glassCard(padding: 16)
-        .modifier(CueTranslator(active: $go, source: target == "en" ? "ar" : "en", target: target, cues: cues) { out, err in
+        .modifier(CueTranslator(active: $go, source: detected, target: target, cues: cues) { out, err in
             go = false
             translated = err ?? out.map(\.2).joined(separator: "\n")
         })
@@ -600,6 +803,7 @@ struct TranslatePanel: View {
 
 struct ScanEditor: View {
     @Binding var pages: [ScanPage]
+    var projectID: UUID? = nil
     let finished: () -> Void
     @State private var index = 0
     @State private var preview: [UUID: UIImage] = [:]
@@ -642,10 +846,18 @@ struct ScanEditor: View {
             }
         }
         .task(id: pages) { refresh() }
-        .sheet(isPresented: $cropping) { if let p = page { CropView(image: p.source) { img in pages[index].source = img; refresh() } } }
+        .sheet(isPresented: $cropping) { if let p = page { CropView(image: p.source) { img in pages[index].source = ScanProcessor.compact(img); refresh() } } }
         .sheet(isPresented: $signing) { SignaturePad { img in pages[index].overlays.append(ScanOverlay(kind: .signature(img))); refresh() } }
-        .sheet(isPresented: $exporting) { ExportSheet(pages: pages) { finished() } }
-        .fullScreenCover(isPresented: $addMore) { DocCamera { imgs in addMore = false; pages += imgs.map { ScanPage(source: $0) } }.ignoresSafeArea() }
+        .sheet(isPresented: $exporting) { ExportSheet(pages: pages, projectID: projectID) { finished() } }
+        .fullScreenCover(isPresented: $addMore) {
+            DocCamera { imgs in
+                addMore = false
+                Task {
+                    let out = await Task.detached(priority: .userInitiated) { imgs.map { img in autoreleasepool { ScanProcessor.compact(img) } } }.value
+                    pages += out.map { ScanPage(source: $0) }
+                }
+            }.ignoresSafeArea()
+        }
         .alert(L("علامة مائية"), isPresented: $watermark) {
             TextField(L("النص، مثل: نسخة لـ…"), text: $watermarkText)
             Button(L("إضافة لكل الصفحات")) {
@@ -723,12 +935,20 @@ struct ScanEditor: View {
         }
     }
 
+    /// معاينة الصفحات: تُعاد معالجة الصفحة التي تغيّرت فقط (لا كل الصفحات مع كل تعديل)
+    @State private var rendered: [UUID: ScanPage] = [:]
     private func refresh() {
-        let snapshot = pages
+        let changed = pages.filter { rendered[$0.id] != $0 || preview[$0.id] == nil }
+        guard !changed.isEmpty else { return }
+        // الصفحة المعروضة أولًا
+        let current = page?.id
+        let order = changed.sorted { a, _ in a.id == current }
+        for p in order { rendered[p.id] = p }
         Task.detached(priority: .userInitiated) {
-            var out: [UUID: UIImage] = [:]
-            for p in snapshot { out[p.id] = ScanProcessor.render(p, maxSide: 1200) }
-            await MainActor.run { preview = out }
+            for p in order {
+                let img = autoreleasepool { ScanProcessor.render(p, maxSide: 1200) }
+                await MainActor.run { preview[p.id] = img }
+            }
         }
     }
 }
@@ -862,6 +1082,7 @@ struct CanvasRep: UIViewRepresentable {
 /// خيارات الحفظ
 struct ExportSheet: View {
     let pages: [ScanPage]
+    var projectID: UUID? = nil
     let finished: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ScanExporter.defaultName()
@@ -871,6 +1092,7 @@ struct ExportSheet: View {
     @State private var searchable = true
     @State private var password = ""
     @State private var working = false
+    @State private var done = 0
     @State private var result: [URL] = []
     @State private var error: String?
 
@@ -891,6 +1113,15 @@ struct ExportSheet: View {
                 } footer: {
                     Text(format == .docx || format == .txt ? "يُستخرج النص من الصفحات بالتعرّف الضوئي (العربية والإنجليزية)." : "يُحفظ في «ملفاتي ← المسح الضوئي».")
                 }
+                if working {
+                    Section {
+                        HStack(spacing: 10) {
+                            ProgressView().tint(Theme.gold)
+                            Text(LF("يجهّز صفحة %@ من %@", ar(max(1, done)), ar(pages.count))).font(Theme.f(.subheadline))
+                        }
+                        ProgressView(value: Double(done), total: Double(max(1, pages.count))).tint(Theme.gold)
+                    }
+                }
                 if let error { Section { Text(verbatim: error).foregroundStyle(.orange) } }
                 if !result.isEmpty {
                     Section {
@@ -910,12 +1141,21 @@ struct ExportSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     if working { ProgressView() } else if result.isEmpty {
                         Button("حفظ") {
-                            working = true
+                            working = true; done = 0
+                            let pages = pages, format = format, name = name, paper = paper, searchable = searchable, password = password
+                            let q = [1: 0.9, 2: 0.7, 3: 0.45][quality] ?? 0.9
                             Task {
                                 do {
-                                    result = try await ScanExporter.export(pages, as: format, name: name, paper: paper,
-                                                                           quality: [1: 0.9, 2: 0.7, 3: 0.45][quality] ?? 0.9, searchable: searchable, password: password)
+                                    let out = try await Task.detached(priority: .userInitiated) {
+                                        try await ScanExporter.export(pages, as: format, name: name, paper: paper, quality: q, searchable: searchable, password: password) { i, _ in
+                                            Task { @MainActor in done = i }
+                                        }
+                                    }.value
+                                    result = out
                                     FileStore.shared.touch()
+                                    // يُحفظ المسح كمشروع لفتحه وتعديله أو إضافة صفحات لاحقًا
+                                    let title = (name.isEmpty ? ScanExporter.defaultName() : name)
+                                    Task.detached(priority: .utility) { ScanProjects.save(pages, title: title, project: projectID) }
                                 } catch { self.error = error.localizedDescription }
                                 working = false
                             }
@@ -1004,5 +1244,167 @@ struct ScanEditorHost: View {
     var body: some View {
         NavigationStack { ScanEditor(pages: $pages) { dismiss() } }
             .onChange(of: pages.isEmpty) { _, e in if e { dismiss() } }
+    }
+}
+
+// MARK: - آخر المسحات: يُحفظ كل مسح كمشروع يُفتح لاحقًا للتعديل أو لإضافة صفحات
+
+struct ScanProject: Identifiable, Hashable {
+    let id: UUID
+    let title: String
+    let date: Date
+    let count: Int
+    let thumb: URL
+}
+
+enum ScanProjects {
+    private struct PageRec: Codable {
+        var file: String
+        var filter: String
+        var rotation: Int
+        var brightness: Double
+        var contrast: Double
+        var mosaics: [[Double]]
+        var overlays: [OverlayRec]
+    }
+    private struct OverlayRec: Codable {
+        var sig: String?
+        var text: String?
+        var cx: Double, cy: Double, width: Double
+    }
+    private struct Rec: Codable {
+        var title: String
+        var date: Double
+        var pages: [PageRec]
+    }
+
+    static var root: URL {
+        let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ScanProjects", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    /// يحفظ (أو يحدّث) مشروع المسح؛ يبقى آخر ٣٠ فقط
+    static func save(_ pages: [ScanPage], title: String, project: UUID?) {
+        guard !pages.isEmpty else { return }
+        let id = project ?? UUID()
+        let fm = FileManager.default
+        let dir = root.appendingPathComponent(id.uuidString, isDirectory: true)
+        let tmp = root.appendingPathComponent(id.uuidString + ".tmp", isDirectory: true)
+        try? fm.removeItem(at: tmp)
+        try? fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+        var recs: [PageRec] = []
+        for (i, p) in pages.enumerated() {
+            autoreleasepool {
+                let f = "p\(i).jpg"
+                try? p.source.jpegData(compressionQuality: 0.9)?.write(to: tmp.appendingPathComponent(f))
+                var ovs: [OverlayRec] = []
+                for (j, o) in p.overlays.enumerated() {
+                    switch o.kind {
+                    case .signature(let img):
+                        let n = "s\(i)_\(j).png"
+                        try? img.pngData()?.write(to: tmp.appendingPathComponent(n))
+                        ovs.append(OverlayRec(sig: n, text: nil, cx: o.center.x, cy: o.center.y, width: o.width))
+                    case .text(let t):
+                        ovs.append(OverlayRec(sig: nil, text: t, cx: o.center.x, cy: o.center.y, width: o.width))
+                    }
+                }
+                recs.append(PageRec(file: f, filter: p.filter.rawValue, rotation: p.rotation, brightness: p.brightness, contrast: p.contrast,
+                                    mosaics: p.mosaics.map { [$0.minX, $0.minY, $0.width, $0.height] }, overlays: ovs))
+            }
+        }
+        if let first = pages.first {
+            let t = ScanProcessor.render(first, maxSide: 360)
+            try? t.jpegData(compressionQuality: 0.8)?.write(to: tmp.appendingPathComponent("thumb.jpg"))
+        }
+        let rec = Rec(title: title, date: Date().timeIntervalSince1970, pages: recs)
+        try? JSONEncoder().encode(rec).write(to: tmp.appendingPathComponent("project.json"))
+        try? fm.removeItem(at: dir)
+        try? fm.moveItem(at: tmp, to: dir)
+        // الأقدم يُحذف
+        let all = list()
+        for old in all.dropFirst(30) { delete(old.id) }
+    }
+
+    static func list() -> [ScanProject] {
+        let fm = FileManager.default
+        let dirs = (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        return dirs.compactMap { d -> ScanProject? in
+            guard let id = UUID(uuidString: d.lastPathComponent),
+                  let data = try? Data(contentsOf: d.appendingPathComponent("project.json")),
+                  let r = try? JSONDecoder().decode(Rec.self, from: data) else { return nil }
+            return ScanProject(id: id, title: r.title, date: Date(timeIntervalSince1970: r.date), count: r.pages.count,
+                               thumb: d.appendingPathComponent("thumb.jpg"))
+        }.sorted { $0.date > $1.date }
+    }
+
+    static func load(_ id: UUID) -> [ScanPage] {
+        let d = root.appendingPathComponent(id.uuidString, isDirectory: true)
+        guard let data = try? Data(contentsOf: d.appendingPathComponent("project.json")),
+              let r = try? JSONDecoder().decode(Rec.self, from: data) else { return [] }
+        return r.pages.compactMap { pr in
+            guard let img = UIImage(contentsOfFile: d.appendingPathComponent(pr.file).path) else { return nil }
+            var p = ScanPage(source: img)
+            p.filter = ScanFilter(rawValue: pr.filter) ?? .magic
+            p.rotation = pr.rotation; p.brightness = pr.brightness; p.contrast = pr.contrast
+            p.mosaics = pr.mosaics.compactMap { $0.count == 4 ? CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) : nil }
+            p.overlays = pr.overlays.compactMap { o in
+                var ov: ScanOverlay
+                if let n = o.sig, let s = UIImage(contentsOfFile: d.appendingPathComponent(n).path) { ov = ScanOverlay(kind: .signature(s)) }
+                else if let t = o.text { ov = ScanOverlay(kind: .text(t)) }
+                else { return nil }
+                ov.center = CGPoint(x: o.cx, y: o.cy); ov.width = o.width
+                return ov
+            }
+            return p
+        }
+    }
+
+    static func delete(_ id: UUID) {
+        try? FileManager.default.removeItem(at: root.appendingPathComponent(id.uuidString, isDirectory: true))
+    }
+}
+
+/// قائمة آخر المسحات في صفحة الماسح
+struct RecentScans: View {
+    let open: (ScanProject) -> Void
+    @State private var items: [ScanProject] = []
+    @State private var confirm: ScanProject?
+
+    var body: some View {
+        Group {
+            if !items.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("آخر المسحات").font(Theme.f(.headline)).foregroundStyle(.white)
+                    ForEach(items.prefix(8)) { p in
+                        Button { open(p) } label: {
+                            HStack(spacing: 12) {
+                                Group {
+                                    if let img = UIImage(contentsOfFile: p.thumb.path) { Image(uiImage: img).resizable().scaledToFill() }
+                                    else { Color.white.opacity(0.08) }
+                                }
+                                .frame(width: 44, height: 58).clipShape(RoundedRectangle(cornerRadius: 6))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(verbatim: p.title).font(Theme.f(.subheadline, .bold)).foregroundStyle(.white).lineLimit(1)
+                                    Text(verbatim: pagesText(p.count) + " · " + p.date.formatted(date: .abbreviated, time: .shortened))
+                                        .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "pencil").foregroundStyle(Theme.gold)
+                            }
+                            .padding(10).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.card))
+                        }
+                        .buttonStyle(PressStyle())
+                        .contextMenu {
+                            Button(role: .destructive) { confirm = p } label: { Label("حذف من آخر المسحات", systemImage: "trash") }
+                        }
+                    }
+                }
+            }
+        }
+        .task { items = await Task.detached { ScanProjects.list() }.value }
+        .confirmationDialog(L("يُحذف من «آخر المسحات» فقط، ويبقى الملف المحفوظ."), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
+            Button(L("حذف"), role: .destructive) { if let c = confirm { ScanProjects.delete(c.id); items.removeAll { $0.id == c.id } }; confirm = nil }
+        }
     }
 }

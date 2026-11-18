@@ -237,19 +237,6 @@ struct SizeBadge: View {
     }
 }
 
-/// عنوان قسم داخل الصفحة
-struct SectionTitle: View {
-    let title: String
-    var trailing: String? = nil
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(L(title)).font(Theme.title(19)).foregroundStyle(.white)
-            Spacer(minLength: 0)
-            if let trailing { Text(L(trailing)).font(Theme.f(.footnote)).foregroundStyle(Theme.sub) }
-        }
-        .padding(.horizontal, 4)
-    }
-}
 
 /// صف شرائح للتنقّل بين أقسام الصفحة
 struct ChipBar: View {
@@ -418,10 +405,6 @@ struct MoonLit: Shape {
     }
 }
 
-/// عنوان التطبيق بخط الثلث
-struct AppTitle: View {
-    var body: some View { Fit("app_title_t", 84, 40) }
-}
 
 
 /// زر الرجوع داخل الصفحة (للصفحات ذات العنوان الكبير بدل شريط التنقّل الذي كان يتداخل مع العنوان عند التمرير)

@@ -22,16 +22,18 @@ struct MediaView: View {
             List {
                 Section { PageHeader(title: "المسموع والمرئي", subtitle: L("القرآن الكريم والإذاعات والقنوات التلفزيونية")) }
                     .bareRow(top: 0, bottom: 0)
-                if !(section == 1 && p.state.source == .radio) {
-                    Section { nowPlaying }
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                }
                 Section {
                     ChipBar(items: ["القرآن", "الإذاعات", "القنوات", "Apple Music"], selection: $section)
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                // المشغّل تحت الشرائح (فلا تقفز)، وفي القسم الذي يخصّه فقط:
+                // التلاوة في «القرآن»، وApple Music في قسمه، والإذاعة لها بطاقتها الكبيرة، ولا شيء فوق القنوات
+                if (section == 0 && p.state.source == .quran) || (section == 3 && p.state.source == .music) {
+                    Section { nowPlaying }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                }
 
                 switch section {
                 case 0: quranSections

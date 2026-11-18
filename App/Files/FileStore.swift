@@ -136,6 +136,16 @@ enum FilePrefs {
         get { d.object(forKey: "files.autoNext") as? Bool ?? true }
         set { d.set(newValue, forKey: "files.autoNext") }
     }
+    /// مشغّل الفيديو: التشغيل العشوائي
+    static var videoShuffle: Bool {
+        get { d.bool(forKey: "files.video.shuffle") }
+        set { d.set(newValue, forKey: "files.video.shuffle") }
+    }
+    /// مشغّل الفيديو: ٠ بلا تكرار، ١ تكرار القائمة، ٢ تكرار الفيديو
+    static var videoRepeat: Int {
+        get { d.integer(forKey: "files.video.repeat") }
+        set { d.set(newValue, forKey: "files.video.repeat") }
+    }
 }
 
 /// بيانات إضافية: التثبيت، ألوان المجلدات، المجلدات المقفلة، الترتيب اليدوي، وأصل الملفات في السلة
@@ -171,6 +181,7 @@ final class FileStore: ObservableObject {
         metaURL = support.appendingPathComponent("files_meta.json")
         try? fm.createDirectory(at: trash, withIntermediateDirectories: true)
         if let d = try? Data(contentsOf: metaURL), let m = try? JSONDecoder().decode(FileMeta.self, from: d) { meta = m }
+        migrateLocked()
         // مجلدات العرض التجريبي (للمراجعة الآلية فقط)
         if SHOT.hasPrefix("files") || SHOT == "scanner" || ProcessInfo.processInfo.arguments.contains("-seedFiles") { seedDemo() }
     }
@@ -194,7 +205,7 @@ final class FileStore: ObservableObject {
     func displayName(_ dir: URL) -> String {
         if dir.standardizedFileURL == root.standardizedFileURL { return L("ملفاتي") }
         if dir.standardizedFileURL == trash.standardizedFileURL { return L("سلة المحذوفات") }
-        return dir.lastPathComponent
+        return Self.plainName(dir)
     }
 
     // MARK: القراءة
@@ -203,7 +214,7 @@ final class FileStore: ObservableObject {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .creationDateKey, .totalFileAllocatedSizeKey]
         guard let v = try? url.resourceValues(forKeys: keys) else { return nil }
         let dir = v.isDirectory ?? false
-        return FileItem(url: url, name: url.lastPathComponent, isDir: dir,
+        return FileItem(url: url, name: FileStore.plainName(url), isDir: dir,
                         size: Int64(v.fileSize ?? 0),
                         modified: v.contentModificationDate ?? Date.distantPast,
                         created: v.creationDate ?? v.contentModificationDate ?? Date.distantPast,
@@ -211,8 +222,44 @@ final class FileStore: ObservableObject {
     }
 
     func list(_ dir: URL) -> [FileItem] {
-        let urls = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        return urls.compactMap { item($0) }
+        // المجلدات المقفلة مخفية عن تطبيق «الملفات» والكمبيوتر والنقل بالواي فاي، وتظهر هنا فقط
+        let names = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
+        return names.filter { !$0.hasPrefix(".") || $0.hasPrefix(Self.lockPrefix) }
+            .compactMap { item(dir.appendingPathComponent($0)) }
+    }
+
+    // MARK: القفل الحقيقي للمجلدات
+    /// المجلد المقفل يُعاد تسميته باسم مخفي (يبدأ بنقطة)؛ فلا يظهر في تطبيق «الملفات» ولا Finder ولا الواي فاي ولا البحث
+    nonisolated static let lockPrefix = ".rafiqi-locked-"
+    nonisolated static func plainName(_ u: URL) -> String {
+        let n = u.lastPathComponent
+        return n.hasPrefix(lockPrefix) ? String(n.dropFirst(lockPrefix.count)) : n
+    }
+
+    /// ينقل مفاتيح البيانات الإضافية للمجلد وكل ما تحته
+    private func moveMetaTree(from a: URL, to b: URL) {
+        let ka = key(a), kb = key(b)
+        func map(_ k: String) -> String? {
+            if k == ka { return kb }
+            if k.hasPrefix(ka + "/") { return kb + k.dropFirst(ka.count) }
+            return nil
+        }
+        meta.pins = Set(meta.pins.map { map($0) ?? $0 })
+        meta.locked = Set(meta.locked.map { map($0) ?? $0 })
+        meta.colors = Dictionary(meta.colors.map { (map($0.key) ?? $0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
+        meta.order = Dictionary(meta.order.map { (map($0.key) ?? $0.key, $0.value) }, uniquingKeysWith: { a, _ in a })
+        unlocked = Set(unlocked.map { map($0) ?? $0 })
+        saveMeta()
+    }
+
+    /// المجلدات التي قُفلت في نسخ سابقة (القفل كان داخل التطبيق فقط): نخفيها فعليًا
+    private func migrateLocked() {
+        for k in meta.locked {
+            let u = root.appendingPathComponent(k)
+            guard !u.lastPathComponent.hasPrefix(Self.lockPrefix), fm.fileExists(atPath: u.path) else { continue }
+            let dest = unique(Self.lockPrefix + u.lastPathComponent, in: u.deletingLastPathComponent())
+            if (try? fm.moveItem(at: u, to: dest)) != nil { moveMetaTree(from: u, to: dest) }
+        }
     }
 
     /// كل الملفات داخل مجلد وما تحته (للبحث والتصنيفات)
@@ -262,7 +309,7 @@ final class FileStore: ObservableObject {
     }
 
     func count(_ dir: URL) -> Int {
-        ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") }.count
+        ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") || $0.hasPrefix(Self.lockPrefix) }.count
     }
 
     // MARK: إنشاء وتعديل
@@ -309,22 +356,15 @@ final class FileStore: ObservableObject {
         guard !n.isEmpty else { return nil }
         let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         if !isDir, (n as NSString).pathExtension.isEmpty, !url.pathExtension.isEmpty { n += "." + url.pathExtension }
+        if url.lastPathComponent.hasPrefix(Self.lockPrefix) { n = Self.lockPrefix + n }
         guard n != url.lastPathComponent else { return url }
         let dest = unique(n, in: url.deletingLastPathComponent())
         do {
             try fm.moveItem(at: url, to: dest)
-            moveMeta(from: url, to: dest)
+            moveMetaTree(from: url, to: dest)
             touch()
             return dest
         } catch { return nil }
-    }
-
-    private func moveMeta(from a: URL, to b: URL) {
-        let ka = key(a), kb = key(b)
-        if meta.pins.remove(ka) != nil { meta.pins.insert(kb) }
-        if let c = meta.colors.removeValue(forKey: ka) { meta.colors[kb] = c }
-        if meta.locked.remove(ka) != nil { meta.locked.insert(kb) }
-        saveMeta()
     }
 
     /// نقل إلى مجلد (يتجاهل نقل المجلد داخل نفسه)
@@ -334,7 +374,7 @@ final class FileStore: ObservableObject {
             if dir.standardizedFileURL.path.hasPrefix(u.standardizedFileURL.path + "/") || dir.standardizedFileURL == u.standardizedFileURL { continue }
             if u.deletingLastPathComponent().standardizedFileURL == dir.standardizedFileURL { continue }
             let dest = unique(u.lastPathComponent, in: dir)
-            if (try? fm.moveItem(at: u, to: dest)) != nil { moveMeta(from: u, to: dest); n += 1 }
+            if (try? fm.moveItem(at: u, to: dest)) != nil { moveMetaTree(from: u, to: dest); n += 1 }
         }
         touch()
         return n
@@ -435,8 +475,6 @@ final class FileStore: ObservableObject {
         saveMeta()
     }
 
-    func emptyTrash() { deleteForever(list(trash).map(\.url)) }
-
     /// تُحذف ملفات السلة نهائيًا بعد ٣٠ يومًا
     func purgeOldTrash() {
         let cutoff = Date().addingTimeInterval(-30 * 86400).timeIntervalSince1970
@@ -467,11 +505,22 @@ final class FileStore: ObservableObject {
         saveMeta()
     }
 
-    func isLocked(_ u: URL) -> Bool { meta.locked.contains(key(u)) }
+    func isLocked(_ u: URL) -> Bool { u.lastPathComponent.hasPrefix(Self.lockPrefix) || meta.locked.contains(key(u)) }
     func needsUnlock(_ u: URL) -> Bool { isLocked(u) && !unlocked.contains(key(u)) }
-    func setLocked(_ u: URL, _ on: Bool) {
-        if on { meta.locked.insert(key(u)) } else { meta.locked.remove(key(u)); unlocked.remove(key(u)) }
+    /// قفل/فتح المجلد: يُخفى فعليًا باسم مخفي، ويرجع رابطه الجديد
+    @discardableResult
+    func setLocked(_ u: URL, _ on: Bool) -> URL {
+        let parent = u.deletingLastPathComponent()
+        let plain = Self.plainName(u)
+        let dest = unique(on ? Self.lockPrefix + plain : plain, in: parent)
+        var out = u
+        if dest.lastPathComponent != u.lastPathComponent, (try? fm.moveItem(at: u, to: dest)) != nil {
+            moveMetaTree(from: u, to: dest)
+            out = dest
+        }
+        if on { meta.locked.insert(key(out)) } else { meta.locked.remove(key(out)); unlocked.remove(key(out)) }
         saveMeta()
+        return out
     }
 
     /// التحقق ببصمة الوجه أو رمز الجوال

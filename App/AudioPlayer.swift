@@ -153,7 +153,8 @@ final class AudioPlayer: ObservableObject {
         start(url)
     }
 
-    func playStation(_ s: Station) {
+    func playStation(_ given: Station) {
+        let s = OfficialRadio.current(given)
         guard let url = URL(string: s.url) else { return }
         station = s
         Stations.played(s)

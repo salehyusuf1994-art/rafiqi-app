@@ -127,7 +127,11 @@ struct NextPrayerHero: View {
                     Text(ampmText(st.next.time)).font(Theme.title(12)).foregroundStyle(.white.opacity(0.7))
                 }
             }
-            Text(timerInterval: Date()...max(Date(), st.next.time), countsDown: true)
+            // العدّاد دائمًا بالساعات «٠:١٤:١٠» حتى لا يُقرأ كأنه ساعة
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                Text(verbatim: hmsText(st.next.time.timeIntervalSince(ctx.date)))
+                    .contentTransition(.numericText(countsDown: true))
+            }
                 .font(digitFont(50, bold: true))
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -278,7 +282,9 @@ struct PrayerTimesCard: View {
                     Fit("pr_\(p.key.rawValue)_t", 74, 28, 1)
                     Spacer(minLength: 4)
                     if on {
-                        Text(timerInterval: Date()...max(Date(), p.time), countsDown: true)
+                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                            Text(verbatim: hmsText(p.time.timeIntervalSince(ctx.date)))
+                        }
                             .font(Theme.font(14, .bold).monospacedDigit())
                             .foregroundStyle(Theme.gold)
                             .multilineTextAlignment(.center)

@@ -144,6 +144,11 @@ enum Reciters {
         set { AppGroup.defaults.set(try? JSONEncoder().encode(newValue), forKey: "reciter") }
     }
 
+    /// القائمة المحفوظة (دون اتصال) — أو المضمّنة
+    static var cached: [Reciter] {
+        AppGroup.defaults.data(forKey: "reciters").flatMap { try? JSONDecoder().decode([Reciter].self, from: $0) } ?? builtin
+    }
+
     /// القائمة الكاملة من الإنترنت (تُحفظ للمرة القادمة)
     static func load() async -> [Reciter] {
         if let d = AppGroup.defaults.data(forKey: "reciters"), let list = try? JSONDecoder().decode([Reciter].self, from: d),
@@ -221,8 +226,9 @@ enum OfficialRadio {
     static let byCountry: [String: [Station]] = [
         // هيئة الإذاعة والتلفزيون السعودية
         "SA": [
-            s("إذاعة القرآن الكريم", "SA", "https://stream.radiojar.com/0tpy1h0kxtzuv",
-              ["http://n01.radiojar.com/0tpy1h0kxtzuv", kwik + "sbrksaquranradiolive/srpksaquranradio/playlist.m3u8"]),
+            // البث الرسمي لهيئة الإذاعة والتلفزيون (منصة «الأولى» aloula.sa)، وradiojar احتياطي فقط
+            s("إذاعة القرآن الكريم", "SA", kwik + "sbrksaquranradiolive/srpksaquranradio/playlist.m3u8",
+              [kwik + "sbrksaquranradiolive/ksaquranradio/chunks.m3u8", "https://stream.radiojar.com/0tpy1h0kxtzuv", "http://n01.radiojar.com/0tpy1h0kxtzuv"]),
             s("إذاعة الرياض", "SA", kwik + "sbrksariyadhradiolive/ksariyadhradio/chunks.m3u8",
               [kwik + "sbrksariyadhradiolive/srpksariyadhradio/playlist.m3u8"]),
             s("إذاعة جدة", "SA", kwik + "sbrksajeddahradiolive/ksajeddahradio/chunks.m3u8",
@@ -253,14 +259,21 @@ enum OfficialRadio {
 
     /// للبحث عن الروابط الاحتياطية لإذاعة محفوظة بالرابط فقط
     static func find(_ url: String) -> Station? {
-        byCountry.values.lazy.flatMap { $0 }.first { $0.url == url }
+        byCountry.values.lazy.flatMap { $0 }.first { $0.url == url || ($0.alts ?? []).contains(url) }
+    }
+
+    /// إذاعة محفوظة برابط قديم (مثل radiojar لإذاعة القرآن): تُشغَّل بالرابط الرسمي الحالي وروابطه الاحتياطية
+    static func current(_ s: Station) -> Station {
+        guard let o = find(s.url), o.url != s.url else { return s }
+        return Station(name: s.name, url: o.url, country: s.country ?? o.country, favicon: s.favicon,
+                       bitrate: s.bitrate, codec: s.codec, tags: s.tags, alts: o.alts)
     }
 }
 
 enum Stations {
     /// إذاعات مختارة (روابط عامة من mp3quran.net)
     static let builtin: [Station] = [
-        Station(name: "إذاعة القرآن الكريم — السعودية", url: "https://stream.radiojar.com/0tpy1h0kxtzuv", country: "SA"),
+        Station(name: "إذاعة القرآن الكريم — السعودية", url: "https://live.kwikmotion.com/sbrksaquranradiolive/srpksaquranradio/playlist.m3u8", country: "SA"),
         Station(name: "أذكار الصباح", url: "https://backup.qurango.net/radio/athkar_sabah"),
         Station(name: "أذكار المساء", url: "https://backup.qurango.net/radio/athkar_masa"),
         Station(name: "تلاوات متنوعة لمختلف القرّاء", url: "https://backup.qurango.net/radio/mix"),
@@ -373,21 +386,6 @@ enum MediaSourceOpt: String, AppEnum {
     ]
 }
 
-/// إعداد ويدجت الوسائط: المصدر + المكان + الخلفية + الخط
-struct MediaPosIntent: WidgetConfigurationIntent, Positioned {
-    static let title: LocalizedStringResource = "إعداد الويدجت"
-    static let description = IntentDescription("اختر مصدر الصوت لهذه الويدجت: القرآن أو الإذاعة أو Apple Music، أو ما هو قيد التشغيل حاليًا.")
-    @Parameter(title: "المصدر", default: .current) var source: MediaSourceOpt
-    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
-    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
-    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
-    @Parameter(title: "الخط", default: .app) var font: FontOpt
-    var isGregorian: Bool { false }
-    var bgOpt: BgOpt { bg }
-    var fontOpt: FontOpt { font }
-    var mediaOpt: String { source == .current ? "" : source.rawValue }
-    init() {}
-}
 
 private struct MediaSrcKey: EnvironmentKey { static let defaultValue = "" }
 extension EnvironmentValues {

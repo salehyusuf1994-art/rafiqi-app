@@ -171,6 +171,14 @@ struct Digits: View {
     }
 }
 
+/// بادئة العدّاد التنازلي حتى يظهر دائمًا بالساعات: «٠:» تحت الساعة، و«٠:٠» تحت عشر دقائق
+func timerPrefix(_ left: TimeInterval) -> String {
+    guard left > 0 else { return "" }
+    if left < 600 { return ar("0") + ":" + ar("0") }
+    if left < 3600 { return ar("0") + ":" }
+    return ""
+}
+
 /// عدّاد تنازلي يقف عند الصفر
 /// ساعات:دقائق ثابتة — لوضع «الشاشة دائمًا» حيث يخفي النظام الثواني بشرطات
 func hmText(_ seconds: TimeInterval) -> String {
@@ -197,7 +205,9 @@ struct CountDown: View {
             if dim, let at {
                 Text(hmText(to.timeIntervalSince(at)))
             } else {
-                Text(timerInterval: now...max(now, to), countsDown: true)
+                // أقل من ساعة: النظام يعرض «١٥:٢٤» فتُقرأ كأنها ساعة؛ نضيف الساعات صفرًا «٠:١٥:٢٤»
+                // (للويدجت مدخل عند بقاء ساعة و١٠ دقائق ليتبدّل الشكل في وقته)
+                Text(verbatim: timerPrefix(to.timeIntervalSince(at ?? now))) + Text(timerInterval: now...max(now, to), countsDown: true)
             }
         }
         .font(digitFont(size, bold: true, wf)).foregroundStyle(color)
@@ -273,32 +283,7 @@ extension Positioned {
     var designID: String? { nil }
 }
 
-struct PosIntent: WidgetConfigurationIntent, Positioned {
-    static let title: LocalizedStringResource = "إعداد الويدجت"
-    static let description = IntentDescription("حدّد موضع الويدجت لتطابق الخلفية (يكفي تحديد الصف للحجم المتوسط)، واختر لون الخط.")
-    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
-    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
-    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
-    @Parameter(title: "الخط", default: .app) var font: FontOpt
-    var isGregorian: Bool { false }
-    var bgOpt: BgOpt { bg }
-    var fontOpt: FontOpt { font }
-    init() {}
-}
 
-struct DatePosIntent: WidgetConfigurationIntent, Positioned {
-    static let title: LocalizedStringResource = "إعداد الويدجت"
-    static let description = IntentDescription("اختر التقويم، وحدّد موضع الويدجت لتطابق الخلفية (يكفي تحديد الصف للحجم المتوسط)، واختر لون الخط.")
-    @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
-    @Parameter(title: "المكان", default: .mr) var place: PlaceOpt
-    @Parameter(title: "لون الخط", default: .app) var tint: TintOpt
-    @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
-    @Parameter(title: "الخط", default: .app) var font: FontOpt
-    var isGregorian: Bool { calendar == .gregorian }
-    var bgOpt: BgOpt { bg }
-    var fontOpt: FontOpt { font }
-    init() {}
-}
 
 // MARK: - المدخلات والجدولة
 
@@ -384,7 +369,10 @@ struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelinePr
         case .day:
             return Timeline(entries: [first, e(midnight.addingTimeInterval(5))], policy: pol(.atEnd, midnight))
         case .prayer:
-            var dates = [now] + Prayer.boundaries(from: now).map { $0.addingTimeInterval(1) }
+            let bounds = Prayer.boundaries(from: now)
+            var dates = [now] + bounds.map { $0.addingTimeInterval(1) }
+            // تبديل شكل العدّاد عند بقاء ساعة وعشر دقائق («٠:٥٩:٥٩» و«٠:٠٩:٥٩»)
+            dates += bounds.flatMap { [$0.addingTimeInterval(-3600 + 0.5), $0.addingTimeInterval(-600 + 0.5)] }.filter { $0 > now }
             if !dates.contains(where: { abs($0.timeIntervalSince(midnight)) < 60 }) { dates.append(midnight.addingTimeInterval(5)) }
             dates.sort()
             return Timeline(entries: dates.map { e($0) }, policy: pol(.after(dates.last ?? midnight), dates.last ?? midnight))
@@ -701,14 +689,15 @@ enum Weather {
         }
     }
 
+    /// بلا بيانات طقس: لا أيقونة (بدل غيمة توحي بطقس غير حقيقي)
     static func icon(_ w: WeatherData?) -> String {
-        guard let w else { return "ic_partly_d" }
+        guard let w else { return "ic_none" }
         let k = key(w.code)
         if k == "clear" || k == "partly" { return "ic_\(k)_\(w.day == 1 ? "d" : "n")" }
         return "ic_\(k)"
     }
 
-    static func word(_ w: WeatherData?) -> String { "wx_\(w.map { key($0.code) } ?? "partly")_t" }
+    static func word(_ w: WeatherData?) -> String { "wx_\(w.map { key($0.code) } ?? "none")_t" }
 
     static func deg(_ v: Double?) -> String {
         v.map { ar(Int((Settings.fahrenheit ? $0 * 9 / 5 + 32 : $0).rounded())) + "°" } ?? "--"

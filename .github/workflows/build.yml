@@ -92,7 +92,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          for u in https://stream.radiojar.com/0tpy1h0kxtzuv https://backup.qurango.net/radio/athkar_sabah https://backup.qurango.net/radio/athkar_masa \
+          for u in https://live.kwikmotion.com/sbrksaquranradiolive/srpksaquranradio/playlist.m3u8 https://stream.radiojar.com/0tpy1h0kxtzuv https://backup.qurango.net/radio/athkar_sabah https://backup.qurango.net/radio/athkar_masa \
                    https://backup.qurango.net/radio/mix https://backup.qurango.net/radio/mukhtasartafsir https://backup.qurango.net/radio/roqiah \
                    https://backup.qurango.net/radio/saud_alshuraim https://backup.qurango.net/radio/saad_alghamdi https://backup.qurango.net/radio/ahmad_alajmy \
                    https://cdn.mp3quran.net/audio/mishary-alafasy/r1/001.mp3 https://cdn.mp3quran.net/audio/maher-muaiqly/r1/001.mp3 \
@@ -109,7 +109,7 @@ jobs:
         continue-on-error: true
         run: |
           python3 ci/streams.py Widgets/Media.swift | while IFS=$'\t' read -r name url; do
-            r=$(curl -sL -A "VLC/3.0.20 LibVLC/3.0.20" -r 0-8191 --max-time 10 -o /tmp/s.bin -w "%{http_code} %{content_type}" "$url" 2>/dev/null || true)
+            r=$(curl -sL -A "AppleCoreMedia/1.0.0.23A341 (iPhone; U; CPU OS 26_0 like Mac OS X; ar_sa)" -r 0-8191 --max-time 10 -o /tmp/s.bin -w "%{http_code} %{content_type}" "$url" 2>/dev/null || true)
             n=$(wc -c < /tmp/s.bin 2>/dev/null || echo 0)
             ok=FAIL
             if head -c 8 /tmp/s.bin 2>/dev/null | grep -q "#EXTM3U"; then ok=OK-HLS

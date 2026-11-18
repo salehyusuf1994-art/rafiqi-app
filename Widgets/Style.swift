@@ -191,7 +191,7 @@ enum Styles {
     static func get(_ kind: String) -> WStyle {
         if let c = custom(kind) { return c }
         var g = global
-        // ويدجت الوسائط والمباريات بخلفية زجاجية افتراضيًا (مثل المراجع)
+        // ويدجت الوسائط بخلفية زجاجية افتراضيًا (مثل المراجع)
         if (kind.hasPrefix("hilal.m.") || kind.hasPrefix("hilal.s.")), g.bg == .clear { g.bg = .glass }
         return g
     }
@@ -256,7 +256,7 @@ enum Words {
     static let pr: [String: String] = ["fajr": "الفجر", "sunrise": "الشروق", "dhuhr": "الظهر", "asr": "العصر",
                                        "maghrib": "المغرب", "isha": "العشاء", "jumuah": "الجمعة", "midnight": "منتصف الليل"]
     static let wx: [String: String] = ["clear": "صحو", "partly": "غائم جزئيًا", "cloudy": "غائم", "fog": "ضباب",
-                                       "drizzle": "رذاذ", "rain": "مطر", "snow": "ثلوج", "thunder": "عاصفة رعدية"]
+                                       "drizzle": "رذاذ", "rain": "مطر", "snow": "ثلوج", "thunder": "عاصفة رعدية", "none": "غير متوفر"]
     static let labels: [String: String] = ["lbl_next": "الصلاة القادمة", "lbl_prev": "الصلاة السابقة",
                                            "lbl_next_m": "القادم", "lbl_prev_m": "السابق", "lbl_left": "باقي",
                                            "lbl_ago": "مضى", "hi": "ع", "lo": "ص", "city": "المدينة المنورة",
@@ -515,7 +515,7 @@ extension Words {
     static let prEN: [String: String] = ["fajr": "Fajr", "sunrise": "Sunrise", "dhuhr": "Dhuhr", "asr": "Asr",
                                          "maghrib": "Maghrib", "isha": "Isha", "jumuah": "Jumuah", "midnight": "Midnight"]
     static let wxEN: [String: String] = ["clear": "Clear", "partly": "Partly cloudy", "cloudy": "Cloudy", "fog": "Fog",
-                                         "drizzle": "Drizzle", "rain": "Rain", "snow": "Snow", "thunder": "Thunderstorm"]
+                                         "drizzle": "Drizzle", "rain": "Rain", "snow": "Snow", "thunder": "Thunderstorm", "none": "Unavailable"]
     static let labelsEN: [String: String] = ["lbl_next": "Next prayer", "lbl_prev": "Previous prayer", "lbl_next_m": "Next",
                                              "lbl_prev_m": "Previous", "lbl_left": "Left", "lbl_ago": "Ago", "hi": "H", "lo": "L",
                                              "city": "Madinah", "app_title": "Rafiqi", "lbl_third": "Last third",

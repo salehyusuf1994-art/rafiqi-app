@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import UserNotifications
 
-// MARK: - صور الإشعارات: بطاقة صغيرة تظهر بجانب الإشعار (اسم الصلاة بخط الثلث، أو شعارا المباراة)
+// MARK: - صور الإشعارات: بطاقة صغيرة تظهر بجانب الإشعار (اسم الصلاة بخط الثلث)
 
 enum NotifyArt {
     static let side: CGFloat = 300

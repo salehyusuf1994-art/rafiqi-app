@@ -14,8 +14,14 @@ final class WiFiServer: ObservableObject {
     let port: UInt16 = 8080
     private let queue = DispatchQueue(label: "rafiqi.wifi")
 
+    /// رمز الدخول (٦ أرقام) يتغيّر مع كل تشغيل؛ يُطلب في متصفح الكمبيوتر
+    @Published private(set) var code = ""
+    private var idleTimer: Timer?
+
     func start() {
         guard listener == nil else { return }
+        code = String(format: "%06d", Int.random(in: 0...999_999))
+        WiFiGuard.reset(code: code)
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
@@ -34,12 +40,27 @@ final class WiFiServer: ObservableObject {
             listener = l
             address = Self.wifiIP().map { "http://\($0):\(port)" }
             if !awake { KeepAwake.begin(); awake = true }
+            // يتوقف تلقائيًا بعد ١٠ دقائق بلا استخدام، أو بعد محاولات رمز خاطئة كثيرة
+            idleTimer?.invalidate()
+            idleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+                Task { @MainActor in
+                    let s = WiFiServer.shared
+                    if WiFiGuard.blocked {
+                        s.stop(); s.lastEvent = L("أُوقف النقل: محاولات رمز خاطئة كثيرة من جهاز على الشبكة.")
+                    } else if Date().timeIntervalSince(WiFiGuard.lastActivity) > 600 {
+                        s.stop(); s.lastEvent = L("أُوقف النقل تلقائيًا بعد ١٠ دقائق بلا استخدام.")
+                    }
+                }
+            }
         } catch {
             lastEvent = L("تعذّر تشغيل النقل. تأكّد من الاتصال بشبكة واي فاي.")
         }
     }
 
     func stop() {
+        idleTimer?.invalidate(); idleTimer = nil
+        code = ""
+        WiFiGuard.reset(code: nil)
         listener?.cancel()
         listener = nil
         running = false
@@ -65,6 +86,26 @@ final class WiFiServer: ObservableObject {
             if name == "en0" { break }
         }
         return addr
+    }
+}
+
+/// رمز الدخول ومحاولات الخطأ (تُقرأ من اتصالات الخلفية)
+enum WiFiGuard {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var code: String?
+    nonisolated(unsafe) private static var fails = 0
+    nonisolated(unsafe) private static var last = Date()
+
+    static func reset(code c: String?) { lock.lock(); code = c; fails = 0; last = Date(); lock.unlock() }
+    static var blocked: Bool { lock.lock(); defer { lock.unlock() }; return fails >= 10 }
+    static var lastActivity: Date { lock.lock(); defer { lock.unlock() }; return last }
+    /// يتحقق من الرمز؛ بعد ١٠ محاولات خاطئة يُرفض كل شيء حتى يُعاد التشغيل
+    static func check(_ given: String?) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard let code, fails < 10 else { return false }
+        if given == code { last = Date(); return true }
+        if given != nil { fails += 1 }
+        return false
     }
 }
 
@@ -113,6 +154,17 @@ final class HTTPConn {
         let q = Dictionary((comps?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         let rel = q["path"] ?? ""
         guard let dir = safe(rel) else { return reply(403, "text/plain", Data("forbidden".utf8)) }
+        // رمز الدخول: يُرسل في الكوكي بعد كتابته في الصفحة
+        let cookie = (headers["cookie"] ?? "").split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.hasPrefix("rfq=") }.map { String($0.dropFirst(4)) }
+        if method == "POST" && path == "/login" {
+            let ok = WiFiGuard.check(q["code"])
+            return reply(ok ? 200 : 401, "text/plain", Data((ok ? "ok" : "no").utf8))
+        }
+        guard WiFiGuard.check(cookie) else {
+            return path == "/" ? reply(200, "text/html; charset=utf-8", Data(loginPage().utf8))
+                               : reply(401, "text/plain", Data("code required".utf8))
+        }
 
         switch (method, path) {
         case ("GET", "/"):
@@ -217,6 +269,24 @@ final class HTTPConn {
         conn.send(content: d, completion: .contentProcessed { [self] _ in conn.cancel() })
     }
 
+    /// صفحة الرمز: يكتب المستخدم الرمز الظاهر في الجوال
+    private func loginPage() -> String {
+        """
+        <!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>رفيقي — رمز الدخول</title>
+        <style>body{margin:0;font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;background:#0b0c12;color:#eee;display:flex;min-height:100vh;align-items:center;justify-content:center}
+        .c{background:#14151d;border:1px solid #2a2b35;border-radius:20px;padding:30px;text-align:center;width:300px}
+        h1{color:#e3c27f;font-size:20px;margin:0 0 8px}p{color:#aaa;font-size:14px}
+        input{font-size:28px;letter-spacing:8px;text-align:center;width:100%;box-sizing:border-box;padding:10px;border-radius:12px;border:1px solid #3a3b47;background:#0b0c12;color:#fff;direction:ltr}
+        button{margin-top:14px;width:100%;background:#e3c27f;color:#000;border:0;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer}#e{color:#f77;min-height:20px}</style></head><body>
+        <div class="c"><h1>رفيقي — ملفاتي</h1><p>اكتب الرمز الظاهر في صفحة النقل على الجوال</p>
+        <input id="k" inputmode="numeric" maxlength="6" autofocus><button onclick="go()">دخول</button><p id="e"></p></div>
+        <script>function go(){var k=document.getElementById('k').value.trim();fetch('/login?code='+encodeURIComponent(k),{method:'POST'}).then(function(r){
+        if(r.ok){document.cookie='rfq='+k+';path=/;SameSite=Strict';location.reload()}else{document.getElementById('e').textContent='الرمز غير صحيح'}})}
+        document.getElementById('k').onkeydown=function(e){if(e.key==='Enter')go()}</script></body></html>
+        """
+    }
+
     /// صفحة المتصفح في الكمبيوتر (بالعربية، بدون مكتبات خارجية)
     private func page() -> String {
         """
@@ -281,6 +351,12 @@ struct WiFiTransferView: View {
                                 .textSelection(.enabled)
                             Button { UIPasteboard.general.string = a } label: { Label("نسخ العنوان", systemImage: "doc.on.doc").font(Theme.f(.subheadline, .bold)) }
                                 .foregroundStyle(.white)
+                            Divider().overlay(Theme.edge).padding(.vertical, 4)
+                            Text("رمز الدخول:").font(Theme.f(.subheadline)).foregroundStyle(Theme.sub)
+                            Text(verbatim: server.code).font(.system(size: 30, weight: .heavy, design: .monospaced)).kerning(6).foregroundStyle(.white)
+                                .accessibilityIdentifier("wifiCode")
+                            Text("لا تعطِ الرمز لأحد. المجلدات المقفلة لا تظهر في النقل.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                                .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity).glassCard(padding: 18)
                     } else if server.running {
@@ -299,7 +375,8 @@ struct WiFiTransferView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         step(1, "اجعل الجوال والكمبيوتر على شبكة الواي فاي نفسها.")
                         step(2, "اضغط «تشغيل النقل» وأبقِ هذه الصفحة مفتوحة.")
-                        step(3, "افتح العنوان الظاهر في متصفح الكمبيوتر، ثم ارفع الملفات أو نزّلها.")
+                        step(3, "افتح العنوان الظاهر في متصفح الكمبيوتر، واكتب رمز الدخول، ثم ارفع الملفات أو نزّلها.")
+                        step(4, "يتوقف النقل تلقائيًا إذا خرجت من الصفحة أو بعد ١٠ دقائق بلا استخدام.")
                     }
                     .glassCard(padding: 16)
                 }

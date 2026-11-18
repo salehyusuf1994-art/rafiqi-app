@@ -13,16 +13,6 @@ final class GalleryNav: ObservableObject {
 let LOCK_GROUP = "شاشة القفل"
 let FAV_GROUP = "المفضّلة"
 
-/// نص الشريحة مع أيقونة اختيارية
-struct ChipLabel: LabelStyle {
-    let icon: Bool
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 5) {
-            if icon { configuration.icon.font(Theme.f(.caption)) }
-            configuration.title
-        }
-    }
-}
 
 struct GalleryView: View {
     @ObservedObject private var nav = GalleryNav.shared

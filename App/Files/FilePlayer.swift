@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import QuickLook
+import MediaPlayer
 
 // MARK: - فتح الملفات: الصوت في مشغّل رفيقي، والفيديو بملء الشاشة، والباقي بالمعاينة
 
@@ -109,6 +110,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         if Self.active === self { Self.active = nil }
         if Self.floating === self { Self.floating = nil }
         Self.players.remove(self)
+        clearNowPlaying()
         if presentingViewController != nil && !isBeingDismissed { dismiss(animated: false) }
     }
 
@@ -117,8 +119,12 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     func remotePause() { player?.pause() }
     func remoteToggle() { if let p = player { p.rate > 0 ? p.pause() : p.play() } }
     func remoteSeek(by s: Double) { remoteSeek(to: max(0, (player?.currentTime().seconds ?? 0) + s)) }
-    func remoteSeek(to t: Double) { player?.seek(to: CMTime(seconds: t, preferredTimescale: 600)) }
-    func remoteStep(_ d: Int) { if playlist.indices.contains(index + d) { load(index + d) } }
+    func remoteSeek(to t: Double) {
+        player?.seek(to: CMTime(seconds: t, preferredTimescale: 600)) { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateNowPlaying() } }
+        }
+    }
+    func remoteStep(_ d: Int) { step(d, manual: true) }
 
     // ── النافذة العائمة ──
     private var playingAtPiP = false
@@ -141,6 +147,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         if view.window == nil && presentingViewController == nil {
             player?.pause()
             if Self.active === self { Self.active = nil }
+            clearNowPlaying()
         }
         if Self.floating === self { Self.floating = nil }
     }
@@ -160,11 +167,48 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     private var endObs: NSObjectProtocol?
     private let flash = UILabel()
 
+    /// ترتيب التشغيل (عشوائي أو بالترتيب) ومكان الفيديو الحالي فيه
+    private var order: [Int] = []
+    private var shuffle = FilePrefs.videoShuffle
+    private var repeatMode = FilePrefs.videoRepeat
+
     init(playlist: [URL], start: Int) {
         self.playlist = playlist
         index = start
         super.init(nibName: nil, bundle: nil)
+        rebuildOrder()
     }
+
+    private func rebuildOrder() {
+        let all = Array(playlist.indices)
+        if shuffle {
+            order = [index] + all.filter { $0 != index }.shuffled()
+        } else {
+            order = all
+        }
+    }
+
+    /// التالي/السابق بحسب الترتيب؛ «manual» من الأزرار (يلف للبداية دائمًا)، وإلا عند انتهاء الفيديو
+    private func step(_ d: Int, manual: Bool) {
+        guard !playlist.isEmpty else { return }
+        // السابق بعد أكثر من ٣ ثوانٍ يرجع لبداية الفيديو نفسه
+        if d < 0, manual, (player?.currentTime().seconds ?? 0) > 3 {
+            player?.seek(to: .zero); player?.play(); return
+        }
+        let pos = order.firstIndex(of: index) ?? 0
+        var next = pos + d
+        if next >= order.count || next < 0 {
+            guard manual || repeatMode == 1 else { return }
+            if shuffle && next >= order.count {
+                order = Array(playlist.indices).shuffled()
+                if order.count > 1 && order.first == index { order.swapAt(0, 1) }
+            }
+            next = (next + order.count) % order.count
+        }
+        load(order[next])
+    }
+
+    private var hasNeighbours: Bool { playlist.count > 1 }
     required init?(coder: NSCoder) { fatalError() }
 
     override func viewDidLoad() {
@@ -175,7 +219,8 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         canStartPictureInPictureAutomaticallyFromInline = true
         delegate = self
         Self.players.add(self)
-        updatesNowPlayingInfoCenter = true
+        // شاشة القفل نديرها بأنفسنا: العنوان والصورة وأزرار التالي/السابق
+        updatesNowPlayingInfoCenter = false
 
         // الترجمة
         label.numberOfLines = 0
@@ -225,6 +270,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
             lockButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
         setupSleepButton()
+        setupBar()
         // ضغطتان: يمين/يسار الشاشة
         let dbl = UITapGestureRecognizer(target: self, action: #selector(doubleTap(_:)))
         dbl.numberOfTapsRequired = 2
@@ -242,15 +288,20 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         player = p
         // بدأ التشغيل (أول مرة أو بعد إيقاف مؤقت): يتوقف أي صوت أو قناة أو فيديو آخر
         statusObs = p.observe(\.timeControlStatus, options: [.new]) { [weak self] pl, _ in
-            guard pl.timeControlStatus == .playing else { return }
             DispatchQueue.main.async { MainActor.assumeIsolated {
                 guard let self, self.player === pl else { return }
+                // متوقف: الأزرار تبقى ظاهرة، وشاشة القفل تعرف أنه متوقف
+                guard pl.timeControlStatus == .playing else {
+                    if pl.timeControlStatus == .paused { self.showBar(); self.updateNowPlaying() }
+                    return
+                }
                 VideoController.active = self
                 if PlaybackGate.owner != .video || AudioPlayer.shared.state.playing || TVPlayback.current?.isPlaying == true {
                     PlaybackGate.claim(.video, video: self)
                 } else {
                     VideoController.stopOthers(except: self, close: false)
                 }
+                self.updateNowPlaying()
             } }
         }
         cues = Self.subtitles(for: url)
@@ -262,10 +313,189 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         }
         if let endObs { NotificationCenter.default.removeObserver(endObs) }
         endObs = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: p.currentItem, queue: .main) { [weak self] _ in
-            guard let self, FilePrefs.autoNext, self.index + 1 < self.playlist.count else { return }
-            self.load(self.index + 1)
+            guard let self else { return }
+            if self.repeatMode == 2 { self.player?.seek(to: .zero); self.player?.play(); return }
+            guard FilePrefs.autoNext else { self.showBar(); return }
+            self.step(1, manual: false)
         }
         p.play()
+        refreshBar()
+        nowPlayingArt = nil
+        updateNowPlaying()
+        loadArtwork(url)
+    }
+
+    // ── شاشة القفل: العنوان والصورة والتالي/السابق (بدل ±١٠ ثوانٍ) ──
+    private var nowPlayingArt: MPMediaItemArtwork?
+
+    func updateNowPlaying() {
+        guard PlaybackGate.owner == .video, VideoController.active === self || VideoController.active == nil, let p = player else { return }
+        let url = playlist[index]
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: url.deletingPathExtension().lastPathComponent,
+            MPMediaItemPropertyArtist: hasNeighbours ? LF("%@ من %@", ar((order.firstIndex(of: index) ?? 0) + 1), ar(playlist.count)) : L("رفيقي"),
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: max(0, p.currentTime().seconds.isFinite ? p.currentTime().seconds : 0),
+            MPNowPlayingInfoPropertyPlaybackRate: Double(p.rate),
+        ]
+        if let d = p.currentItem?.duration.seconds, d.isFinite, d > 0 { info[MPMediaItemPropertyPlaybackDuration] = d }
+        if let nowPlayingArt { info[MPMediaItemPropertyArtwork] = nowPlayingArt }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        let rc = MPRemoteCommandCenter.shared()
+        rc.skipForwardCommand.isEnabled = false
+        rc.skipBackwardCommand.isEnabled = false
+        rc.nextTrackCommand.isEnabled = true
+        rc.previousTrackCommand.isEnabled = true
+        rc.changePlaybackPositionCommand.isEnabled = true
+    }
+
+    /// أُغلق الفيديو: نمسح بطاقته من شاشة القفل (إن لم يبدأ شيء آخر بعده)
+    private func clearNowPlaying() {
+        guard PlaybackGate.owner == .video, VideoController.active == nil || VideoController.active === self else { return }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    private func loadArtwork(_ url: URL) {
+        let gen = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 600, height: 600)
+        gen.generateCGImageAsynchronously(for: CMTime(seconds: 3, preferredTimescale: 600)) { [weak self] cg, _, _ in
+            guard let cg else { return }
+            let img = UIImage(cgImage: cg)
+            DispatchQueue.main.async { MainActor.assumeIsolated {
+                guard let self, self.playlist.indices.contains(self.index), self.playlist[self.index] == url else { return }
+                self.nowPlayingArt = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+                self.updateNowPlaying()
+            } }
+        }
+    }
+
+    // ── أزرار التالي والسابق والعشوائي والتكرار والتشغيل التلقائي ──
+    private let bar = UIVisualEffectView()
+    private let barStack = UIStackView()
+    private let prevB = UIButton(type: .system), nextB = UIButton(type: .system)
+    private let shuffleB = UIButton(type: .system), repeatB = UIButton(type: .system), autoB = UIButton(type: .system)
+    private var hideWork: DispatchWorkItem?
+    /// الضغطة الواحدة تعمل مع ضغطات المشغّل نفسه (لا تمنعها)
+    private let tapDelegate = SimultaneousTaps()
+
+    private func setupBar() {
+        if #available(iOS 26.0, *) {
+            bar.effect = UIGlassEffect()
+        } else {
+            bar.effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        }
+        bar.layer.cornerRadius = 24
+        bar.clipsToBounds = true
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        barStack.axis = .horizontal
+        barStack.spacing = 2
+        barStack.translatesAutoresizingMaskIntoConstraints = false
+        barStack.semanticContentAttribute = .forceLeftToRight
+        let items: [(UIButton, String, Selector)] = [
+            (shuffleB, "تشغيل عشوائي", #selector(tapShuffle)),
+            (prevB, "الفيديو السابق", #selector(tapPrev)),
+            (nextB, "الفيديو التالي", #selector(tapNext)),
+            (repeatB, "التكرار", #selector(tapRepeat)),
+            (autoB, "تشغيل التالي تلقائيًا", #selector(tapAuto)),
+        ]
+        for (b, title, sel) in items {
+            b.accessibilityLabel = L(title)
+            b.tintColor = .white
+            b.addTarget(self, action: sel, for: .touchUpInside)
+            b.addTarget(self, action: #selector(keepBar), for: .touchDown)
+            b.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 44).isActive = true
+            barStack.addArrangedSubview(b)
+        }
+        bar.contentView.addSubview(barStack)
+        view.addSubview(bar)
+        NSLayoutConstraint.activate([
+            barStack.leadingAnchor.constraint(equalTo: bar.contentView.leadingAnchor, constant: 4),
+            barStack.trailingAnchor.constraint(equalTo: bar.contentView.trailingAnchor, constant: -4),
+            barStack.topAnchor.constraint(equalTo: bar.contentView.topAnchor, constant: 2),
+            barStack.bottomAnchor.constraint(equalTo: bar.contentView.bottomAnchor, constant: -2),
+            bar.rightAnchor.constraint(equalTo: view.safeAreaLayoutGuide.rightAnchor, constant: -16),
+            bar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -56),
+        ])
+        // ضغطة واحدة على الفيديو تُظهر الأزرار أو تخفيها مع أزرار المشغّل
+        let single = UITapGestureRecognizer(target: self, action: #selector(singleTap))
+        single.cancelsTouchesInView = false
+        single.delegate = tapDelegate
+        view.addGestureRecognizer(single)
+        refreshBar()
+        showBar()
+    }
+
+    private func symbol(_ name: String, on: Bool = false) -> UIImage? {
+        UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: on ? .bold : .semibold))
+    }
+
+    private func refreshBar() {
+        guard bar.superview != nil else { return }
+        let gold = UIColor(Theme.gold)
+        prevB.setImage(symbol("backward.end.fill"), for: .normal)
+        nextB.setImage(symbol("forward.end.fill"), for: .normal)
+        prevB.isEnabled = hasNeighbours; nextB.isEnabled = hasNeighbours
+        prevB.alpha = hasNeighbours ? 1 : 0.35; nextB.alpha = hasNeighbours ? 1 : 0.35
+        shuffleB.setImage(symbol("shuffle", on: shuffle), for: .normal)
+        shuffleB.tintColor = shuffle ? gold : .white.withAlphaComponent(0.75)
+        shuffleB.isEnabled = hasNeighbours; shuffleB.alpha = hasNeighbours ? 1 : 0.35
+        repeatB.setImage(symbol(repeatMode == 2 ? "repeat.1" : "repeat", on: repeatMode > 0), for: .normal)
+        repeatB.tintColor = repeatMode > 0 ? gold : .white.withAlphaComponent(0.75)
+        let auto = FilePrefs.autoNext
+        autoB.setImage(symbol("text.line.first.and.arrowtriangle.forward", on: auto), for: .normal)
+        autoB.tintColor = auto ? gold : .white.withAlphaComponent(0.75)
+    }
+
+    @objc private func tapPrev() { step(-1, manual: true); keepBar() }
+    @objc private func tapNext() { step(1, manual: true); keepBar() }
+    @objc private func tapShuffle() {
+        shuffle.toggle(); FilePrefs.videoShuffle = shuffle
+        rebuildOrder(); refreshBar(); updateNowPlaying()
+        toast(shuffle ? "التشغيل العشوائي: يعمل" : "التشغيل العشوائي: متوقف")
+    }
+    @objc private func tapRepeat() {
+        repeatMode = (repeatMode + 1) % 3; FilePrefs.videoRepeat = repeatMode
+        refreshBar()
+        toast(["بلا تكرار", "تكرار القائمة", "تكرار الفيديو"][repeatMode])
+    }
+    @objc private func tapAuto() {
+        FilePrefs.autoNext.toggle(); refreshBar()
+        toast(FilePrefs.autoNext ? "تشغيل التالي تلقائيًا: يعمل" : "تشغيل التالي تلقائيًا: متوقف")
+    }
+
+    private func toast(_ s: String) {
+        flash.text = L(s)
+        flash.frame.size.width = min(view.bounds.width - 40, 290)
+        flash.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY - 90)
+        UIView.animate(withDuration: 0.15, animations: { self.flash.alpha = 1 }) { _ in UIView.animate(withDuration: 0.4, delay: 1.1) { self.flash.alpha = 0 } }
+        keepBar()
+    }
+
+    @objc private func singleTap() {
+        guard !locked else { return }
+        bar.alpha > 0.5 ? hideBar() : showBar()
+    }
+    @objc private func keepBar() { showBar() }
+
+    private func showBar() {
+        guard !locked else { return }
+        UIView.animate(withDuration: 0.2) { self.bar.alpha = 1 }
+        hideWork?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                // يبقى ظاهرًا ما دام الفيديو متوقفًا
+                guard let self, (self.player?.rate ?? 0) > 0 else { return }
+                self.hideBar()
+            }
+        }
+        hideWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5, execute: w)
+    }
+    private func hideBar() {
+        hideWork?.cancel()
+        UIView.animate(withDuration: 0.25) { self.bar.alpha = 0 }
     }
 
     private let blocker = UIView()
@@ -328,6 +558,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         showsPlaybackControls = !on
         blocker.isHidden = !on
         sleepButton.isHidden = on
+        bar.isHidden = on
         view.bringSubviewToFront(blocker)
         view.bringSubviewToFront(lockButton)
         lockButton.setImage(UIImage(systemName: on ? "lock.fill" : "lock.open", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
@@ -340,7 +571,9 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         let forward = x > view.bounds.midX
         let step = Double(FilePrefs.skip) * (forward ? 1 : -1)
         let t = max(0, p.currentTime().seconds + step)
-        p.seek(to: CMTime(seconds: t, preferredTimescale: 600))
+        p.seek(to: CMTime(seconds: t, preferredTimescale: 600)) { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateNowPlaying() } }
+        }
         flash.frame.size.width = 110
         flash.text = (forward ? "+" : "−") + "\(FilePrefs.skip)"
         flash.center = CGPoint(x: forward ? view.bounds.width * 0.78 : view.bounds.width * 0.22, y: view.bounds.midY)
@@ -355,6 +588,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         if !inPiP && Self.floating !== self && (isBeingDismissed || presentingViewController == nil) {
             player?.pause()
             if Self.active === self { Self.active = nil }
+            clearNowPlaying()
         }
     }
 
@@ -573,4 +807,9 @@ struct AirPlayButton: UIViewRepresentable {
         return v
     }
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
+/// يسمح لضغطتنا بالعمل مع إيماءات المشغّل الأصلية
+final class SimultaneousTaps: NSObject, UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 }

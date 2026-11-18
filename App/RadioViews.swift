@@ -571,30 +571,6 @@ struct AddStationSheet: View {
 
 // MARK: - شبكة التصنيفات
 
-struct RadioCategoryGrid: View {
-    let onPick: (RadioCategory) -> Void
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            ForEach(RadioCategory.all) { c in
-                Button { onPick(c) } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: c.icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(c.color)
-                            .frame(width: 32, height: 32)
-                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(c.color.opacity(0.16)))
-                        Text(L(c.title)).font(Theme.f(.subheadline, .semibold)).foregroundStyle(.white)
-                            .lineLimit(1).minimumScaleFactor(0.8)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.ultraThinMaterial))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.edge, lineWidth: 1))
-                    .environment(\.colorScheme, .dark)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-}
 
 // MARK: - الدول: «راديو السعودية»، «راديو مصر»… وفي كل دولة أقسامها
 

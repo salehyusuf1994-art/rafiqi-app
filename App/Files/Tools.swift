@@ -721,7 +721,7 @@ struct PDFPagesEditor: View {
     var body: some View {
         VStack(spacing: 12) {
             if let doc {
-                Text(LF("%@ صفحة · اضغط لتحديد صفحة أو أكثر", ar(doc.pageCount))).font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
+                Text(verbatim: pagesText(doc.pageCount) + " · " + L("اضغط لتحديد صفحة أو أكثر")).font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 12)], spacing: 12) {
                     ForEach(Array(thumbs.enumerated()), id: \.offset) { i, img in
                         Button { if selected.contains(i) { selected.remove(i) } else { selected.insert(i) } } label: {

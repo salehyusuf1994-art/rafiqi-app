@@ -37,19 +37,6 @@ extension View {
     }
 }
 
-struct Hand: View {
-    let period: HandPeriod
-    let width: CGFloat
-    let length: CGFloat
-    let color: Color
-    var body: some View {
-        VStack(spacing: 0) {
-            Capsule().fill(color).frame(width: width, height: length)
-            Color.clear.frame(width: width, height: length)
-        }
-        .clockHand(period)
-    }
-}
 
 struct ClockFace: View {
     let size: CGFloat

@@ -17,8 +17,17 @@ final class QuranDownloads: ObservableObject {
     /// يتغيّر عند أي إضافة أو حذف (لتحديث العلامات في الواجهة)
     @Published private(set) var version = 0
 
-    private var fullTask: Task<Void, Never>?
-    private var tasks: [String: Task<Void, Never>] = [:]
+    /// محاولات إعادة التنزيل لكل سورة (مرة إضافية عند الفشل)
+    private var retries: [String: Int] = [:]
+
+    private init() {
+        // المصحف الكامل الجاري يبقى معروفًا بعد إغلاق التطبيق (التنزيل يكمل في الخلفية)
+        let d = UserDefaults.standard
+        if d.object(forKey: "quran.full.for") != nil {
+            fullFor = d.integer(forKey: "quran.full.for"); fullTotal = d.integer(forKey: "quran.full.total")
+        }
+        QuranBG.shared.reattach()
+    }
 
     private static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -28,9 +37,10 @@ final class QuranDownloads: ObservableObject {
     private static func folder(_ r: Reciter) -> URL { root.appendingPathComponent(String(r.id), isDirectory: true) }
 
     /// مسار السورة المنزّلة (موجودة أو لا)
-    nonisolated static func file(_ r: Reciter, _ surah: Int) -> URL {
+    nonisolated static func file(_ r: Reciter, _ surah: Int) -> URL { file(id: r.id, surah) }
+    nonisolated static func file(id: Int, _ surah: Int) -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("quran/\(r.id)/" + String(format: "%03d.mp3", surah))
+        return base.appendingPathComponent("quran/\(id)/" + String(format: "%03d.mp3", surah))
     }
 
     /// السورة منزّلة لهذا القارئ؟
@@ -57,115 +67,105 @@ final class QuranDownloads: ObservableObject {
     /// السور المتوفرة عند القارئ
     func available(_ r: Reciter) -> [Int] { (1...114).filter { r.has($0) } }
 
-    // ── تنزيل سورة ──
+    // ── تنزيل سورة (جلسة خلفية: يكمل حتى لو خرجت من التطبيق أو قفلت الجوال) ──
     func download(_ r: Reciter, _ s: Int) {
         let k = key(r, s)
-        guard tasks[k] == nil, progress[k] == nil, Self.local(r, s) == nil else { return }
+        guard progress[k] == nil, Self.local(r, s) == nil, let url = r.url(s) else { return }
         progress[k] = 0
-        tasks[k] = Task { [weak self] in
-            await self?.fetch(r, s)
-            self?.tasks[k] = nil
-        }
+        lastError = nil
+        prepareFolder(r.id)
+        QuranBG.shared.start(url, key: k)
     }
 
     func cancel(_ r: Reciter, _ s: Int) {
         // إيقاف سورة أثناء تنزيل المصحف كاملًا = إيقاف التنزيل الكامل
-        if fullFor == r.id && tasks[key(r, s)] == nil { cancelAll(); return }
+        if fullFor == r.id { cancelAll(); return }
         let k = key(r, s)
-        tasks[k]?.cancel(); tasks[k] = nil
+        QuranBG.shared.cancel(key: k)
         progress[k] = nil
     }
 
-    /// ينزّل ملفًا واحدًا مع التقدّم، ويحفظه بعيدًا عن نسخ iCloud الاحتياطي
-    @discardableResult
-    private func fetch(_ r: Reciter, _ s: Int) async -> Bool {
-        let k = key(r, s)
-        guard let url = r.url(s) else { progress[k] = nil; return false }
-        // يكمل قليلًا في الخلفية إن خرجت من التطبيق
-        final class BG: @unchecked Sendable { var id = UIBackgroundTaskIdentifier.invalid }
-        let bg = BG()
-        bg.id = UIApplication.shared.beginBackgroundTask(withName: "quran-\(k)") {
-            MainActor.assumeIsolated {
-                if bg.id != .invalid { UIApplication.shared.endBackgroundTask(bg.id); bg.id = .invalid }
-            }
-        }
-        defer { if bg.id != .invalid { UIApplication.shared.endBackgroundTask(bg.id); bg.id = .invalid } }
-        let dest = Self.file(r, s)
-        progress[k] = progress[k] ?? 0
-        do {
-            var dir = dest.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            var rv = URLResourceValues(); rv.isExcludedFromBackup = true
-            try? dir.setResourceValues(rv)
-            try await Self.transfer(url, to: dest) { [weak self] v in
-                Task { @MainActor in if self?.progress[k] != nil { self?.progress[k] = v } }
-            }
-            progress[k] = nil
+    private func prepareFolder(_ id: Int) {
+        var dir = Self.file(id: id, 1).deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var rv = URLResourceValues(); rv.isExcludedFromBackup = true
+        try? dir.setResourceValues(rv)
+    }
+
+    // ── أحداث الجلسة الخلفية ──
+    func bgProgress(_ k: String, _ v: Double) {
+        if progress[k] != nil || v < 1 { progress[k] = v }
+    }
+
+    func bgFinished(_ k: String, ok: Bool, url: URL?) {
+        progress[k] = nil
+        let parts = k.split(separator: "/").compactMap { Int($0) }
+        let rid = parts.first ?? -1
+        if ok {
             version += 1
-            return true
-        } catch {
-            progress[k] = nil
-            try? FileManager.default.removeItem(at: dest)
-            if !(error is CancellationError) && (error as? URLError)?.code != .cancelled {
-                lastError = Lang.isEN ? "Download failed. Check your connection." : "تعذّر التنزيل، تحقّق من الاتصال."
-            }
-            return false
+            retries[k] = nil
+            if fullFor == rid { fullDone = min(fullTotal, fullDone + 1) }
+        } else if let url, (retries[k] ?? 0) < 1 {
+            // محاولة ثانية
+            retries[k, default: 0] += 1
+            progress[k] = 0
+            QuranBG.shared.start(url, key: k)
+            return
+        } else {
+            retries[k] = nil
+            lastError = Lang.isEN ? "Download failed. Check your connection." : "تعذّر التنزيل، تحقّق من الاتصال."
+            if fullFor == rid { fullFailed += 1 }
+        }
+        // انتهى المصحف الكامل (نجاحًا أو بعد محاولة كل السور)
+        if fullFor == rid, !progress.keys.contains(where: { $0.hasPrefix("\(rid)/") }) {
+            endFull()
         }
     }
 
-    /// تنزيل إلى ملف مؤقت ثم نقله (لا يُحمَّل الملف كله في الذاكرة)، مع التقدّم والإلغاء
-    private nonisolated static func transfer(_ url: URL, to dest: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
-        final class Box: @unchecked Sendable { var task: URLSessionDownloadTask?; var obs: NSKeyValueObservation?; var last = -1.0 }
-        let box = Box()
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                let t = URLSession.shared.downloadTask(with: url) { tmp, response, error in
-                    box.obs = nil
-                    if let error { c.resume(throwing: error); return }
-                    guard let tmp, ((response as? HTTPURLResponse)?.statusCode ?? 200) < 400 else {
-                        c.resume(throwing: URLError(.badServerResponse)); return
-                    }
-                    do {
-                        try? FileManager.default.removeItem(at: dest)
-                        try FileManager.default.moveItem(at: tmp, to: dest)
-                        c.resume()
-                    } catch { c.resume(throwing: error) }
-                }
-                box.obs = t.progress.observe(\.fractionCompleted) { pr, _ in
-                    let v = pr.fractionCompleted
-                    if v - box.last >= 0.01 { box.last = v; progress(v) }
-                }
-                box.task = t
-                t.resume()
-            }
-        } onCancel: {
-            box.task?.cancel()
+    /// المهام الجارية بعد إعادة فتح التطبيق
+    func reattached(_ keys: [String]) {
+        for k in keys where progress[k] == nil { progress[k] = 0 }
+        if let f = fullFor, !keys.contains(where: { $0.hasPrefix("\(f)/") }) {
+            // كل سور المصحف انتهت أثناء إغلاق التطبيق
+            if let r = Reciters.cached.first(where: { $0.id == f }) { fullDone = fullTotal - available(r).filter { Self.local(r, $0) == nil }.count }
+            endFull()
         }
+        version += 1
     }
 
-    // ── تنزيل المصحف كاملًا ──
+    private var fullFailed = 0
+    private func endFull() {
+        fullFor = nil
+        UserDefaults.standard.removeObject(forKey: "quran.full.for")
+        if fullFailed > 0 {
+            lastError = Lang.isEN ? "Some surahs failed. Tap download again to retry." : "تعذّر تنزيل بعض السور. اضغط تنزيل مرة أخرى لإكمالها."
+        }
+        fullFailed = 0
+    }
+
+    // ── تنزيل المصحف كاملًا: كل السور تُطلب مرة واحدة في جلسة الخلفية ──
     func downloadAll(_ r: Reciter) {
-        guard fullTask == nil else { return }
+        guard fullFor == nil else { return }
         let todo = available(r).filter { Self.local(r, $0) == nil }
-        fullFor = r.id; fullTotal = available(r).count; fullDone = fullTotal - todo.count
+        guard !todo.isEmpty else { return }
+        fullFor = r.id; fullTotal = available(r).count; fullDone = fullTotal - todo.count; fullFailed = 0
+        UserDefaults.standard.set(r.id, forKey: "quran.full.for")
+        UserDefaults.standard.set(fullTotal, forKey: "quran.full.total")
         lastError = nil
-        fullTask = Task { [weak self] in
-            for s in todo {
-                guard let self, !Task.isCancelled else { break }
-                // محاولتان لكل سورة
-                var ok = await self.fetch(r, s)
-                if !ok && !Task.isCancelled { ok = await self.fetch(r, s) }
-                if ok { self.fullDone += 1 }
-            }
-            self?.fullTask = nil
-            self?.fullFor = nil
+        prepareFolder(r.id)
+        for s in todo {
+            guard let url = r.url(s) else { continue }
+            let k = key(r, s)
+            progress[k] = 0
+            QuranBG.shared.start(url, key: k)
         }
     }
 
     func cancelAll() {
-        fullTask?.cancel(); fullTask = nil; fullFor = nil
-        for t in tasks.values { t.cancel() }
-        tasks = [:]; progress = [:]
+        QuranBG.shared.cancelAll()
+        progress = [:]; retries = [:]
+        fullFor = nil; fullFailed = 0
+        UserDefaults.standard.removeObject(forKey: "quran.full.for")
     }
 
     // ── الحذف ──
@@ -177,6 +177,90 @@ final class QuranDownloads: ObservableObject {
     func deleteAll(_ r: Reciter) {
         try? FileManager.default.removeItem(at: Self.folder(r))
         version += 1
+    }
+}
+
+// MARK: - جلسة تنزيل في الخلفية للتلاوات (يكمل النظام التنزيل حتى بعد الخروج من التطبيق)
+
+final class QuranBG: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    static let shared = QuranBG()
+    static let id = "app.rafiqi.quran.bg"
+    /// يُستدعى بعد أن يوقظ النظام التطبيق لإنهاء التنزيلات
+    var completion: (() -> Void)?
+
+    private lazy var session: URLSession = {
+        let c = URLSessionConfiguration.background(withIdentifier: Self.id)
+        c.sessionSendsLaunchEvents = true
+        c.isDiscretionary = false
+        c.allowsCellularAccess = true
+        c.httpMaximumConnectionsPerHost = 4
+        return URLSession(configuration: c, delegate: self, delegateQueue: nil)
+    }()
+
+    func start(_ url: URL, key: String) {
+        let t = session.downloadTask(with: url)
+        t.taskDescription = key + "|" + url.absoluteString
+        t.resume()
+    }
+
+    func cancel(key: String) {
+        session.getAllTasks { all in for t in all where t.taskDescription?.hasPrefix(key + "|") == true { t.cancel() } }
+    }
+    func cancelAll() { session.getAllTasks { all in all.forEach { $0.cancel() } } }
+
+    /// بعد فتح التطبيق: نعرف ما زال يُنزَّل
+    func reattach() {
+        session.getAllTasks { all in
+            let keys = all.filter { $0.state == .running || $0.state == .suspended }.compactMap { $0.taskDescription?.components(separatedBy: "|").first }
+            DispatchQueue.main.async { MainActor.assumeIsolated { QuranDownloads.shared.reattached(keys) } }
+        }
+    }
+
+    private func parse(_ t: URLSessionTask) -> (key: String, rid: Int, surah: Int, url: URL?)? {
+        guard let d = t.taskDescription else { return nil }
+        let parts = d.components(separatedBy: "|")
+        let ks = parts[0].split(separator: "/").compactMap { Int($0) }
+        guard ks.count == 2 else { return nil }
+        return (parts[0], ks[0], ks[1], parts.count > 1 ? URL(string: parts[1]) : nil)
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard let p = parse(downloadTask) else { return }
+        let ok = ((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 200) < 400
+        var moved = false
+        if ok {
+            // يجب نقل الملف قبل الخروج من هذه الدالة
+            let dest = QuranDownloads.file(id: p.rid, p.surah)
+            try? FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: dest)
+            moved = (try? FileManager.default.moveItem(at: location, to: dest)) != nil
+        }
+        let key = p.key, url = p.url
+        DispatchQueue.main.async { MainActor.assumeIsolated { QuranDownloads.shared.bgFinished(key, ok: moved, url: url) } }
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        guard totalBytesExpectedToWrite > 0, let p = parse(downloadTask) else { return }
+        let v = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        let key = p.key
+        DispatchQueue.main.async { MainActor.assumeIsolated { QuranDownloads.shared.bgProgress(key, v) } }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let error, let p = parse(task) else { return }
+        let cancelled = (error as? URLError)?.code == .cancelled
+        let key = p.key, url = p.url
+        DispatchQueue.main.async { MainActor.assumeIsolated {
+            if cancelled { return }
+            QuranDownloads.shared.bgFinished(key, ok: false, url: url)
+        } }
+    }
+
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        DispatchQueue.main.async {
+            QuranBG.shared.completion?()
+            QuranBG.shared.completion = nil
+        }
     }
 }
 

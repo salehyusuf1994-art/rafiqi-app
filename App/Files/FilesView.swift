@@ -129,7 +129,7 @@ struct FolderScreen: View {
         ScrollView {
             VStack(spacing: 12) {
                 BackRow()
-                PageHeader(title: store.displayName(dir), subtitle: LF("%@ عنصر", ar(store.count(dir))))
+                PageHeader(title: store.displayName(dir), subtitle: store.count(dir) == 0 ? L("فارغ") : itemsText(store.count(dir)))
                 FolderContent(dir: dir, isRoot: false)
             }
             .padding(.horizontal, 16).padding(.bottom, 12)

@@ -105,6 +105,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     /// اكتمال التنزيلات والتطبيق في الخلفية
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        if identifier == QuranBG.id {
+            QuranBG.shared.completion = completionHandler
+            _ = QuranDownloads.shared   // يعيد ربط جلسة التلاوات
+            return
+        }
         Task { @MainActor in
             DownloadManager.shared.backgroundCompletion = completionHandler
         }

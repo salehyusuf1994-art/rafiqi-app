@@ -22,6 +22,9 @@ struct WxIcon: View {
     var body: some View {
         if let u = Calli.ui(Weather.icon(w)) {
             WxImage(img: u).frame(width: size, height: size)
+        } else {
+            Image(systemName: "cloud.sun").font(.system(size: size * 0.55, weight: .light)).foregroundStyle(TXT.opacity(0.35))
+                .frame(width: size, height: size)
         }
     }
 }

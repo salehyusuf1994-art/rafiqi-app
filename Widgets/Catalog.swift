@@ -142,7 +142,7 @@ enum Catalog {
             let f = Styles.favorites
             return (all + lock).filter { f.contains($0.id) }
         }
-        // قسم شاشة القفل يعرض كل ويدجت القفل (ومنها ويدجت المباريات)
+        // قسم شاشة القفل يعرض كل ويدجت القفل
         if group == "شاشة القفل" { return lock }
         return (all + lock).filter { $0.group == group }
     }

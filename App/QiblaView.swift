@@ -500,13 +500,3 @@ struct KaabaIcon: View {
     }
 }
 
-struct Triangle: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.midX, y: r.maxY))
-        p.addLine(to: CGPoint(x: r.minX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
-        p.closeSubpath()
-        return p
-    }
-}
