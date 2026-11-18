@@ -65,7 +65,7 @@ struct GalleryView: View {
             .scrollIndicators(.hidden)
             .barSpace()
             .background(AppBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
             .sheet(item: $selected, onDismiss: {
                 rev += 1; tint = Tint.appColor; favs = Styles.favorites
                 if filter == FAV_GROUP && favs.isEmpty { filter = "الكل" }

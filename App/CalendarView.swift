@@ -119,7 +119,7 @@ struct UmmAlQuraView: View {
         .scrollIndicators(.hidden)
         .barSpace()
         .background(AppBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .hiddenNavBar()
     }
 
     private var offsetLabel: String {

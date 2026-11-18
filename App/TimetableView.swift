@@ -75,7 +75,7 @@ struct MonthlyTimetableView: View {
         .scrollIndicators(.hidden)
         .barSpace()
         .background(AppBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .hiddenNavBar()
         .task(id: "\(hijri)\(month.first.timeIntervalSince1970)") { pdf = makePDF() }
     }
 

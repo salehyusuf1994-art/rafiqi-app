@@ -481,7 +481,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
 
     private func showBar() {
         guard !locked else { return }
-        UIView.animate(withDuration: 0.2) { self.bar.alpha = 1 }
+        UIView.animate(withDuration: 0.2) { self.bar.alpha = 1; self.setSideButtons(visible: true) }
         hideWork?.cancel()
         let w = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
@@ -495,7 +495,14 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     }
     private func hideBar() {
         hideWork?.cancel()
-        UIView.animate(withDuration: 0.25) { self.bar.alpha = 0 }
+        UIView.animate(withDuration: 0.25) { self.bar.alpha = 0; self.setSideButtons(visible: false) }
+    }
+
+    /// زرّا مؤقّت النوم والقفل يظهران ويختفيان مع أزرار المشغّل؛
+    /// وعند القفل يبقى زر القفل وحده ظاهرًا لأنه طريق الفتح
+    private func setSideButtons(visible: Bool) {
+        sleepButton.alpha = visible ? 1 : 0
+        lockButton.alpha = (visible || locked) ? 1 : 0
     }
 
     private let blocker = UIView()
@@ -550,7 +557,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     }
 
     @objc private func unlockHold(_ g: UILongPressGestureRecognizer) {
-        if g.state == .began, locked { setLocked(false) }
+        if g.state == .began, locked { setLocked(false); showBar() }
     }
 
     private func setLocked(_ on: Bool) {
@@ -559,6 +566,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         blocker.isHidden = !on
         sleepButton.isHidden = on
         bar.isHidden = on
+        lockButton.alpha = 1
         view.bringSubviewToFront(blocker)
         view.bringSubviewToFront(lockButton)
         lockButton.setImage(UIImage(systemName: on ? "lock.fill" : "lock.open", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)

@@ -224,7 +224,7 @@ struct ToolHost: View {
                 .padding(16)
             }
             .background(AppBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
         }
         .task { await prepare() }
         .onDisappear { player?.pause() }

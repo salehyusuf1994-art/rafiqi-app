@@ -46,7 +46,7 @@ struct FileActionsSheet: View {
                 .padding(16)
             }
             .background(AppBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
             .sheet(isPresented: $showInfo) { FileInfoView(item: item).presentationDetents([.medium, .large]) }
         }
     }

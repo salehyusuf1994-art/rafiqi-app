@@ -191,11 +191,18 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             // ارتفاع شريط الحالة من النافذة نفسها: داخل منطقة تتجاهل الحواف الآمنة يكون صفرًا،
             // فكان التظليل ١٨ نقطة فقط ويظهر المحتوى المُمرَّر خلف الساعة
-            LinearGradient(stops: [.init(color: Color.black.opacity(0.92), location: 0),
-                                   .init(color: Color.black.opacity(0.75), location: 0.6),
-                                   .init(color: Color.black.opacity(0), location: 1)],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: Self.statusBarHeight + 18)
+            // تظليل متدرّج على طريقة النظام: تمويه + لون داكن ثابت حتى أسفل الساعة، ثم يتلاشى
+            let h = Self.statusBarHeight, total = h + 34, solid = h / total
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: solid),
+                                                 .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                LinearGradient(stops: [.init(color: Color(red: 0.03, green: 0.04, blue: 0.07).opacity(0.97), location: 0),
+                                       .init(color: Color(red: 0.03, green: 0.04, blue: 0.07).opacity(0.9), location: solid),
+                                       .init(color: Color(red: 0.03, green: 0.04, blue: 0.07).opacity(0), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+                .frame(height: total)
                 .frame(maxWidth: .infinity)
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
@@ -351,7 +358,7 @@ struct SettingsView: View {
                 }
             }
           }
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
             .onAppear { hasBG = Backdrop.hasWallpaper; place = Settings.placeName; iconPreview = AppIcons.currentPreview }
             .onReceive(loc.objectWillChange) { _ in DispatchQueue.main.async { medina = Settings.isMedina; place = Settings.placeName } }
         }

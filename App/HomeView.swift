@@ -47,7 +47,7 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
             .barSpace()
             .background(AppBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
             .navigationDestination(for: HomeRoute.self) { r in
                 switch r {
                 case .qibla: QiblaView()

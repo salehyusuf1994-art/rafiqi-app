@@ -151,7 +151,7 @@ struct QiblaView: View {
         .scrollIndicators(.hidden)
         .barSpace()
         .background(AppBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .hiddenNavBar()
         .onAppear { compass.start(); level.start() }
         .onDisappear { compass.stop(); level.stop() }
         .onChange(of: compass.heading) { _, h in

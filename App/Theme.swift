@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - الهوية البصرية للتطبيق
 
@@ -432,15 +433,40 @@ struct BackRow: View {
     }
 }
 
-/// السحب من حافة الشاشة للرجوع يبقى يعمل حتى مع إخفاء شريط التنقّل
-extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
-    override open func viewDidLoad() {
-        super.viewDidLoad()
-        interactivePopGestureRecognizer?.delegate = self
+/// إخفاء شريط التنقّل مع إبقاء السحب من حافة الشاشة للرجوع.
+/// بدل تعديل كل UINavigationController في التطبيق (ومنها شاشات النظام)، تضع كل صفحة
+/// مخفيّة الشريط مفوِّضًا صغيرًا على متحكّم التنقّل الذي هي فيه فقط.
+extension View {
+    func hiddenNavBar() -> some View {
+        toolbar(.hidden, for: .navigationBar)
+            .background(SwipeBackEnabler().frame(width: 0, height: 0).accessibilityHidden(true))
     }
-    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        viewControllers.count > 1
+}
+
+private final class SwipeBackDelegate: NSObject, UIGestureRecognizerDelegate {
+    weak var nav: UINavigationController?
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { (nav?.viewControllers.count ?? 0) > 1 }
+}
+
+private struct SwipeBackEnabler: UIViewControllerRepresentable {
+    final class Host: UIViewController {
+        /// مفوّض واحد لكل متحكّم تنقّل، يعيش ما دام المتحكّم موجودًا ثم يُحذف تلقائيًا
+        @MainActor private static let table = NSMapTable<UINavigationController, SwipeBackDelegate>.weakToStrongObjects()
+        override func viewWillAppear(_ animated: Bool) { super.viewWillAppear(animated); attach() }
+        override func didMove(toParent parent: UIViewController?) { super.didMove(toParent: parent); attach() }
+        private func attach() {
+            guard let nav = navigationController, let g = nav.interactivePopGestureRecognizer else { return }
+            if let d = Self.table.object(forKey: nav) {
+                if g.delegate !== d { g.delegate = d }
+                return
+            }
+            let d = SwipeBackDelegate(); d.nav = nav
+            Self.table.setObject(d, forKey: nav)
+            g.delegate = d
+        }
     }
+    func makeUIViewController(context: Context) -> Host { Host() }
+    func updateUIViewController(_ vc: Host, context: Context) {}
 }
 
 /// مسافة شريط التبويب، ومعها مسافة المشغّل العائم حين يظهر

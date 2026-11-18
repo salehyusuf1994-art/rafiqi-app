@@ -204,7 +204,7 @@ struct NotifyCenterView: View {
             }
             .scrollIndicators(.hidden)
             .background(AppBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
             .navigationDestination(isPresented: Binding(get: { openID != nil }, set: { if !$0 { openID = nil } })) {
                 if let id = openID, let it = Notify.item(id) { NotifyDetail(item: it, store: store) }
             }

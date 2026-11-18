@@ -57,7 +57,7 @@ struct AppIconPicker: View {
             .padding(.bottom, 120)
         }
         .background(AppBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .hiddenNavBar()
         .onAppear {
             guard SHOT != "appicon" else { return }
             let sys = UIApplication.shared.alternateIconName ?? ""

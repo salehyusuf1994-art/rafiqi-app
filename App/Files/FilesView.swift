@@ -47,7 +47,7 @@ struct FilesTab: View {
                 if locked { lockScreen } else { home }
             }
             .background(AppBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
             .navigationDestination(for: URL.self) { dir in FolderScreen(dir: dir) }
         }
         .sheet(isPresented: $showSettings) { FilesSettingsView() }
@@ -146,7 +146,7 @@ struct FolderScreen: View {
             BarSpacer()
         }
         .background(AppBackground())
-        .toolbar(.hidden, for: .navigationBar)
+        .hiddenNavBar()
     }
 }
 

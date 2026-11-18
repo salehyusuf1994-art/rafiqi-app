@@ -177,11 +177,16 @@ enum Backdrop {
         let W = cg.width, H = cg.height
         let f = 2, w = W / f, h = H / f
         var buf = [UInt8](repeating: 0, count: w * h * 4)
-        guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
-              let ctx = CGContext(data: &buf, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: cs,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return [] }
-        ctx.interpolationQuality = .none
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        // الرسم داخل withUnsafeMutableBytes: مؤشر المخزن صالح طوال عمر السياق
+        let drawn: Bool = buf.withUnsafeMutableBytes { raw in
+            guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
+                  let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: cs,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.interpolationQuality = .none
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return [] }
 
         let n = Slot.allCases.count
         var cols = [[Int]](repeating: [Int](repeating: 0, count: w), count: n)

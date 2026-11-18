@@ -39,7 +39,7 @@ struct MediaView: View {
             .scrollContentBackground(.hidden)
             .background(AppBackground())
             .barSpace()
-            .toolbar(.hidden, for: .navigationBar)
+            .hiddenNavBar()
             .task {
                 reciters = await Reciters.load()
                 // شعارات الإذاعات المحفوظة والقنوات (لتظهر في الويدجت)، وروابط القنوات الأحدث
