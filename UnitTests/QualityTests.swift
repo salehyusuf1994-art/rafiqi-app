@@ -13,7 +13,7 @@ final class QualityTests: XCTestCase {
         XCTAssertEqual(Cal.hijriCal.timeZone.identifier, "Asia/Tokyo")
         NSTimeZone.default = TimeZone(identifier: "Asia/Riyadh")!
         XCTAssertEqual(Cal.gregCal.timeZone.identifier, "Asia/Riyadh")
-        XCTAssertEqual(Cal.hijriCal.calendar.identifier, .islamicUmmAlQura)
+        XCTAssertEqual(Cal.hijriCal.identifier, .islamicUmmAlQura)
     }
 
     /// نفس سلوك الدالتين السابقتين: «ملف.pdf» ثم «ملف (٢).pdf» ثم «ملف (٣).pdf»، وبدون امتداد «مجلد (٢)»
