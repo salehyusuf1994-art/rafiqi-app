@@ -183,8 +183,10 @@ enum Cal {
     /// التقويمان مخزّنان ويُعادان بنسخة (قيمة)؛ يُبنيان من جديد فقط إذا تغيّرت المنطقة الزمنية للجوال
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cached: (tz: TimeZone, hijri: Calendar, greg: Calendar)?
+    /// للاختبارات فقط: منطقة زمنية بديلة (TimeZone.current لا يتأثر بتغيير NSTimeZone.default داخل الاختبار)
+    nonisolated(unsafe) static var testTimeZone: TimeZone?
     private static func cals() -> (hijri: Calendar, greg: Calendar) {
-        let tz = TimeZone.current
+        let tz = testTimeZone ?? TimeZone.current
         lock.lock(); defer { lock.unlock() }
         if let c = cached, c.tz == tz { return (c.hijri, c.greg) }
         var h = Calendar(identifier: .islamicUmmAlQura); h.timeZone = tz

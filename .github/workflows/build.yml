@@ -231,6 +231,11 @@ jobs:
           UDID=$(python3 ci/pick_sim.py)
           set -o pipefail
           xcodebuild test -project Hilal.xcodeproj -scheme Hilal -destination "id=$UDID" -derivedDataPath unitbuild \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -only-testing:HilalTests > unit.log 2>&1 || true
-          grep -E "Test Case|error:|Executed" unit.log | tail -40 | tee unit_summary.txt
-          grep -q "Executed .* with 0 failures" unit.log || { echo "::error::Unit tests failed or did not run"; exit 1; }
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -only-testing:HilalTests > unit.log 2>&1 && rc=0 || rc=$?
+          # كل الاختبارات والإخفاقات كاملة (لا آخر ٤٠ سطرًا فقط)
+          grep -E "Test Case .*(passed|failed)|error: |Executed [0-9]+ test" unit.log | tee unit_summary.txt
+          echo "── الإخفاقات ──"; grep -E "error: -\[" unit.log || echo "لا شيء"
+          # الحكم على السطر الأخير (المجموع الكلي)، لا على أي مجموعة فرعية نجحت
+          last=$(grep -E "Executed [0-9]+ test" unit.log | tail -1)
+          echo "$last"
+          [ "$rc" -eq 0 ] && echo "$last" | grep -q "with 0 failures" || { echo "::error::Unit tests failed or did not run (exit $rc)"; exit 1; }

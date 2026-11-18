@@ -292,6 +292,8 @@ struct ContentView: View {
         }
         // تغيّر توقيت الجوال (سفر) أو تعديل الوقت: الويدجت تُعاد حسابها فورًا بدل انتظار تحديثها التالي
         .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            // النظام يخزّن منطقته الزمنية؛ نمسحها حتى يقرأ التطبيق المنطقة الجديدة فورًا
+            NSTimeZone.resetSystemTimeZone()
             reloadWidgets()
             // نصوص التنبيهات وأوقاتها تُعاد بتوقيت المكان الجديد
             if Notify.enabled { Task { await Notify.reschedule() } }

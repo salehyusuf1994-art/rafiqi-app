@@ -6,12 +6,12 @@ final class QualityTests: XCTestCase {
 
     /// التقويم المخزّن يتبع تغيّر المنطقة الزمنية للجوال ولا يبقى على القديمة
     func testCachedCalendarsFollowTimeZoneChange() {
-        let old = NSTimeZone.default
-        defer { NSTimeZone.default = old }
-        NSTimeZone.default = TimeZone(identifier: "Asia/Tokyo")!
+        defer { Cal.testTimeZone = nil }
+        // المنطقة تُحقن (TimeZone.current في الاختبار ثابت على منطقة جهاز البناء)
+        Cal.testTimeZone = TimeZone(identifier: "Asia/Tokyo")!
         XCTAssertEqual(Cal.gregCal.timeZone.identifier, "Asia/Tokyo")
         XCTAssertEqual(Cal.hijriCal.timeZone.identifier, "Asia/Tokyo")
-        NSTimeZone.default = TimeZone(identifier: "Asia/Riyadh")!
+        Cal.testTimeZone = TimeZone(identifier: "Asia/Riyadh")!
         XCTAssertEqual(Cal.gregCal.timeZone.identifier, "Asia/Riyadh")
         XCTAssertEqual(Cal.hijriCal.identifier, .islamicUmmAlQura)
     }

@@ -17,6 +17,7 @@ final class WidgetTimeTests: XCTestCase {
         oldTZ = NSTimeZone.default
         for k in keys { saved[k] = AppGroup.defaults.object(forKey: k) }
         NSTimeZone.default = london
+        Cal.testTimeZone = london
         Settings.mode = "city"
         Settings.setCity(name: "London", lat: 51.5074, lng: -0.1278, tz: "Europe/London")
         Settings.methodID = "uqu"
@@ -24,6 +25,7 @@ final class WidgetTimeTests: XCTestCase {
 
     override func tearDown() {
         NSTimeZone.default = oldTZ
+        Cal.testTimeZone = nil
         for k in keys {
             if let v = saved[k] ?? nil { AppGroup.defaults.set(v, forKey: k) } else { AppGroup.defaults.removeObject(forKey: k) }
         }
