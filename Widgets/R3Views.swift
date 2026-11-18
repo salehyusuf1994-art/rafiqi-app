@@ -255,7 +255,7 @@ private struct WeekBars: View {
     let date: Date
     var body: some View {
         let w = Tasbih.week(date)
-        let mx = max(1, w.map(\.n).max() ?? 1)
+        let mx = max(1, w.map { $0.n }.max() ?? 1)
         VStack(spacing: 8) {
             HStack {
                 Text(verbatim: L("إحصائيات الأسبوع")).font(R2.font(14, .bold)).foregroundStyle(.white)
@@ -332,7 +332,7 @@ struct R3NaqshView: View {
                 let s = min(g.size.width, g.size.height) - 16
                 let c = CGPoint(x: g.size.width / 2, y: g.size.height / 2)
                 ZStack {
-                    if let img = Calli.ui(ring) {
+                    if let img = Calli.png(ring) {
                         Image(uiImage: img).renderingMode(.template).resizable().interpolation(.high).scaledToFit()
                             .foregroundStyle(Color.white.opacity(0.34))
                             .frame(width: s * 0.98, height: s * 0.98)
