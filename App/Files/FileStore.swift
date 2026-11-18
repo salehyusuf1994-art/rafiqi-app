@@ -454,18 +454,7 @@ final class FileStore: ObservableObject {
     // MARK: إنشاء وتعديل
 
     /// اسم غير مكرر داخل المجلد: «ملف (٢).pdf»
-    func unique(_ name: String, in dir: URL) -> URL {
-        var u = dir.appendingPathComponent(name)
-        guard fm.fileExists(atPath: u.path) else { return u }
-        let ext = (name as NSString).pathExtension
-        let base = (name as NSString).deletingPathExtension
-        var n = 2
-        repeat {
-            u = dir.appendingPathComponent(ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)")
-            n += 1
-        } while fm.fileExists(atPath: u.path)
-        return u
-    }
+    func unique(_ name: String, in dir: URL) -> URL { uniqueFileURL(name, in: dir) }
 
     @discardableResult
     func createFolder(_ name: String, in dir: URL) -> URL? {
@@ -872,6 +861,21 @@ final class FileStore: ObservableObject {
         }
         importData(pdf, name: "مستند.pdf", to: root)
     }
+}
+
+/// اسم غير مكرر داخل المجلد: «ملف (٢).pdf» — دالة واحدة لكل التطبيق (تعمل من أي خيط)
+func uniqueFileURL(_ name: String, in dir: URL) -> URL {
+    let fm = FileManager.default
+    var u = dir.appendingPathComponent(name)
+    guard fm.fileExists(atPath: u.path) else { return u }
+    let ext = (name as NSString).pathExtension
+    let base = (name as NSString).deletingPathExtension
+    var n = 2
+    repeat {
+        u = dir.appendingPathComponent(ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)")
+        n += 1
+    } while fm.fileExists(atPath: u.path)
+    return u
 }
 
 /// حجم مقروء: «٣٫٤ م.ب»

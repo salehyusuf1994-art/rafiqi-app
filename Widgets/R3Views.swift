@@ -5,9 +5,6 @@ import AppIntents
 // الويدجت الجديدة المستوحاة من المراجع (اقتباسات، تسبيح بالإحصائيات، اليوم والساعة، ساعة النقش،
 // الطقس الكبير، كبسولات الصلاة) — بنفس نظام التصميم R2
 
-private func dims3(_ e: HEntry, _ fallback: CGSize) -> CGSize {
-    e.size.width > 10 && e.size.height > 10 ? e.size : fallback
-}
 private let SMALL3 = CGSize(width: 170, height: 170)
 private let MEDIUM3 = CGSize(width: 364, height: 170)
 private let LARGE3 = CGSize(width: 364, height: 382)
@@ -111,7 +108,7 @@ struct R3QuoteView: View {
     let entry: HEntry
     var body: some View {
         let big = entry.family == .systemLarge || (entry.family == nil && entry.size.height > 300)
-        let sz = dims3(entry, big ? LARGE3 : MEDIUM3)
+        let sz = dims(entry, big ? LARGE3 : MEDIUM3)
         let q = Quotes.current(entry.date)
         let cat = Quotes.cat
         Root(entry: entry) {
@@ -214,7 +211,7 @@ struct R3TasbihView: View {
     let entry: HEntry
     var body: some View {
         let big = entry.family == .systemLarge || (entry.family == nil && entry.size.height > 300)
-        let sz = dims3(entry, big ? LARGE3 : SMALL3)
+        let sz = dims(entry, big ? LARGE3 : SMALL3)
         let n = Tasbih.count
         Root(entry: entry) {
             VStack(spacing: 0) {
@@ -292,7 +289,7 @@ private struct WeekBars: View {
 struct R3DayClockView: View {
     let entry: HEntry
     var body: some View {
-        let d = entry.date, sz = dims3(entry, MEDIUM3)
+        let d = entry.date, sz = dims(entry, MEDIUM3)
         let st = Prayer.state(at: d)
         Root(entry: entry) {
             VStack(spacing: 0) {
@@ -502,7 +499,7 @@ private func prayerIcon(_ k: PKey) -> String {
 struct R3CapsulesView: View {
     let entry: HEntry
     var body: some View {
-        let d = entry.date, sz = dims3(entry, MEDIUM3)
+        let d = entry.date, sz = dims(entry, MEDIUM3)
         let times = Prayer.dayTimes(d)
         let st = Prayer.state(at: d)
         let colW = (sz.width - 24 - 5 * 6) / 6

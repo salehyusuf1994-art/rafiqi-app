@@ -180,16 +180,20 @@ func pagesText(_ n: Int) -> String {
 struct DMY { let d: Int; let m: Int; let y: Int }
 
 enum Cal {
-    static var hijriCal: Calendar {
-        var c = Calendar(identifier: .islamicUmmAlQura)
-        c.timeZone = .current
-        return c
+    /// التقويمان مخزّنان ويُعادان بنسخة (قيمة)؛ يُبنيان من جديد فقط إذا تغيّرت المنطقة الزمنية للجوال
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cached: (tz: TimeZone, hijri: Calendar, greg: Calendar)?
+    private static func cals() -> (hijri: Calendar, greg: Calendar) {
+        let tz = TimeZone.current
+        lock.lock(); defer { lock.unlock() }
+        if let c = cached, c.tz == tz { return (c.hijri, c.greg) }
+        var h = Calendar(identifier: .islamicUmmAlQura); h.timeZone = tz
+        var g = Calendar(identifier: .gregorian); g.timeZone = tz
+        cached = (tz, h, g)
+        return (h, g)
     }
-    static var gregCal: Calendar {
-        var c = Calendar(identifier: .gregorian)
-        c.timeZone = .current
-        return c
-    }
+    static var hijriCal: Calendar { cals().hijri }
+    static var gregCal: Calendar { cals().greg }
     static func cal(_ greg: Bool) -> Calendar { greg ? gregCal : hijriCal }
 
     /// الهجري مع تعديل المستخدم (±يومين)

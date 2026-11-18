@@ -408,11 +408,7 @@ enum TVSecrets {
     static func get(_ id: String) -> [String: String]? {
         lock.lock(); defer { lock.unlock() }
         if let c = cache[id] { return c.isEmpty ? nil : c }
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                kSecAttrAccount as String: id, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
-        var out: CFTypeRef?
-        let h: [String: String] = SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess
-            ? ((out as? Data).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]) : [:]
+        let h = SecureStore.data(service: service, account: id).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
         cache[id] = h
         return h.isEmpty ? nil : h
     }
@@ -421,26 +417,11 @@ enum TVSecrets {
     @discardableResult
     static func set(_ id: String, _ h: [String: String]?) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id]
-        guard let h, !h.isEmpty else {
-            SecItemDelete(base as CFDictionary)
-            cache[id] = [:]
-            return true
-        }
-        guard let data = try? JSONEncoder().encode(h) else { return false }
-        SecItemDelete(base as CFDictionary)
-        var add = base
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock   // ينتقل مع النسخة الاحتياطية المشفّرة
-        guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { cache[id] = nil; return false }
-        var q = base
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var out: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, (out as? Data) == data else {
-            SecItemDelete(base as CFDictionary); cache[id] = nil; return false
-        }
-        cache[id] = h
+        let value = (h?.isEmpty ?? true) ? nil : h.flatMap { try? JSONEncoder().encode($0) }
+        if h != nil, !(h?.isEmpty ?? true), value == nil { return false }
+        // ينتقل مع النسخة الاحتياطية المشفّرة
+        guard SecureStore.set(value, service: service, account: id, accessible: kSecAttrAccessibleAfterFirstUnlock) else { cache[id] = nil; return false }
+        cache[id] = value == nil ? [:] : h
         return true
     }
 }

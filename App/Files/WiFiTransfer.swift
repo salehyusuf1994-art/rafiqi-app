@@ -251,15 +251,7 @@ final class HTTPConn {
         return p == r || p.hasPrefix(r + "/") ? u : nil
     }
 
-    private func unique(_ name: String, in dir: URL) -> URL {
-        var u = dir.appendingPathComponent(name)
-        let ext = (name as NSString).pathExtension, base = (name as NSString).deletingPathExtension
-        var n = 2
-        while FileManager.default.fileExists(atPath: u.path) {
-            u = dir.appendingPathComponent(ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)"); n += 1
-        }
-        return u
-    }
+    private func unique(_ name: String, in dir: URL) -> URL { uniqueFileURL(name, in: dir) }
 
     private func readBody() {
         guard remaining > 0 else { return finishUpload() }

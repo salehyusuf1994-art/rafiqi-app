@@ -134,12 +134,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 50
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin)['devices']
-          c=[x for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']]
-          p=[x for x in c if x['name']=='iPhone 17 Pro Max'] or [x for x in c if 'Pro Max' in x['name']] or c
-          print(p[-1]['udid'])")
+          UDID=$(python3 ci/pick_sim.py)
           echo "sim: $UDID"; xcrun simctl list devices | grep "$UDID"
           set -o pipefail
           simb() { xcodebuild -project Hilal.xcodeproj -scheme Hilal -configuration Debug -destination "id=$UDID" \
@@ -231,12 +226,7 @@ jobs:
       - name: Unit tests (prayer times, Hijri, Qibla — independent reference data)
         timeout-minutes: 30
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin)['devices']
-          c=[x for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']]
-          p=[x for x in c if 'Pro Max' in x['name']] or c
-          print(p[-1]['udid'])")
+          UDID=$(python3 ci/pick_sim.py)
           set -o pipefail
           xcodebuild test -project Hilal.xcodeproj -scheme Hilal -destination "id=$UDID" -derivedDataPath unitbuild \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- -only-testing:HilalTests > unit.log 2>&1 || true

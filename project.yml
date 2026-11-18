@@ -7,10 +7,10 @@ options:
 packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation
-    from: 0.9.19
+    exactVersion: 0.9.20   # مثبّت: نفس الإصدار المجرّب (فيه إصلاح ZIP slip من 0.9.18)
   AMSMB2:
     url: https://github.com/amosavian/AMSMB2
-    from: 4.0.3
+    exactVersion: 4.0.3    # مثبّت: لا يدخل إصدار جديد بدون مراجعة
   SwiftLAME:
     url: https://github.com/hidden-spectrum/SwiftLAME
     revision: 45d1b021c2bd2bbd38b9669934c0584cda0d1b6b

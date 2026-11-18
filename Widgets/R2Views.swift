@@ -4,8 +4,8 @@ import AppIntents
 
 // MARK: - الويدجت الجديدة (النظام المعتمد) — كل وحدة: بطل واحد، معلومة، تفاصيل
 
-/// مقاس الويدجت الفعلي (أو مقاس افتراضي قبل أن يعرفه النظام)
-private func dims(_ e: HEntry, _ fallback: CGSize) -> CGSize {
+/// مقاس الويدجت الفعلي (أو مقاس افتراضي قبل أن يعرفه النظام) — مشتركة بين ويدجت R2 وR3
+func dims(_ e: HEntry, _ fallback: CGSize) -> CGSize {
     e.size.width > 10 && e.size.height > 10 ? e.size : fallback
 }
 private let SMALL = CGSize(width: 170, height: 170)

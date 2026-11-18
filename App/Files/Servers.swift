@@ -15,22 +15,17 @@ struct ServerInfo: Codable, Identifiable, Hashable {
     var title: String { name.isEmpty ? host : name }
 }
 
+/// كلمات سر الخوادم (نفس المكان والصلاحية السابقة؛ الحفظ عبر SecureStore المشترك)
 enum Keychain {
+    private static let service = "rafiqi.servers"
     static func set(_ v: String, for id: UUID) {
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "rafiqi.servers", kSecAttrAccount as String: id.uuidString]
-        SecItemDelete(q as CFDictionary)
-        var a = q; a[kSecValueData as String] = Data(v.utf8); a[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(a as CFDictionary, nil)
+        SecureStore.set(Data(v.utf8), service: service, account: id.uuidString, accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
     }
     static func get(_ id: UUID) -> String {
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "rafiqi.servers",
-                                kSecAttrAccount as String: id.uuidString, kSecReturnData as String: true]
-        var r: AnyObject?
-        guard SecItemCopyMatching(q as CFDictionary, &r) == errSecSuccess, let d = r as? Data else { return "" }
-        return String(decoding: d, as: UTF8.self)
+        SecureStore.data(service: service, account: id.uuidString).map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
     static func delete(_ id: UUID) {
-        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "rafiqi.servers", kSecAttrAccount as String: id.uuidString] as CFDictionary)
+        SecureStore.set(nil, service: service, account: id.uuidString, accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
     }
 }
 
