@@ -24,6 +24,7 @@ struct StorageView: View {
                         ForEach(byKind, id: \.0) { e in
                             HStack(spacing: 12) {
                                 Badge(name: e.0.icon, size: 32)
+                                Circle().fill(e.0.storageColor).frame(width: 8, height: 8)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(verbatim: e.0.title).foregroundStyle(.white)
                                     Text(verbatim: itemsText(e.2)).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
@@ -103,7 +104,7 @@ struct StorageView: View {
         GeometryReader { g in
             HStack(spacing: 2) {
                 ForEach(Array(byKind.enumerated()), id: \.offset) { i, e in
-                    Rectangle().fill(Theme.gold.opacity(1 - Double(i) * 0.14))
+                    Rectangle().fill(e.0.storageColor)
                         .frame(width: max(2, g.size.width * CGFloat(Double(e.1) / Double(max(1, total)))))
                 }
             }
@@ -151,5 +152,19 @@ struct StorageView: View {
         }.value
         byKind = r.0; largest = r.1; dups = r.2; total = r.3
         scanning = false
+    }
+}
+
+extension FileKind {
+    /// لون كل نوع في شريط المساحة (مثل إعدادات الجوال)
+    var storageColor: Color {
+        switch self {
+        case .image: return Theme.gold
+        case .video: return Theme.teal
+        case .audio: return Theme.violet
+        case .document: return Color(red: 0.35, green: 0.58, blue: 0.95)
+        case .archive: return Color(red: 0.95, green: 0.55, blue: 0.30)
+        case .folder, .other: return Color.white.opacity(0.45)
+        }
     }
 }

@@ -139,9 +139,24 @@ struct ContentView: View {
         }
     }
 
+    /// زر في مركز التحكم طلب فتح صفحة (الماسح أو القبلة) — خلال آخر دقيقة فقط
+    private func openPendingTarget() {
+        let d = AppGroup.defaults
+        guard let t = d.string(forKey: "open_target"), Date().timeIntervalSince1970 - d.double(forKey: "open_target_at") < 60 else { return }
+        d.removeObject(forKey: "open_target")
+        switch t {
+        case "scanner": tab = 5; filesRouter.path = []; filesRouter.page = .files; filesRouter.openScanner = true
+        case "qibla": tab = 0; HomeRouter.shared.open = .qibla
+        default: break
+        }
+    }
+
     static var statusBarHeight: CGFloat {
-        let w = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first { $0.isKeyWindow }
-        return w?.safeAreaInsets.top ?? 59
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        // شريط الحالة من المشهد نفسه (يتوفر حتى قبل أن تصبح النافذة رئيسية)، وأقلّه ٥٤ في أجهزة الجزيرة
+        let bar = scenes.compactMap { $0.statusBarManager?.statusBarFrame.height }.max() ?? 0
+        let safe = scenes.flatMap(\.windows).map(\.safeAreaInsets.top).max() ?? 0
+        return max(bar, safe, 54)
     }
 
     private let items = [TabItem(tag: 0, title: "الرئيسية", icon: "moon.stars.fill"),
@@ -164,7 +179,11 @@ struct ContentView: View {
                 SettingsView()
                     .toolbar(.hidden, for: .tabBar).tag(3)
             }
-            FloatingTabBar(tab: $tab, items: items)
+            VStack(spacing: 8) {
+                // مشغّل واحد عائم فوق شريط التبويب في كل الصفحات
+                GlobalMiniPlayer().padding(.horizontal, 12)
+                FloatingTabBar(tab: $tab, items: items)
+            }
                 .padding(.bottom, 2)
                 .ignoresSafeArea(.keyboard)
         }
@@ -217,7 +236,10 @@ struct ContentView: View {
         }
         .onChange(of: filesRouter.openTab) { _, on in if on { tab = 5; filesRouter.openTab = false } }
         .onChange(of: phase) { _, p in
-            if p == .active { tvRouter.checkPending() }
+            guard p == .active else { return }
+            tvRouter.checkPending()
+            openPendingTarget()
+            Task { await PrayerActivity.refreshIfEnabled() }
         }
         .task {
             TVBridge.open = { id in TVRouter.shared.show(id: id) }
@@ -283,6 +305,7 @@ struct SettingsView: View {
     @State private var shami = Settings.shamiMonths
     @State private var western = Settings.westernDigits
     @State private var lockFont = Styles.lockFont
+    @State private var liveCountdown = PrayerActivity.enabled
     @State private var fahr = Settings.fahrenheit
     @State private var windMS = Settings.windMS
     @State private var methodID = Settings.methodID
@@ -301,9 +324,7 @@ struct SettingsView: View {
                 Section { PageHeader(title: "الإعدادات") }
                     .bareRow(top: 0, bottom: 0)
                 header
-                toolsSection
-                notifySection
-                iconSection
+                generalSection
                 prayerSection
                 widgetSection
                 dateSection
@@ -356,20 +377,8 @@ struct SettingsView: View {
         }
     }
 
-    var toolsSection: some View {
-        Section {
-            NavigationLink { QiblaView() } label: {
-                TileRow(title: "القبلة", icon: "location.north.line.fill", color: Color(red: 0.20, green: 0.70, blue: 0.55),
-                        subtitle: "بوصلة باتجاه الكعبة المشرفة من موقعك")
-            }
-            NavigationLink { UmmAlQuraView() } label: {
-                TileRow(title: "تقويم أم القرى", icon: "calendar", color: .orange,
-                        subtitle: "التقويم الرسمي والمناسبات ومحوّل التاريخ")
-            }
-        } header: { Text("الأدوات") }
-    }
-
-    var notifySection: some View {
+    /// الإشعارات وأيقونة التطبيق في قسم واحد (القبلة والتقويم في أعلى الرئيسية)
+    var generalSection: some View {
         Section {
             Button { showNotify = true } label: {
                 HStack {
@@ -379,11 +388,6 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(.plain)
-        }
-    }
-
-    var iconSection: some View {
-        Section {
             Button { showIcons = true } label: {
                 HStack {
                     TileRow(title: "أيقونة التطبيق", icon: "apps.iphone", color: .blue,
@@ -394,6 +398,15 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(.plain)
+            // عدّاد الصلاة القادمة في الجزيرة الديناميكية وشاشة القفل (Live Activity)
+            Toggle(isOn: Binding(get: { liveCountdown }, set: { v in
+                liveCountdown = v; PrayerActivity.enabled = v
+                Task { if v { await PrayerActivity.start() } else { await PrayerActivity.stop() } }
+            })) {
+                TileRow(title: "عدّاد الصلاة في الجزيرة الديناميكية", icon: "timer", color: Theme.gold,
+                        subtitle: "على شاشة القفل أيضًا؛ يتحدّث كلما فتحت رفيقي")
+            }
+            .tint(Theme.gold)
         }
     }
 
@@ -507,13 +520,10 @@ struct SettingsView: View {
         } footer: {
             Text("لتغيير لغة التطبيق إلى الإنجليزية أو العكس، افتح «الإعدادات» في الجوال ← «رفيقي» ← «اللغة».")
         }
+        // الإصدار ظاهر في بطاقة رفيقي أعلى الصفحة
         Section("حول التطبيق") {
             NavigationLink { FontsAbout() } label: {
                 TileRow(title: "الخطوط", icon: "textformat", color: .brown, subtitle: LF("%@ خطوط عربية مجانية", ar(WFont.allCases.count)))
-            }
-            HStack {
-                TileRow(title: "الإصدار", icon: "info.circle.fill", color: .gray)
-                Text(version).foregroundStyle(Theme.sub)
             }
         }
     }
@@ -616,7 +626,7 @@ struct MethodPicker: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle("طريقة الحساب")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 
@@ -652,7 +662,7 @@ struct WallpaperSettings: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle("الخلفية الشفافة")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .onAppear(perform: refresh)
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in refresh() }
         .onChange(of: pick) { _, item in

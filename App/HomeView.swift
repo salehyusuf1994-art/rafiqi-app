@@ -3,13 +3,22 @@ import WidgetKit
 
 // MARK: - الرئيسية: الصلاة القادمة، الاختصارات، مواقيت اليوم، التاريخ، الليل
 
-enum HomeRoute: Hashable { case qibla, calendar }
+enum HomeRoute: Hashable { case qibla, calendar, timetable }
+
+/// فتح صفحة في الرئيسية من خارجها (مركز التحكم)
+@MainActor
+final class HomeRouter: ObservableObject {
+    static let shared = HomeRouter()
+    @Published var open: HomeRoute?
+}
 
 struct HomeView: View {
     var openGallery: () -> Void = {}
     var openTab: (Int) -> Void = { _ in }
     @State private var weather: WeatherData? = Weather.cached()
     @State private var path: [HomeRoute] = SHOT == "qibla" ? [.qibla] : (SHOT.hasPrefix("calendar") ? [.calendar] : [])
+    @AppStorage("home.widgetsSeen") private var widgetsSeen = false
+    @ObservedObject private var router = HomeRouter.shared
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -18,13 +27,17 @@ struct HomeView: View {
                     VStack(spacing: 18) {
                         brandHeader
                         NextPrayerHero(date: tl.date, weather: weather)
-                        QuickActions(qibla: { path.append(.qibla) }, calendar: { path.append(.calendar) },
-                                     audio: { openTab(4) }, files: { openTab(5) })
-                        PrayerTimesCard(date: tl.date)
+                        // ذكر الوقت والمناسبة القادمة بدل اختصارات كانت تكرر الأزرار وشريط التبويب
+                        DhikrCard(date: tl.date, openAudio: { openTab(4) })
+                        PrayerTimesCard(date: tl.date) { path.append(.timetable) }
+                        OccasionCard(date: tl.date) { path.append(.calendar) }
                         TodayCard(date: tl.date)
                         NightCard(date: tl.date)
-                        WidgetsPromo(home: { GalleryNav.shared.lock = false; openGallery() },
-                                     lock: { GalleryNav.shared.lock = true; openGallery() })
+                        // تعريف بالويدجت يظهر حتى تزور المعرض أول مرة (تبويب الويدجت موجود دائمًا)
+                        if !widgetsSeen {
+                            WidgetsPromo(home: { widgetsSeen = true; GalleryNav.shared.lock = false; openGallery() },
+                                         lock: { widgetsSeen = true; GalleryNav.shared.lock = true; openGallery() })
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
@@ -39,7 +52,13 @@ struct HomeView: View {
                 switch r {
                 case .qibla: QiblaView()
                 case .calendar: UmmAlQuraView()
+                case .timetable: MonthlyTimetableView()
                 }
+            }
+            .onChange(of: router.open, initial: true) { _, r in
+                guard let r else { return }
+                router.open = nil
+                path = [r]
             }
             .task {
                 if await LocationSync.refreshIfNeeded() { reloadWidgets() }
@@ -228,42 +247,11 @@ struct PointLabel: View {
     }
 }
 
-// MARK: - الاختصارات
-
-struct QuickActions: View {
-    let qibla: () -> Void
-    let calendar: () -> Void
-    let audio: () -> Void
-    let files: () -> Void
-    var body: some View {
-        HStack(spacing: 10) {
-            tile("القبلة", "location.north.line.fill", Color(red: 0.20, green: 0.70, blue: 0.55), qibla)
-            tile("التقويم", "calendar", Color(red: 0.95, green: 0.55, blue: 0.30), calendar)
-            tile("المسموع والمرئي", "play.rectangle.fill", Theme.violet, audio)
-            tile("الملفات", "folder", Theme.gold, files)
-        }
-    }
-
-    func tile(_ title: String, _ icon: String, _ color: Color, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Badge(name: icon, size: 46)
-                Text(L(title)).font(Theme.title(13)).foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                    .padding(.horizontal, 6)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .glassCard(padding: 0, radius: 22)
-        }
-        .buttonStyle(PressStyle())
-    }
-}
-
 // MARK: - مواقيت اليوم
 
 struct PrayerTimesCard: View {
     let date: Date
+    var month: () -> Void = {}
     var body: some View {
         let times = Prayer.dayTimes(date)
         let next = Prayer.prevNext(at: date).next
@@ -271,7 +259,11 @@ struct PrayerTimesCard: View {
             HStack {
                 Text("مواقيت اليوم").font(Theme.title(18)).foregroundStyle(.white)
                 Spacer()
-                Text(verbatim: Settings.method.short).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                Button(action: month) {
+                    Label("جدول الشهر", systemImage: "tablecells").font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
+                        .padding(.horizontal, 10).padding(.vertical, 5).background(Capsule().fill(Theme.cardHi))
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 4).padding(.bottom, 4)
             ForEach(Array(times.enumerated()), id: \.offset) { _, p in
@@ -282,14 +274,9 @@ struct PrayerTimesCard: View {
                     Fit("pr_\(p.key.rawValue)_t", 74, 28, 1)
                     Spacer(minLength: 4)
                     if on {
-                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                            Text(verbatim: hmsText(p.time.timeIntervalSince(ctx.date)))
-                        }
-                            .font(Theme.font(14, .bold).monospacedDigit())
-                            .foregroundStyle(Theme.gold)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 70)
-                            .environment(\.layoutDirection, .leftToRight)
+                        // العدّاد في البطاقة الكبيرة أعلاه؛ هنا علامة «القادمة» فقط
+                        Text("القادمة").font(Theme.title(12)).foregroundStyle(.black)
+                            .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Theme.gold))
                     }
                     Digits(text: hm12(p.time), size: 18, color: on ? Theme.gold : .white, bold: on)
                         .frame(minWidth: 58, alignment: .trailing)
@@ -312,17 +299,9 @@ struct TodayCard: View {
         let h = Cal.dmy(date, greg: false), g = Cal.dmy(date, greg: true)
         let mi = Cal.monthInfo(date, greg: false)
         VStack(spacing: 14) {
-            // اسم اليوم، وتحته اسم الموقع
-            VStack(spacing: 4) {
-                Fit("wd\(Cal.weekday(date))_t", 190, 78)
-                HStack(spacing: 5) {
-                    Image(systemName: Settings.isAuto ? "location.fill" : "mappin.and.ellipse").font(.system(size: 12, weight: .semibold))
-                    Text(verbatim: Settings.placeName.isEmpty ? L("موقعك الحالي") : Settings.placeName)
-                        .font(Theme.title(15)).lineLimit(1).minimumScaleFactor(0.7)
-                }
-                .foregroundStyle(Theme.sub)
-            }
-            .frame(maxWidth: .infinity)
+            // اسم اليوم (الموقع ظاهر في البطاقة الكبيرة أعلى الصفحة)
+            Fit("wd\(Cal.weekday(date))_t", 190, 78)
+                .frame(maxWidth: .infinity)
             Rectangle().fill(Theme.stroke).frame(height: 1)
             HStack(alignment: .top, spacing: 10) {
                 DateBlock(names: ["pn\(h.d)", "hm\(h.m)"], year: "hyl\(clampY(h.y, 1440, 1470))_t", label: "هجري")

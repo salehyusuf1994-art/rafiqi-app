@@ -418,7 +418,7 @@ struct StationBrowser: View {
         .searchable(text: $q, prompt: "اسم الإذاعة")
         .onSubmit(of: .search) { Task { await load() } }
         .navigationTitle(L(category.title))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .task { if !loaded { await load() } }
         .onChange(of: country) { Task { await load() } }
         .onChange(of: order) { Task { await load() } }
@@ -496,7 +496,7 @@ struct FavoritesManager: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle("المفضلة")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .toolbar { if !saved.isEmpty { EditButton().tint(Theme.gold) } }
         .sheet(isPresented: $adding) { AddStationSheet(saved: $saved) }
         .alert("تعديل الاسم", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -686,7 +686,7 @@ struct CountryRadioView: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle(LF("راديو %@", country.name))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .navigationDestination(item: $cat) { c in StationBrowser(category: c, saved: $saved) }
     }
 }
@@ -713,7 +713,7 @@ struct OtherCountriesView: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle("دول عربية أخرى")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 
@@ -803,7 +803,7 @@ struct PlaylistView: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle(pl?.name ?? "")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if !(pl?.stations.isEmpty ?? true) { EditButton().tint(Theme.gold) }
@@ -846,7 +846,7 @@ struct AllCountriesView: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle("الدول")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .navigationDestination(item: $country) { c in CountryRadioView(country: c, saved: $saved) }
         .navigationDestination(isPresented: $others) { OtherCountriesView(saved: $saved) }
     }

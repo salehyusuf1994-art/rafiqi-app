@@ -11,6 +11,8 @@ final class AudioPlayer: ObservableObject {
 
     @Published private(set) var state = NowPlaying.current
     @Published var loading = false
+    /// شُغّل شيء في هذه الجلسة (يُظهر المشغّل العائم أسفل التطبيق حتى يُغلق)
+    @Published var sessionActive = false
     /// اسم البرنامج أو المقطع الذي تبثّه الإذاعة الآن (إن أرسلته)
     @Published private(set) var streamTitle: String? = nil
     /// الإذاعة الشغّالة
@@ -134,6 +136,7 @@ final class AudioPlayer: ObservableObject {
         case "prev": previous()
         case "shuffle": state.shuffle.toggle(); save()
         case "repeat": state.repeatOne.toggle(); save()
+        case "sleep30": sleep(minutes: 30)
         case "forward": seek(by: 15)
         case "back": seek(by: -15)
         default: break
@@ -227,6 +230,7 @@ final class AudioPlayer: ObservableObject {
         if state.source != .radio { altQueue = []; altKey = nil }
         // تشغيل القرآن أو الإذاعة يوقف بث القناة وأي فيديو (ولو في النافذة العائمة)
         PlaybackGate.claim(.audio)
+        sessionActive = true
         currentURL = url
         activateSession()
         let item = AVPlayerItem(url: url)
@@ -503,6 +507,12 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// إيقاف ملفاتي وإخفاء المشغّل المصغّر
+    /// إغلاق المشغّل العائم: يتوقف الصوت ويختفي المشغّل
+    func endSession() {
+        if state.source == .files { stopFiles() } else { pause() }
+        sessionActive = false
+    }
+
     func stopFiles() {
         guard state.source == .files else { return }
         pause()

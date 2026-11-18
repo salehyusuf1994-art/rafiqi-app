@@ -40,7 +40,7 @@ struct GalleryView: View {
                     }
                     .padding(.horizontal, 16)
 
-                    TimelineView(.periodic(from: .now, by: 30)) { tl in
+                    TimelineView(.everyMinute) { tl in
                         if nav.lock {
                             VStack(alignment: .leading, spacing: 22) {
                                 LockShowcase(date: tl.date)
@@ -371,7 +371,7 @@ struct WidgetDetail: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 22) {
-                    TimelineView(.periodic(from: .now, by: 30)) { tl in
+                    TimelineView(.everyMinute) { tl in
                         VStack(spacing: 18) {
                             ForEach(info.families, id: \.self) { f in
                                 WidgetPreview(info: info, family: f, date: tl.date, weather: weather, tint: tint, greg: greg,

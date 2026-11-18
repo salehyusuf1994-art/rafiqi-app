@@ -140,6 +140,7 @@ final class TVPlayback: ObservableObject {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
         try? AVAudioSession.sharedInstance().setActive(true)
         TVChannels.last = channel.id
+        TVChannels.watched(channel.id)
         index = 0
         failed = false
         tryCurrent()
@@ -571,19 +572,27 @@ struct TVSections: View {
 
     var body: some View {
         let _ = rev
-        Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    Chip(title: "الكل", on: filter == nil) { withAnimation(.snappy) { filter = nil } }
-                    ForEach(TVCat.allCases, id: \.self) { c in
-                        Chip(title: c.title, icon: c.icon, on: filter == c) { withAnimation(.snappy) { filter = c } }
-                    }
+        // شريط شرائح واحد فقط في الصفحة (شرائح الأقسام أعلاها)؛ الأقسام تُفتح من «عرض الكل»
+        if filter != nil {
+            Section {
+                Button { withAnimation(.snappy) { filter = nil } } label: {
+                    Label("كل القنوات", systemImage: "chevron.backward").font(Theme.f(.subheadline, .bold)).foregroundStyle(Theme.gold)
                 }
-                .padding(.horizontal, 2).padding(.vertical, 2)
+                .buttonStyle(.plain)
             }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
         }
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+
+        if filter == nil && !TVChannels.recentChannels.isEmpty {
+            Section {
+                carousel(TVChannels.recentChannels)
+            } header: {
+                Label("شاهدت مؤخرًا", systemImage: "clock.arrow.circlepath")
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+        }
 
         if filter == nil && !favs.isEmpty {
             Section {
@@ -612,7 +621,7 @@ struct TVSections: View {
                     carousel(TVChannels.list(c))
                 } header: {
                     HStack {
-                        Label(c.title, systemImage: c.icon).foregroundStyle(c.color)
+                        Label(c.title, systemImage: c.icon).foregroundStyle(.white)
                         Spacer()
                         Button { withAnimation(.snappy) { filter = c } } label: {
                             Text("عرض الكل").font(Theme.f(.caption, .semibold)).foregroundStyle(Theme.gold)

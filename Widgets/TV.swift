@@ -211,6 +211,17 @@ enum TVChannels {
         return favorites.compactMap { id in a.first { $0.id == id } }
     }
 
+    /// شاهدت مؤخرًا (آخر ١٠ قنوات)
+    static var recentIDs: [String] {
+        get { d.stringArray(forKey: "tv_recent") ?? [] }
+        set { d.set(Array(newValue.prefix(10)), forKey: "tv_recent") }
+    }
+    static func watched(_ id: String) { recentIDs = [id] + recentIDs.filter { $0 != id } }
+    static var recentChannels: [TVChannel] {
+        let a = all
+        return recentIDs.compactMap { id in a.first { $0.id == id } }
+    }
+
     /// قائمة البكرة في الويدجت: المفضلة ثم الدينية والإخبارية ثم الباقي
     static var reel: [TVChannel] {
         var seen = Set<String>()

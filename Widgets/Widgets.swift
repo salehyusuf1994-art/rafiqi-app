@@ -12,5 +12,14 @@ struct HilalWidgetBundle: WidgetBundle {
         RafiqiMedium()
         LockGroup().body
         LockGroup2().body
+        // عدّاد الصلاة في الجزيرة الديناميكية وشاشة القفل
+        PrayerActivityWidget()
+        // أزرار مركز التحكم (امتداد الويدجت يتطلب iOS 18؛ التطبيق نفسه يعمل من iOS 17)
+        RadioControl()
+        QuranControl()
+        SleepControl()
+        PrayerCountdownControl()
+        ScannerControl()
+        QiblaControl()
     }
 }

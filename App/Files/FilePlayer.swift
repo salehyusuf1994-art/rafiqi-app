@@ -630,51 +630,6 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
 
 // MARK: - المشغّل المصغّر لملفاتي
 
-struct FilesMiniPlayer: View {
-    @ObservedObject private var p = AudioPlayer.shared
-    @State private var showFull = false
-    @State private var pos: Double = 0
-    @State private var scrubbing = false
-    private let tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-
-    var body: some View {
-        if p.currentFile != nil {
-            VStack(spacing: 6) {
-                HStack(spacing: 10) {
-                    Button { showFull = true } label: {
-                        Image(systemName: "chevron.up").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                            .frame(width: 30, height: 30).background(Circle().fill(Color.white.opacity(0.12)))
-                    }
-                    Text(verbatim: p.state.title).font(Theme.f(.subheadline, .bold)).foregroundStyle(.white).lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .onTapGesture { showFull = true }
-                    Button { p.stopFiles() } label: {
-                        Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.black)
-                            .frame(width: 30, height: 30).background(Circle().fill(Color.white))
-                    }
-                }
-                HStack(spacing: 8) {
-                    Text(verbatim: durationText(pos)).font(Theme.font(12, .medium).monospacedDigit()).foregroundStyle(Theme.sub)
-                    Slider(value: Binding(get: { pos }, set: { pos = $0 }), in: 0...max(1, p.state.duration), onEditingChanged: { e in
-                        scrubbing = e
-                        if !e { p.seek(to: pos) }
-                    })
-                    .tint(Theme.gold)
-                    Text(verbatim: durationText(p.state.duration)).font(Theme.font(12, .medium).monospacedDigit()).foregroundStyle(Theme.sub)
-                }
-                .environment(\.layoutDirection, .leftToRight)
-                PlayerControls(compact: true)
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.ultraThinMaterial))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.edge, lineWidth: 1))
-            .environment(\.colorScheme, .dark)
-            .onReceive(tick) { _ in if !scrubbing { pos = p.position() } }
-            .sheet(isPresented: $showFull) { FilesFullPlayer() }
-        }
-    }
-}
-
 /// أزرار التحكم المشتركة
 struct PlayerControls: View {
     @ObservedObject private var p = AudioPlayer.shared

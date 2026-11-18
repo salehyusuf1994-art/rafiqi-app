@@ -84,8 +84,13 @@ struct AppBackground: View {
         }
     }
 
+    /// الدائرة المموّهة تُرسم مرة واحدة كطبقة (drawingGroup) ثم تتحرك الطبقة فقط —
+    /// بدل إعادة حساب التمويه الضخم في كل إطار من الحركة
     private func glow(_ c: Color, _ o: Double, size: CGFloat) -> some View {
-        Circle().fill(c.opacity(o)).frame(width: size, height: size).blur(radius: size * 0.28)
+        Circle().fill(c.opacity(o)).frame(width: size, height: size)
+            .padding(size * 0.5)
+            .blur(radius: size * 0.28)
+            .drawingGroup()
     }
 }
 
@@ -109,7 +114,7 @@ extension View {
 
     /// مسافة أسفل الصفحة لشريط التبويب العائم
     func barSpace() -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 78) }
+        safeAreaInset(edge: .bottom, spacing: 0) { BarSpacer() }
     }
 
     /// قائمة بمظهر زجاجي
@@ -130,8 +135,11 @@ struct PageHeader<Trailing: View>: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(L(title)).font(Theme.title(30)).foregroundStyle(.white)
                 // بدون تصغير تلقائي: كان يقيس السطر أضيق من رسمه فيُقص أوله (رقم اليوم / «القرآن»)
-                Text(subtitle ?? DateLine.today()).font(Theme.title(14)).foregroundStyle(Theme.sub)
-                    .fixedSize(horizontal: false, vertical: true)
+                // التاريخ في الرئيسية وحدها؛ بقية الصفحات وصف قصير أو لا شيء
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle).font(Theme.title(14)).foregroundStyle(Theme.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 0)
             HStack(spacing: 10) { trailing() }
@@ -157,6 +165,12 @@ enum DateLine {
         let gm = Lang.isEN ? Words.gmEN[g.m - 1] : (Settings.shamiMonths ? Words.gs[g.m - 1] : Words.gm[g.m - 1])
         let hm = Lang.isEN ? Words.hmEN[h.m - 1] : Words.hm[h.m - 1]
         return "\(ar(g.d)) \(gm)  |  \(ar(h.d)) \(hm) \(ar(h.y))"
+    }
+    /// «٢٢ فبراير ٢٠٢٧»
+    static func greg(_ d: Date) -> String {
+        let g = Cal.dmy(d, greg: true)
+        let gm = Lang.isEN ? Words.gmEN[g.m - 1] : (Settings.shamiMonths ? Words.gs[g.m - 1] : Words.gm[g.m - 1])
+        return "\(ar(g.d)) \(gm) \(ar(g.y))"
     }
 }
 
@@ -427,4 +441,10 @@ extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         viewControllers.count > 1
     }
+}
+
+/// مسافة شريط التبويب، ومعها مسافة المشغّل العائم حين يظهر
+struct BarSpacer: View {
+    @ObservedObject private var mini = MiniPlayerState.shared
+    var body: some View { Color.clear.frame(height: mini.visible ? 78 + 66 : 78) }
 }

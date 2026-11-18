@@ -272,6 +272,8 @@ struct SurahsView: View {
     @ObservedObject private var dl = QuranDownloads.shared
     @State private var q = ""
     @State private var onlyDownloaded = false
+    /// عرض السور مقسّمة على الأجزاء
+    @State private var byJuz = false
     @State private var confirmDelete = false
 
     var body: some View {
@@ -325,8 +327,25 @@ struct SurahsView: View {
             }
 
             Section {
+                Picker("", selection: $byJuz) { Text("السور").tag(false); Text("الأجزاء").tag(true) }
+                    .pickerStyle(.segmented)
                 Toggle("المنزّلة فقط", isOn: $onlyDownloaded).tint(Theme.gold)
-                ForEach(list(avail), id: \.self) { n in row(n) }
+                if !byJuz { ForEach(list(avail), id: \.self) { n in row(n) } }
+            }
+            if byJuz {
+                // كل جزء بالسور التي تبدأ فيه
+                let shown = list(avail)
+                ForEach(1...30, id: \.self) { j in
+                    let items = shown.filter { Surahs.juz(of: $0) == j }
+                    if !items.isEmpty {
+                        Section {
+                            ForEach(items, id: \.self) { n in row(n) }
+                        } header: {
+                            let st = Surahs.juzStart[j - 1]
+                            Text(verbatim: LF("الجزء %@", ar(j)) + " · " + LF("يبدأ من %@ آية %@", Surahs.name(st.0), ar(st.1)))
+                        }
+                    }
+                }
             }
         }
         .scrollContentBackground(.hidden)
@@ -334,7 +353,7 @@ struct SurahsView: View {
         .barSpace()
         .searchable(text: $q, prompt: "ابحث عن سورة")
         .navigationTitle("القرآن الكريم")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .confirmationDialog("حذف كل السور المنزّلة لهذا القارئ؟", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("حذف", role: .destructive) { dl.deleteAll(reciter) }
         }
@@ -354,7 +373,10 @@ struct SurahsView: View {
             Button { AudioPlayer.shared.playQuran(n, reciter: reciter) } label: {
                 HStack(spacing: 12) {
                     Text(ar(n)).font(Theme.f(.footnote).monospacedDigit()).foregroundStyle(Theme.sub).frame(width: 30)
-                    Text(Surahs.name(n)).foregroundStyle(playing ? Theme.gold : .white)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Surahs.name(n)).foregroundStyle(playing ? Theme.gold : .white)
+                        Text(verbatim: Surahs.info(n)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
+                    }
                     if playing && p.state.playing {
                         Image(systemName: "waveform").symbolEffect(.variableColor.iterative, options: .repeating)
                             .font(Theme.f(.caption)).foregroundStyle(Theme.gold)

@@ -27,13 +27,7 @@ struct MediaView: View {
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                // المشغّل تحت الشرائح (فلا تقفز)، وفي القسم الذي يخصّه فقط:
-                // التلاوة في «القرآن»، وApple Music في قسمه، والإذاعة لها بطاقتها الكبيرة، ولا شيء فوق القنوات
-                if (section == 0 && p.state.source == .quran) || (section == 3 && p.state.source == .music) {
-                    Section { nowPlaying }
-                        .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                }
+                // المشغّل الحالي عائم أسفل التطبيق (فوق شريط التبويب) — لا يتكرر داخل الصفحة
 
                 switch section {
                 case 0: quranSections
@@ -62,46 +56,50 @@ struct MediaView: View {
         }
     }
 
-    // ── المشغّل الحالي ──
-    var nowPlaying: some View {
-        let s = p.state
-        return HStack(spacing: 14) {
-            MediaArt(source: s.source, corner: 16, label: s.title)
-                .frame(width: 64, height: 64)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(s.title).font(Theme.title(17)).foregroundStyle(.white).lineLimit(1)
-                Text(s.subtitle).font(Theme.f(.caption)).foregroundStyle(Theme.sub).lineLimit(1)
-                if p.loading { ProgressView().controlSize(.mini).tint(Theme.gold) }
-                else if let at = p.sleepAt {
-                    Label { Text(at, style: .timer).monospacedDigit() } icon: { Image(systemName: "moon.zzz.fill") }
-                        .font(Theme.f(.caption2)).foregroundStyle(Theme.gold)
-                } else if p.sleepAtEnd {
-                    Label("يتوقف عند نهاية السورة", systemImage: "moon.zzz.fill").font(Theme.f(.caption2)).foregroundStyle(Theme.gold)
-                }
-            }
-            Spacer(minLength: 0)
-            if s.source != .music { SleepMenu(label: false, round: true) }
-            HStack(spacing: 6) {
-                ctrl("backward.fill") { AudioPlayer.shared.previous() }
-                ctrl(s.playing ? "pause.fill" : "play.fill", big: true) { AudioPlayer.shared.toggle() }
-                ctrl("forward.fill") { AudioPlayer.shared.next() }
-            }
-            .environment(\.layoutDirection, .leftToRight)
-        }
-        .glassCard(padding: 14)
-    }
-
-    func ctrl(_ icon: String, big: Bool = false, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon).font(.system(size: big ? 18 : 13, weight: .bold)).foregroundStyle(big ? .black : .white)
-                .frame(width: big ? 44 : 34, height: big ? 44 : 34)
-                .background(Circle().fill(big ? AnyShapeStyle(Theme.gold) : AnyShapeStyle(Theme.cardHi)))
-        }
-        .buttonStyle(.plain)
-    }
-
     // ── القرآن ──
     @ViewBuilder var quranSections: some View {
+        // تابع الاستماع: آخر سورة سُمعت (إن لم تكن في المشغّل العائم الآن)
+        if !(p.sessionActive && p.state.source == .quran) {
+            let last = NowPlaying.last(.quran)
+            Section {
+                Button { AudioPlayer.shared.switchTo(.quran) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "play.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(.black)
+                            .frame(width: 44, height: 44).background(Circle().fill(Theme.gold))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("تابع الاستماع").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                            Text(verbatim: L("سورة") + " " + Surahs.name(last.surah)).font(Theme.title(17)).foregroundStyle(.white)
+                            Text(verbatim: last.subtitle.isEmpty ? reciter.name : last.subtitle).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                        }
+                        Spacer(minLength: 0)
+                        Text(verbatim: Surahs.info(last.surah)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        // سور يكثر سماعها
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach([18, 36, 67, 55, 56, 2, 1, 112], id: \.self) { n in
+                        Button { AudioPlayer.shared.playQuran(n, reciter: reciter) } label: {
+                            VStack(spacing: 4) {
+                                Text(verbatim: Surahs.name(n)).font(Theme.title(16)).foregroundStyle(.white).lineLimit(1)
+                                Text(verbatim: Surahs.info(n)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub).lineLimit(1)
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.stroke, lineWidth: 1))
+                        }
+                        .buttonStyle(PressStyle())
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        } header: { Text("سور مختارة") }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
         Section {
             NavigationLink {
                 ReciterPicker(list: reciters, selected: $reciter)
@@ -131,10 +129,7 @@ struct MediaView: View {
 
     // ── الإذاعات ──
     @ViewBuilder var radioSections: some View {
-        if p.state.source == .radio {
-            Section { RadioPlayerCard(saved: $saved) }
-                .bareRow()
-        }
+        // بطاقة الإذاعة الكاملة (المفضلة والتحديث والمؤقّت والمشاركة) تُفتح من المشغّل العائم
         // قوائم التشغيل (بدل «إذاعات مختارة»): أكثر من قائمة، وكل قائمة صفحة بإذاعاتها
         Section {
             ForEach(lists.lists) { pl in
@@ -235,6 +230,6 @@ struct ReciterPicker: View {
         .barSpace()
         .searchable(text: $q, prompt: "ابحث عن قارئ")
         .navigationTitle("القارئ")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 }

@@ -70,9 +70,22 @@ struct UmmAlQuraView: View {
         ScrollView {
             VStack(spacing: 18) {
                 BackRow()
-                PageHeader(title: "تقويم أم القرى", subtitle: L("التقويم الرسمي للمملكة العربية السعودية")) {
-                    CircleButton(icon: "arrow.left.arrow.right") { withAnimation(.snappy) { showConverter.toggle() } }
+                PageHeader(title: "تقويم أم القرى", subtitle: L("التقويم الرسمي للمملكة العربية السعودية"))
+
+                // أدوات التقويم بأسماء واضحة (كان المحوّل خلف زر بلا اسم)
+                HStack(spacing: 10) {
+                    NavigationLink { MonthlyTimetableView() } label: {
+                        Label("جدول المواقيت والإمساكية", systemImage: "tablecells").font(Theme.f(.footnote, .bold)).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 10).background(Capsule().fill(Theme.cardHi))
+                    }
+                    Button { withAnimation(.snappy) { showConverter.toggle() } } label: {
+                        Label("محوّل التاريخ", systemImage: "arrow.left.arrow.right").font(Theme.f(.footnote, .bold))
+                            .foregroundStyle(showConverter ? .black : .white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .background(Capsule().fill(showConverter ? AnyShapeStyle(Theme.gold) : AnyShapeStyle(Theme.cardHi)))
+                    }
                 }
+                .buttonStyle(.plain)
 
                 HStack(spacing: 8) {
                     Chip(title: "هجري", on: hijriMode) { withAnimation(.snappy) { hijriMode = true } }

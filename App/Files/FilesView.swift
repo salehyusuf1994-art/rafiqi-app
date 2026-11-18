@@ -28,6 +28,8 @@ final class FilesRouter: ObservableObject {
     @Published var path: [URL] = []
     /// طلب التبديل إلى تبويب «إدارة الملفات»
     @Published var openTab = false
+    /// طلب فتح الماسح (من زر مركز التحكم)
+    @Published var openScanner = false
 }
 
 struct FilesTab: View {
@@ -63,9 +65,17 @@ struct FilesTab: View {
     private var home: some View {
         VStack(spacing: 12) {
             PageHeader(title: "إدارة الملفات", subtitle: L("ملفاتك وتنزيلاتك في مكان واحد")) {
-                CircleButton(icon: "wifi", size: 40) { showWiFi = true }.accessibilityLabel(L("النقل عبر الواي فاي"))
-                CircleButton(icon: "chart.pie", size: 40) { showStorage = true }.accessibilityLabel(L("تحليل المساحة"))
-                CircleButton(icon: "gearshape", size: 40) { showSettings = true }.accessibilityLabel(L("إعدادات الملفات"))
+                // أدوات قليلة الاستخدام في قائمة واحدة بدل ثلاث دوائر
+                Menu {
+                    Button { showWiFi = true } label: { Label("النقل عبر الواي فاي", systemImage: "wifi") }
+                    Button { showStorage = true } label: { Label("تحليل المساحة", systemImage: "chart.pie") }
+                    Button { showSettings = true } label: { Label("إعدادات الملفات", systemImage: "gearshape") }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: 40, height: 40).background(Circle().fill(Theme.cardHi))
+                        .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
+                }
+                .accessibilityLabel(L("أدوات الملفات"))
             }
             .padding(.horizontal, 16)
             Picker("", selection: $router.page) {
@@ -89,16 +99,13 @@ struct FilesTab: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) { bottomStack }
             case .browser:
                 BrowserView()
-                    .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 78) }
+                    .safeAreaInset(edge: .bottom, spacing: 0) { BarSpacer() }
             }
         }
     }
 
     private var bottomStack: some View {
-        VStack(spacing: 0) {
-            FilesMiniPlayer().padding(.horizontal, 12).padding(.bottom, 6)
-            Color.clear.frame(height: 78)
-        }
+        BarSpacer()
     }
 
     private var lockScreen: some View {
@@ -136,10 +143,7 @@ struct FolderScreen: View {
         }
         .scrollIndicators(.hidden)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                FilesMiniPlayer().padding(.horizontal, 12).padding(.bottom, 6)
-                Color.clear.frame(height: 78)
-            }
+            BarSpacer()
         }
         .background(AppBackground())
         .toolbar(.hidden, for: .navigationBar)
@@ -201,8 +205,10 @@ struct FolderContent: View {
     var body: some View {
         let list = items
         VStack(spacing: 12) {
-            if !isTrash { actionsRow }
-            searchBar
+            HStack(spacing: 8) {
+                searchBar
+                if !isTrash { actionsRow }
+            }
             filterBar
             if isTrash && !list.isEmpty {
                 HStack {
@@ -305,6 +311,11 @@ struct FolderContent: View {
         }
         .sheet(item: $reminding) { it in ReminderSheet(item: it) { msg in show(msg) } }
         .fullScreenCover(isPresented: $showScannerHome) { ScannerHome() }
+        .onChange(of: router.openScanner, initial: true) { _, on in
+            guard on, isRoot else { return }
+            router.openScanner = false
+            showScannerHome = true
+        }
         .fullScreenCover(isPresented: $showScanner) {
             DocScanner { pdf in
                 if let pdf, let u = store.importData(pdf, name: L("مستند ممسوح") + ".pdf", to: dir) { show(LF("حُفظ «%@»", u.lastPathComponent)) }
@@ -319,39 +330,44 @@ struct FolderContent: View {
 
     // MARK: الأجزاء
 
+    /// بجانب البحث: الماسح، وقائمة «+» (إنشاء واستيراد)، والتحديد — بدل بطاقة من خمسة أزرار كبيرة
     private var actionsRow: some View {
-        HStack(spacing: 0) {
-            action(selecting ? "xmark" : "checkmark.circle", selecting ? L("إلغاء") : L("تحديد")) {
+        HStack(spacing: 8) {
+            circle("doc.viewfinder", L("الماسح")) { showScannerHome = true }
+            Menu {
+                Section {
+                    Button { newName = ""; askNewFolder = true } label: { Label("مجلد جديد", systemImage: "folder.badge.plus") }
+                    Button { newName = ""; askNewNote = true } label: { Label("ملاحظة نصية", systemImage: "note.text.badge.plus") }
+                }
+                Section {
+                    Button { showPhotos = true } label: { Label("استيراد من الصور", systemImage: "photo.on.rectangle") }
+                    Button { importingFiles = true } label: { Label("استيراد من الملفات", systemImage: "folder.badge.plus") }
+                    Button { showCamera = UIImagePickerController.isSourceTypeAvailable(.camera); if !showCamera { show(L("الكاميرا غير متاحة")) } } label: {
+                        Label("التقاط صورة أو فيديو", systemImage: "camera")
+                    }
+                    if VNDocumentCameraViewController.isSupported {
+                        Button { showScanner = true } label: { Label("مسح سريع إلى PDF", systemImage: "doc.viewfinder") }
+                    }
+                }
+            } label: {
+                Image(systemName: "plus").font(.system(size: 17, weight: .bold)).foregroundStyle(.black)
+                    .frame(width: 44, height: 44).background(Circle().fill(Theme.gold))
+            }
+            .accessibilityLabel(L("إنشاء"))
+            circle(selecting ? "xmark" : "checkmark.circle", selecting ? L("إلغاء") : L("تحديد")) {
                 if selecting { endSelection() } else { selecting = true }
             }
-            Menu {
-                Button { newName = ""; askNewFolder = true } label: { Label("مجلد جديد", systemImage: "folder.badge.plus") }
-                Button { newName = ""; askNewNote = true } label: { Label("ملاحظة نصية", systemImage: "note.text.badge.plus") }
-                Button { showCamera = UIImagePickerController.isSourceTypeAvailable(.camera); if !showCamera { show(L("الكاميرا غير متاحة")) } } label: {
-                    Label("التقاط صورة أو فيديو", systemImage: "camera")
-                }
-                if VNDocumentCameraViewController.isSupported {
-                    Button { showScanner = true } label: { Label("مسح سريع إلى PDF", systemImage: "doc.viewfinder") }
-                }
-            } label: { actionLabel("plus", L("إنشاء")) }
-            action("doc.viewfinder", L("الماسح")) { showScannerHome = true }
-            action("photo.on.rectangle", L("من الصور")) { showPhotos = true }
-            action("folder.badge.plus", L("من الملفات")) { importingFiles = true }
         }
-        .padding(.vertical, 10)
-        .glassCard(padding: 0, radius: 22)
     }
 
-    private func action(_ icon: String, _ title: String, _ run: @escaping () -> Void) -> some View {
-        Button(action: run) { actionLabel(icon, title) }.buttonStyle(PressStyle())
-    }
-
-    private func actionLabel(_ icon: String, _ title: String) -> some View {
-        VStack(spacing: 6) {
-            Badge(name: icon, size: 42)
-            Text(verbatim: title).font(Theme.f(.caption, .medium)).foregroundStyle(.white.opacity(0.9)).lineLimit(1).minimumScaleFactor(0.8)
+    private func circle(_ icon: String, _ title: String, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 44, height: 44).background(Circle().fill(Theme.cardHi))
+                .overlay(Circle().strokeBorder(Theme.stroke, lineWidth: 1))
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(title)
     }
 
     private var searchBar: some View {
@@ -508,6 +524,7 @@ struct FolderContent: View {
                     Label(store.isPinned(it.url) ? L("إلغاء التثبيت") : L("تثبيت"), systemImage: store.isPinned(it.url) ? "pin.slash" : "pin")
                 }
                 if !it.isDir { Button { FileOpener.share([it.url]) } label: { Label("مشاركة", systemImage: "square.and.arrow.up") } }
+                Button { actionItem = it } label: { Label("كل الإجراءات…", systemImage: "ellipsis.circle") }
                 Button(role: .destructive) { store.moveToTrash([it.url]) } label: { Label("حذف", systemImage: "trash") }
             } else {
                 Button { store.restore([it.url]) } label: { Label("استرجاع", systemImage: "arrow.uturn.backward") }
@@ -738,14 +755,7 @@ struct GridCell: View {
                 .font(Theme.f(.footnote, .medium)).foregroundStyle(.white)
                 .lineLimit(2).multilineTextAlignment(.center).frame(height: 36, alignment: .center)
             FileSubtitle(item: item).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
-            if selected == nil {
-                Button(action: more) {
-                    Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.gold)
-                        .frame(width: 44, height: 24).background(Capsule().fill(Theme.card))
-                        .overlay(Capsule().strokeBorder(Theme.stroke, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
+            // الإجراءات بالضغط المطوّل (بدل زر «…» تحت كل ملف)
         }
     }
 }

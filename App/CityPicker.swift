@@ -74,7 +74,7 @@ struct CityPicker: View {
         .searchable(text: $q, placement: .navigationBarDrawer(displayMode: .always), prompt: "ابحث عن مدينة في المملكة أو العالم")
         .task(id: q) { await searchWorld() }
         .navigationTitle("اختيار المدينة")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 
     /// البحث في مدن العالم (بعد توقّف الكتابة لحظة)

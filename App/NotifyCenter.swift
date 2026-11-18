@@ -414,7 +414,7 @@ struct NotifyDetail: View {
         .scrollContentBackground(.hidden)
         .background(AppBackground())
         .navigationTitle(L(item.name))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .onDisappear { store.stopPlaying(); store.note = "" }
     }
 
@@ -475,7 +475,7 @@ struct MuezzinPicker: View {
         .scrollContentBackground(.hidden)
         .background(AppBackground())
         .navigationTitle(fajr ? L("أذان الفجر") : L("المؤذن"))
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .onDisappear { store.stopPlaying() }
     }
 }

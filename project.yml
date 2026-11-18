@@ -83,6 +83,7 @@ targets:
         buildPhase: resources
     settings:
       base:
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         PRODUCT_BUNDLE_IDENTIFIER: app.hilal.widgets.ext
         PRODUCT_NAME: HilalWidgets
         INFOPLIST_FILE: Widgets/Info.plist

@@ -267,7 +267,7 @@ struct GlobalStyleView: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle("التصميم العام")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 
@@ -314,6 +314,6 @@ struct FontsAbout: View {
         .background(AppBackground())
         .barSpace()
         .navigationTitle("الخطوط")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 }
