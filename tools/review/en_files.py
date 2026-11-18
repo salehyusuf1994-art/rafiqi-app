@@ -776,3 +776,4 @@ for _a, _e in [('التاريخ', 'Date'), ('الصلاة', 'Prayer'), ('الس�
     for _n in range(1, 61):
         T[_a + ' ' + str(_n).translate(_AD)] = _e + ' ' + str(_n)
 T.update({'اضغط على «%@»، ثم اضغط عليها مرة ثانية واختر «%@».': 'Tap “%@”, then tap it again and choose “%@”.'})
+T.update({'التقديم والتأخير': 'Seek'})

@@ -20,6 +20,7 @@ struct GlobalMiniPlayer: View {
         Group {
             if visible {
                 let s = p.state
+                VStack(spacing: 6) {
                 HStack(spacing: 12) {
                     Group {
                         if s.source == .radio, let st = p.station { StationArt(station: st, size: 44) }
@@ -41,6 +42,11 @@ struct GlobalMiniPlayer: View {
                     .environment(\.layoutDirection, .leftToRight)
                     button("xmark") { withAnimation(.snappy) { p.endSession() } }
                         .accessibilityLabel(L("إغلاق المشغّل"))
+                }
+                // شريط التقديم والتأخير للقرآن والملفات (البث المباشر ليس له مدة)
+                if (s.source == .quran || s.source == .files) && s.duration > 0 {
+                    MiniScrubber(duration: s.duration)
+                }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.ultraThinMaterial))
@@ -64,6 +70,52 @@ struct GlobalMiniPlayer: View {
                 .frame(width: big ? 40 : 34, height: big ? 40 : 34)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// شريط تقديم وتأخير رفيع: يُسحب بالإصبع، ويتحرك مع التشغيل، والوقت المنقضي والمتبقي على طرفيه
+struct MiniScrubber: View {
+    @ObservedObject private var p = AudioPlayer.shared
+    let duration: Double
+    @State private var pos: Double = AudioPlayer.shared.position()
+    @State private var dragging = false
+    private let tick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        let frac = CGFloat(min(1, max(0, pos / max(1, duration))))
+        HStack(spacing: 8) {
+            Text(verbatim: durationText(pos)).frame(minWidth: 34, alignment: .leading)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.18)).frame(height: dragging ? 7 : 4)
+                    Capsule().fill(Theme.gold).frame(width: max(4, g.size.width * frac), height: dragging ? 7 : 4)
+                    Circle().fill(Color.white).frame(width: dragging ? 16 : 10, height: dragging ? 16 : 10)
+                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+                        .offset(x: g.size.width * frac - (dragging ? 8 : 5))
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        dragging = true
+                        pos = Double(min(1, max(0, v.location.x / max(1, g.size.width)))) * duration
+                    }
+                    .onEnded { _ in
+                        p.seek(to: pos)
+                        dragging = false
+                    })
+                .animation(.snappy(duration: 0.18), value: dragging)
+            }
+            .frame(height: 22)
+            Text(verbatim: "-" + durationText(max(0, duration - pos))).frame(minWidth: 40, alignment: .trailing)
+        }
+        .font(Theme.font(11, .medium).monospacedDigit()).foregroundStyle(Theme.sub)
+        .environment(\.layoutDirection, .leftToRight)
+        .onReceive(tick) { _ in if !dragging { pos = p.position() } }
+        .accessibilityElement()
+        .accessibilityLabel(L("التقديم والتأخير"))
+        .accessibilityValue(durationText(pos))
+        .accessibilityAdjustableAction { d in p.seek(by: d == .increment ? 15 : -15); pos = p.position() }
     }
 }
 
