@@ -794,3 +794,4 @@ T.update({
  'تنزيل': 'Download',
  'طلب تطبيق أو موقع تنزيل ملف من %@': 'An app or website asked to download a file from %@',
 })
+T.update({'اضغط مرتين للانتقال': 'Double-tap to switch'})

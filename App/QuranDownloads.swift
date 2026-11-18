@@ -267,6 +267,7 @@ final class QuranBG: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
 // MARK: - صفحة السور: تشغيل، وتنزيل سورة أو المصحف كاملًا
 
 struct SurahsView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let reciter: Reciter
     @ObservedObject private var p = AudioPlayer.shared
     @ObservedObject private var dl = QuranDownloads.shared
@@ -378,7 +379,7 @@ struct SurahsView: View {
                         Text(verbatim: Surahs.info(n)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
                     }
                     if playing && p.state.playing {
-                        Image(systemName: "waveform").symbolEffect(.variableColor.iterative, options: .repeating)
+                        Image(systemName: "waveform").symbolEffect(.variableColor.iterative, options: .repeating, isActive: !reduceMotion)
                             .font(Theme.f(.caption)).foregroundStyle(Theme.gold)
                     }
                     Spacer(minLength: 0)

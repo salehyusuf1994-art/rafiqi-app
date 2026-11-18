@@ -93,11 +93,12 @@ struct StationMeta: View {
 // ── شارة «مباشر» ──
 struct LiveBadge: View {
     let on: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 5) {
             // نبض النقطة الحمراء أثناء البث فقط
             Circle().fill(on ? Color.red : Theme.sub).frame(width: 7, height: 7)
-                .phaseAnimator(on ? [1.0, 0.3] : [1.0]) { v, op in v.opacity(op) } animation: { _ in .easeInOut(duration: 0.8) }
+                .phaseAnimator(on && !reduceMotion ? [1.0, 0.3] : [1.0]) { v, op in v.opacity(op) } animation: { _ in .easeInOut(duration: 0.8) }
             Text("مباشر").font(Theme.font(11, .bold)).foregroundStyle(.white)
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
@@ -292,6 +293,7 @@ struct RadioPlayerCard: View {
 // MARK: - صف إذاعة
 
 struct StationRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let station: Station
     @Binding var saved: [Station]
     var showStar = true
@@ -314,7 +316,7 @@ struct StationRow: View {
                     }
                     Spacer(minLength: 0)
                     if current && p.state.playing {
-                        Image(systemName: "waveform").symbolEffect(.variableColor.iterative, options: .repeating)
+                        Image(systemName: "waveform").symbolEffect(.variableColor.iterative, options: .repeating, isActive: !reduceMotion)
                             .foregroundStyle(Theme.gold)
                     }
                 }

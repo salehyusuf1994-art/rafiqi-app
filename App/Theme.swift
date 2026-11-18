@@ -291,6 +291,7 @@ struct FloatingTabBar: View {
     @Binding var tab: Int
     let items: [TabItem]
     @Namespace private var ns
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         // كل زر بعرض نصه (لا يُقص «المسموع والمرئي» ولا «إدارة الملفات»)، والمسافات الباقية موزّعة بينها
         HStack(spacing: 0) {
@@ -298,7 +299,7 @@ struct FloatingTabBar: View {
                 if i > 0 { Spacer(minLength: 0) }
                 let on = tab == it.tag
                 Button {
-                    withAnimation(.snappy(duration: 0.28)) { tab = it.tag }
+                    if reduceMotion { tab = it.tag } else { withAnimation(.snappy(duration: 0.28)) { tab = it.tag } }
                     UISelectionFeedbackGenerator().selectionChanged()
                 } label: {
                     VStack(spacing: 3) {
@@ -317,8 +318,13 @@ struct FloatingTabBar: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                // قارئ الشاشة: «الرئيسية، تبويب، محدد ١ من ٥»
+                .accessibilityLabel(L(it.title))
+                .accessibilityAddTraits(on ? [.isSelected] : [])
+                .accessibilityHint(on ? "" : L("اضغط مرتين للانتقال"))
             }
         }
+        .accessibilityElement(children: .contain)
         .padding(6)
         .background(Capsule().fill(.ultraThinMaterial))
         .overlay(Capsule().strokeBorder(Theme.edge, lineWidth: 1))
