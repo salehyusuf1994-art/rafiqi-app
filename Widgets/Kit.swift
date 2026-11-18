@@ -65,6 +65,17 @@ enum Calli {
         return AltWord.image(n, font: font) ?? ui(n)
     }
 
+    /// هل للصورة نسخة بلا زخرفة (‎_n)؟
+    private static var plainCache: [String: Bool] = [:]
+    static func hasPlain(_ name: String) -> Bool {
+        let n = resolve(name)
+        lock.lock(); let c = plainCache[n]; lock.unlock()
+        if let c { return c }
+        let v = FileManager.default.fileExists(atPath: dir.appendingPathComponent(n + "_n.png").path)
+        lock.lock(); plainCache[n] = v; lock.unlock()
+        return v
+    }
+
     /// المقاس بالنقاط عند المقياس 1 (= البكسل ÷ 3) — ثابت مهما كان الخط عشان التنسيق
     static func size(_ n: String) -> CGSize { png(n)?.size ?? CGSize(width: 1, height: 1) }
 }
@@ -75,7 +86,9 @@ struct CImg: View {
     var opacity: Double = 1
     @Environment(\.wfont) private var wf
     var body: some View {
-        if let u = Calli.img(name, wf) {
+        // الزخرفة الرمادية للثلث الكبير فقط: تحت هذا المقياس تصير ضجيجًا حول الحروف، فتُستخدم النسخة بلا زخرفة
+        let plain = wf == .thuluth && !Lang.isEN && s < 0.42 && !Calli.isNumeric(name) && Calli.hasPlain(name)
+        if let u = Calli.img(plain ? name + "_n" : name, wf) {
             let b = Calli.size(name)
             // قالب (شكل الحرف فقط) بلون الخط نفسه: يطابق الأرقام والنصوص في كل الأوضاع،
             // وفي الشاشة الشفافة/الملوّنة يعامله النظام مثل النص لا مثل صورة باهتة
@@ -254,10 +267,10 @@ enum PlaceOpt: String, AppEnum {
 }
 
 enum TintOpt: String, AppEnum {
-    case app, white, glass, gold, silver, beige, sky, mint, rose, black
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "لون الخط"
+    case app, auto, white, glass, gold, silver, beige, sky, mint, rose, black
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "الخامة واللون"
     static let caseDisplayRepresentations: [TintOpt: DisplayRepresentation] = [
-        .app: "حسب إعدادات التطبيق", .white: "أبيض", .glass: "زجاجي", .gold: "ذهبي", .silver: "فضي", .beige: "بيج",
+        .app: "حسب إعدادات التطبيق", .auto: "تلقائي (زجاجي أو أبيض حسب الخلفية)", .white: "أبيض", .glass: "زجاجي", .gold: "ذهبي", .silver: "فضي", .beige: "بيج",
         .sky: "سماوي", .mint: "أخضر", .rose: "وردي", .black: "أسود",
     ]
 }
@@ -491,6 +504,8 @@ enum RenderDebug { static var bare = false }
 
 struct Root<Content: View>: View {
     let entry: HEntry
+    /// ما يفتحه الضغط على الويدجت (الافتراضي: صفحة تصميمها في المعرض)
+    var url: URL? = nil
     @ViewBuilder let content: () -> Content
     /// وضع الشاشة الرئيسية «ملوّن» أو «شفاف» (iOS 18 وما بعده): النظام يرسم الزجاج ويلوّن المحتوى بنفسه
     @Environment(\.widgetRenderingMode) private var renderingMode
@@ -512,7 +527,7 @@ struct Root<Content: View>: View {
                     content()
                 }
                 .environment(\.untintIcons, !accented)
-                .modifier(TintInk(tint: entry.tint, accented: accented))
+                .modifier(TintInk(tint: entry.tint, accented: accented, bright: inkBright(entry)))
                 .overlayPreferenceValue(UntintedIcons.self) { UntintedOverlay(items: $0) }
                 .widgetAccentable(accented)
                 .frame(width: W, height: H)
@@ -526,16 +541,22 @@ struct Root<Content: View>: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .containerBackground(for: .widget) { if RenderDebug.bare { Color.clear } else { WidgetBG(entry: entry) } }
-        .widgetURL(entry.kind.isEmpty || entry.inApp ? nil : URL(string: "miqat://edit/" + entry.kind))
+        .widgetURL(entry.inApp ? nil : (url ?? (entry.kind.isEmpty ? nil : URL(string: "miqat://edit/" + entry.kind))))
     }
 }
 
-/// لون خط الويدجت: لون عادي بالضرب، أو «زجاجي» بلمعة وحافة
+/// لون خط الويدجت: لون عادي بالضرب، أو «زجاجي» محفور، أو «تلقائي» (زجاجي فوق الداكن وأبيض فوق الفاتح)
 struct TintInk: ViewModifier {
     let tint: Color
     var accented = false
+    /// الخلفية تحت الويدجت فاتحة
+    var bright = false
     @ViewBuilder func body(content: Content) -> some View {
-        if Tint.isGlass(tint) && !accented {
+        if accented {
+            content.colorMultiply(tint)
+        } else if Tint.isAuto(tint) {
+            if bright { content.modifier(LightInk()) } else { content.modifier(GlassInk()) }
+        } else if Tint.isGlass(tint) {
             content.modifier(GlassInk())
         } else {
             content.colorMultiply(tint)
@@ -543,28 +564,85 @@ struct TintInk: ViewModifier {
     }
 }
 
-/// خط زجاجي مثل أرقام ساعة شاشة القفل: أزرق رمادي فاتح، ولمعة من الأعلى، وحافة داكنة رفيعة، وتوهّج خفيف
+/// خط زجاجي محفور: جسم شفاف قليلًا، وحافة ضوء رفيعة من الأعلى، وحافة ظل رفيعة من الأسفل —
+/// نفس الخامة في الصور المعتمدة. يُطبَّق على المحتوى كله (الحروف والأرقام والعدّاد الحي)،
+/// فلا يغيّر حجمًا ولا مكانًا.
 struct GlassInk: ViewModifier {
-    // مطابق لنموذج ساعة شاشة القفل الذي أرسلته (قيس من الصورة نفسها):
-    // تعبئة أزرق رمادي شبه شفافة، وحافة ضوء رفيعة داخل كل حرف من كل الجهات،
-    // وخط داكن رفيع حوله. بلا تدرّج على الويدجت، فكل الحروف بنفس الدرجة،
-    // ولا يغيّر حجم الخط ولا عرضه ولا نوعه — اللون واللمسة فقط.
+    func body(content: Content) -> some View {
+        ZStack {
+            // حافة الظل: الحرف مزاحًا للأسفل ناقص الحرف نفسه
+            ZStack {
+                content.offset(y: 0.9)
+                content.blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .colorMultiply(.black)
+            .opacity(0.55)
+            // الجسم: أبيض مائل للزرقة، شفاف قليلًا ليظهر الزجاج خلفه
+            content
+                .colorMultiply(Color(red: 0.90, green: 0.92, blue: 0.95))
+                .opacity(0.8)
+            // حافة الضوء من الأعلى
+            ZStack {
+                content.offset(y: -0.75)
+                content.blendMode(.destinationOut)
+            }
+            .compositingGroup()
+            .opacity(0.95)
+        }
+    }
+}
+
+/// أبيض فوق خلفية فاتحة: ظل ناعم يفصل الحرف عن الخلفية فيبقى مقروءًا
+struct LightInk: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .colorMultiply(Tint.glassColor)
-            .opacity(0.86)
-            .overlay {
-                // الحافة الداخلية = الحرف ناقص نسخة مموّهة منه
-                ZStack {
-                    content
-                    content.blur(radius: 0.9).blendMode(.destinationOut)
-                }
-                .compositingGroup()
-                .opacity(0.75)
-                .allowsHitTesting(false)
-            }
-            .shadow(color: Color.black.opacity(0.55), radius: 0.5)
+            .shadow(color: Color.black.opacity(0.32), radius: 1.6, y: 0.6)
+            .shadow(color: Color.black.opacity(0.12), radius: 6)
     }
+}
+
+/// هل الخلفية تحت الويدجت فاتحة؟ (للخامة التلقائية) — من صورة الخلفية المقصوصة نفسها
+func inkBright(_ e: HEntry) -> Bool {
+    if e.inApp || e.calibrating { return false }
+    let st = e.style, k = st.strength
+    func lum(_ c: [Double]) -> Double { c.count >= 3 ? 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] : 0 }
+    let wall = Backdrop.image(slot: e.slot, size: e.size).flatMap { imageLuminance($0) }
+    var v: Double
+    switch st.bg {
+    case .dark: return false
+    case .clear: v = wall ?? 0.15
+    case .glass: v = (wall ?? 0.15) * 0.9 + 0.1 * k
+    case .color:
+        let a = 0.35 + 0.65 * k
+        v = lum(st.color) * a + (wall ?? 0.15) * (1 - a)
+    case .gradient:
+        let g = Palette.gradients[max(0, min(Palette.gradients.count - 1, st.grad))].1
+        let a = 0.35 + 0.65 * k
+        v = (g.map(lum).reduce(0, +) / Double(max(1, g.count))) * a + (wall ?? 0.15) * (1 - a)
+    }
+    return v > 0.6
+}
+
+/// متوسط إضاءة الصورة ٠…١ (تُصغَّر إلى ٨×٨ أولًا)
+func imageLuminance(_ img: UIImage) -> Double? {
+    guard let cg = img.cgImage else { return nil }
+    let n = 8
+    var px = [UInt8](repeating: 0, count: n * n * 4)
+    let ok: Bool = px.withUnsafeMutableBytes { raw in
+        guard let cs = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: raw.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: cs,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        ctx.interpolationQuality = .medium
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: n, height: n))
+        return true
+    }
+    guard ok else { return nil }
+    var sum = 0.0
+    for i in stride(from: 0, to: px.count, by: 4) {
+        sum += 0.2126 * Double(px[i]) + 0.7152 * Double(px[i + 1]) + 0.0722 * Double(px[i + 2])
+    }
+    return sum / Double(n * n) / 255
 }
 
 /// اسم المدينة: المدينة المنورة بصورة الثلث المزخرفة، وأي مدينة ثانية بخط الثلث نفسه

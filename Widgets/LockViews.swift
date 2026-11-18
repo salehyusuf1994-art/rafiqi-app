@@ -314,7 +314,7 @@ struct LockProvider: TimelineProvider {
 func lockWidget<V: View>(_ id: String, _ sched: Sched, _ name: String, _ desc: String, _ family: WidgetFamily,
                          @ViewBuilder _ v: @escaping (HEntry) -> V) -> some WidgetConfiguration {
     StaticConfiguration(kind: id, provider: LockProvider(sched: sched)) { e in v(e) }
-        .configurationDisplayName(L(name))
+        .configurationDisplayName(Catalog.number(id).isEmpty ? L(name) : Catalog.number(id) + " — " + L(name))
         .description(L(desc))
         .supportedFamilies([family])
 }

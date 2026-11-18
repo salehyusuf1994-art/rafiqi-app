@@ -332,8 +332,12 @@ struct WidgetCard: View {
             WidgetPreview(info: info, family: family, date: date, weather: weather, tint: tint)
                 .frame(maxWidth: WidgetPreview.tile(family).width)
             HStack(spacing: 6) {
-                Text(info.name).font(Theme.title(15)).foregroundStyle(.white)
-                    .multilineTextAlignment(.center).lineLimit(2)
+                VStack(spacing: 1) {
+                    // الرقم هو الاسم الذي يظهر في «تعديل الأداة»
+                    Text(info.number).font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
+                    Text(info.name).font(Theme.title(15)).foregroundStyle(.white)
+                        .multilineTextAlignment(.center).lineLimit(2)
+                }
                 SizeBadge(text: Catalog.gridName(family))
             }
         }
@@ -383,6 +387,7 @@ struct WidgetDetail: View {
                     .animation(.snappy, value: style)
 
                     VStack(spacing: 6) {
+                        Text(info.number).font(Theme.f(.subheadline, .bold)).foregroundStyle(Theme.gold)
                         Text(info.name).font(Theme.title(24)).foregroundStyle(.white)
                         Text(info.desc).font(Theme.f(.subheadline)).foregroundStyle(Theme.sub).multilineTextAlignment(.center)
                         HStack(spacing: 6) {
@@ -534,9 +539,16 @@ struct WidgetDetail: View {
                  ? "اضغط على سطر التاريخ الظاهر أعلى الساعة."
                  : "اضغط على مربع الأدوات الظاهر أسفل الساعة.")
             step(4, "مرّر في قائمة التطبيقات حتى تجد «رفيقي»، ثم اضغط عليه.")
-            step(5, LF("اضغط على «%@» لإضافتها", info.name) + (info.families[0] == .accessoryCircular
+            if info.id.hasPrefix("r2.lock") {
+                // الويدجت الجديدة: ثلاث ويدجت بالشكل، وتُختار الويدجت برقمها
+                step(5, LF("اضغط على «%@»، ثم اضغط عليها مرة ثانية واختر «%@».",
+                           info.families[0] == .accessoryCircular ? L("رفيقي — دائري") : info.families[0] == .accessoryInline ? L("رفيقي — سطر") : L("رفيقي — مستطيل"),
+                           info.number))
+            } else {
+            step(5, LF("اضغط على «%@» لإضافتها", info.number + " — " + info.name) + (info.families[0] == .accessoryCircular
                  ? L("؛ ويتّسع الصف لأربع ويدجت دائرية أو اثنتين مستطيلتين.")
                  : info.families[0] == .accessoryRectangular ? L("؛ ويتّسع الصف لاثنتين مستطيلتين.") : "."))
+            }
             step(6, "اضغط «تم» للحفظ. تتّخذ الويدجت لون الساعة تلقائيًا.")
         } else {
             step(1, "اضغط مطوّلًا على مساحة فارغة في الشاشة الرئيسية حتى تهتز الأيقونات.")
@@ -544,7 +556,7 @@ struct WidgetDetail: View {
             step(3, "اكتب «رفيقي» في خانة البحث، ثم اضغط على التطبيق.")
             step(4, LF("اختر مقاس «%@»", Catalog.sizeName(info.families[0])) + (info.families.count > 1 ? L(" (أو أي مقاس متاح لها)") : "") + L("، ثم اضغط «إضافة أداة»، واسحبها إلى مكانها واضغط «تم»."))
             step(5, "اضغط مطوّلًا على الويدجت، ثم «تعديل الأداة».")
-            step(6, LF("من «الويدجت» اختر «%@»", info.name) + (info.hasCalendar ? L("، ومن «التقويم» اختر الهجري أو الميلادي.") : "."))
+            step(6, LF("من «الويدجت» اختر «%@»", info.number) + (info.hasCalendar ? L("، ومن «التقويم» اختر الهجري أو الميلادي.") : "."))
             step(7, "لمطابقة الخلفية الشفافة حدّد «المكان» وفق موضع الويدجت، واضبط الخلفية من «الإعدادات» ← «الخلفية الشفافة» إن لم تُضبط بعد.")
         }
     }
@@ -614,7 +626,7 @@ enum GalleryShots {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         RenderDebug.bare = true
         defer { RenderDebug.bare = false }
-        let tints: [(String, Color)] = [("white", .white), ("gold", Tint.color("gold")), ("glass", Tint.glassColor)]
+        let tints: [(String, Color)] = [("white", .white), ("gold", Tint.color("gold")), ("glass", Tint.glassColor), ("auto", Tint.autoColor)]
         func fam(_ f: WidgetFamily) -> String {
             switch f {
             case .systemSmall: return "s"

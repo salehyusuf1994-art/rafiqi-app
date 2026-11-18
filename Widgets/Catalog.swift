@@ -12,10 +12,12 @@ struct WInfo: Identifiable {
     let sched: Sched
     let hasCalendar: Bool
     let render: (HEntry) -> AnyView
+    /// الرقم في القسم («الصلاة ٤») — نفس الاسم في «تعديل الأداة»
+    var number: String { Catalog.number(id) }
 }
 
 enum Catalog {
-    static let groups = ["التاريخ", "الصلاة", "الساعة", "الطقس", "القرآن", "الوسائط", "القنوات", "شاشة القفل"]
+    static let groups = ["التاريخ", "الصلاة", "الساعة", "الطقس", "القرآن والأذكار", "الوسائط", "القنوات", "الأدوات", "شاشة القفل"]
 
     private static func w<V: View>(_ id: String, _ group: String, _ name: String, _ desc: String,
                                    _ families: [WidgetFamily], _ sched: Sched, cal: Bool = false,
@@ -26,6 +28,14 @@ enum Catalog {
 
     static let all: [WInfo] = [
         // ── التاريخ ──
+        w("r2.hijri", "التاريخ", "التاريخ الهجري", "تصميمك المعتمد: «(اليوم) الشهر» سطر واحد وتحته السنة", [.systemSmall], .day, cal: true) { R2HijriView(entry: $0) },
+        w("r2.day", "التاريخ", "اسم اليوم", "اسم اليوم بخط الثلث كبيرًا، وتحته التاريخ الهجري والميلادي", [.systemSmall, .systemMedium], .day) { R2DayView(entry: $0) },
+        w("r2.both", "التاريخ", "الهجري والميلادي", "السطر المعتمد للتاريخين جنبًا إلى جنب، وتحت كل واحد سنته", [.systemMedium], .day) { R2BothView(entry: $0) },
+        w("r2.triple", "التاريخ", "التقويم الثلاثي", "رقم اليوم الهجري والميلادي كبيرين، واسم اليوم في الوسط", [.systemMedium], .day) { R2TripleView(entry: $0) },
+        w("r2.cal", "التاريخ", "تقويم الشهر", "أيام الشهر مع تمييز اليوم والجمعة؛ والكبير فيه التاريخ الآخر والمناسبة القادمة", [.systemSmall, .systemLarge], .day, cal: true) { R2CalendarView(entry: $0) },
+        w("r2.prog", "التاريخ", "تقدّم الشهر", "نقطة لكل يوم من الشهر، وكم باقي على نهايته", [.systemSmall], .day, cal: true) { R2ProgressView(entry: $0) },
+        w("r2.occ", "التاريخ", "المناسبة القادمة", "أقرب مناسبة (رمضان، العيدان، عرفة، اليوم الوطني…) والأيام الباقية لها", [.systemSmall], .day) { R2OccasionView(entry: $0) },
+        w("r3.dayclock", "التاريخ", "اليوم والساعة", "اسم اليوم بالثلث فوق الساعة الرقمية الخافتة، ومواقيت اليوم والمتبقي على القادمة", [.systemMedium], .minute) { R3DayClockView(entry: $0) },
         w("hilal.date", "التاريخ", "التاريخ الهجري", "اليوم والشهر وتحتهما السنة، ويمكن تحويله إلى الميلادي من «تعديل الأداة»", [.systemMedium], .day, cal: true) { DateLineView(entry: $0) },
         w("hilal.both", "التاريخ", "التاريخ الهجري والميلادي", "التاريخان مع السنة: الهجري في الأعلى والميلادي في الأسفل", [.systemMedium], .day) { BothDatesView(entry: $0) },
         w("hilal.day", "التاريخ", "اسم اليوم", "اسم اليوم بخط الثلث بحجم كبير", [.systemSmall], .day) { DayNameView(entry: $0) },
@@ -46,6 +56,14 @@ enum Catalog {
         w("hilal.monthm", "التاريخ", "الشهر ورقم اليوم الكبير", "اسم الشهر فوق رقم اليوم الكبير الباهت، وتحتهما التاريخان", [.systemMedium], .day, cal: true) { MonthGhostMView(entry: $0) },
         w("hilal.yprog", "التاريخ", "تقدّم السنة", "ما مضى من السنة بالنقاط والنسبة المئوية", [.systemSmall], .day, cal: true) { YearProgressView(entry: $0) },
         // ── الصلاة ──
+        w("r2.today", "الصلاة", "اليوم والصلاة", "اسم اليوم كبيرًا، وأوقات الصلوات، والمتبقي على القادمة بالثواني", [.systemMedium], .prayer) { R2TodayView(entry: $0) },
+        w("r2.next", "الصلاة", "الصلاة القادمة", "اسم الصلاة والعدّاد، والشرطات حول الحافة تضيء كلما قرب الوقت", [.systemSmall], .prayer) { R2NextView(entry: $0) },
+        w("r2.prevnext", "الصلاة", "السابقة والقادمة", "ما مضى من الصلاة السابقة باهتًا، والمتبقي على القادمة واضحًا", [.systemSmall, .systemMedium], .prayer) { R2PrevNextView(entry: $0) },
+        w("r2.list", "الصلاة", "مواقيت اليوم", "أوقات اليوم بأسماء تنقرأ، والقادمة داخل كبسولة", [.systemSmall], .prayer) { R2ListView(entry: $0) },
+        w("r2.rings", "الصلاة", "حلقات الصلوات", "الوقت داخل كل حلقة، والحالية تمتلئ مع مرور الوقت", [.systemMedium], .prayer) { R2RingsView(entry: $0) },
+        w("r2.third", "الصلاة", "الثلث الأخير", "قوس الليل من المغرب إلى الفجر، والعدّ لبداية الثلث الأخير", [.systemSmall], .prayer) { R2ThirdView(entry: $0) },
+        w("r2.week", "الصلاة", "جدول الأسبوع", "مواقيت سبعة أيام، واليوم مميّز، والمتبقي على القادمة", [.systemLarge], .prayer) { R2WeekView(entry: $0) },
+        w("r3.caps", "الصلاة", "كبسولات الصلاة", "ست كبسولات بأيقونة لكل وقت، والقادمة دائرة بيضاء مضيئة", [.systemMedium], .prayer) { R3CapsulesView(entry: $0) },
         w("hilal.prevnext", "الصلاة", "الصلاة السابقة والقادمة", "الوقت المنقضي منذ الصلاة السابقة، والمتبقي على القادمة، مع الشروق ومنتصف الليل", [.systemSmall, .systemMedium], .prayer) { PrevNextView(entry: $0) },
         w("hilal.prayer", "الصلاة", "عدّاد الصلاة القادمة", "اسم الصلاة ووقتها داخل حلقة، مع العدّاد التنازلي", [.systemSmall], .prayer) { PrayerRingView(entry: $0) },
         w("hilal.next", "الصلاة", "الصلاة القادمة وجدول الصلوات", "اسم الصلاة القادمة بخط كبير مع العدّاد، وأوقات صلوات اليوم", [.systemMedium], .prayer) { NextPrayerView(entry: $0) },
@@ -62,6 +80,10 @@ enum Catalog {
         w("hilal.tripleprayer", "الصلاة", "التقويم الثلاثي والصلاة", "الشهر الهجري واليوم والشهر الميلادي، وتحتها أوقات الصلوات", [.systemMedium], .prayer) { TriplePrayerView(entry: $0) },
         w("hilal.pcaps2", "الصلاة", "كبسولات الصلاة بالأيقونات", "كبسولة لكل وقت بأيقونته، والقادمة مضيئة", [.systemMedium], .prayer) { PrayerIconCapsView(entry: $0) },
         // ── الساعة ──
+        w("r2.clockm", "الساعة", "الساعة الكبيرة", "أرقام كبيرة داخل إطار من الشرطات، مع التاريخين", [.systemMedium], .minute) { R2ClockMView(entry: $0) },
+        w("r2.clocks", "الساعة", "ساعة الإطار", "الشرطات حول الحافة تمتلئ مع الدقائق، واسم اليوم فوق الوقت", [.systemSmall], .minute) { R2ClockSView(entry: $0) },
+        w("r2.analog", "الساعة", "ساعة العقارب", "عقارب متحركة وأرقام عربية، واسم اليوم باهتًا خلفها", [.systemSmall], .minute) { R2AnalogView(entry: $0) },
+        w("r3.naqsh", "الساعة", "ساعة النقش", "عقارب فوق حلقة مخطوطة بخط الثلث، والعبارة تتغيّر كل يوم", [.systemSmall], .minute) { R3NaqshView(entry: $0) },
         w("hilal.aclock", "الساعة", "ساعة عقارب مع اسم اليوم", "عقارب متحركة، واسم اليوم بخط الثلث خلفها", [.systemSmall], .minute) { AnalogClockView(entry: $0, numerals: false) },
         w("hilal.aclock2", "الساعة", "ساعة عقارب بالأرقام", "عقارب متحركة، وأرقام عربية، والتاريخ الهجري", [.systemSmall], .minute) { AnalogClockView(entry: $0, numerals: true) },
         w("hilal.digital", "الساعة", "الساعة الرقمية", "الوقت، واسم اليوم، والتاريخ الهجري", [.systemSmall], .minute) { DigitalClockView(entry: $0) },
@@ -77,6 +99,10 @@ enum Catalog {
         w("hilal.tall2", "الساعة", "الساعة الممدّدة", "الوقت بأرقام طويلة ضيّقة، وتحته اليوم والتاريخ", [.systemSmall], .minute) { TallLineClockView(entry: $0) },
         w("hilal.rosette", "الساعة", "ساعة الزخرفة الدائرية", "عقارب متحركة فوق زخرفة دائرية من اسم اليوم بخط الثلث", [.systemSmall], .minute) { RosetteClockView(entry: $0) },
         // ── الطقس ──
+        w("r2.wx", "الطقس", "الطقس", "الحرارة كبيرة، والحالة بخط الثلث، والعظمى والصغرى", [.systemSmall], .weather) { R2WeatherView(entry: $0) },
+        w("r2.wxdays", "الطقس", "الطقس والأيام", "الحرارة الآن مع الرطوبة والرياح، وتوقعات خمسة أيام", [.systemMedium], .weather) { R2WeatherDaysView(entry: $0) },
+        w("r2.daywx", "الطقس", "اليوم والطقس", "اسم اليوم والتاريخ والمتبقي على الصلاة، والطقس بجانبها", [.systemMedium], .weather) { R2DayWeatherView(entry: $0) },
+        w("r3.wxbig", "الطقس", "الطقس الكامل", "الحرارة والحالة والشروق والغروب وطول النهار، والمطر والرطوبة والرياح، وسبعة أيام", [.systemLarge], .weather) { R3WeatherBigView(entry: $0) },
         w("hilal.wx", "الطقس", "الطقس", "درجة الحرارة الحالية وحالة الطقس", [.systemSmall], .weather) { WeatherSimpleView(entry: $0) },
         w("hilal.wx2", "الطقس", "الطقس مع العظمى والصغرى", "اسم المدينة، ودرجة الحرارة، والعظمى والصغرى", [.systemSmall], .weather) { WeatherCompactView(entry: $0) },
         w("hilal.wxd", "الطقس", "الطقس والتاريخ الهجري", "درجة الحرارة وحالة الطقس، مع التاريخ الهجري", [.systemMedium], .weather) { WeatherDetailView(entry: $0) },
@@ -87,6 +113,9 @@ enum Catalog {
         w("hilal.wxdayname", "الطقس", "طقس الأيام واليوم", "اسم اليوم بخط كبير، وتوقعات أربعة أيام في صفوف", [.systemMedium], .weather) { WeatherDaysView(entry: $0, dayName: true) },
         w("hilal.dayweather", "الطقس", "اليوم والطقس", "حالة الطقس، واسم اليوم، وتوقعات خمسة أيام، والمتبقي على الصلاة القادمة", [.systemMedium], .weather) { DayWeatherView(entry: $0) },
         // ── الوسائط (القرآن والإذاعات و Apple Music) ──
+        w("r2.player", "الوسائط", "المشغّل", "ما يُشغَّل الآن (إذاعة أو قرآن أو Apple Music) وأزراره", [.systemSmall], .media) { R2PlayerView(entry: $0) },
+        w("r2.playerm", "الوسائط", "المشغّل الكبير", "ما يُشغَّل الآن، أو «تابع الاستماع» للقرآن، مع التقدّم والأزرار", [.systemMedium], .media) { R2PlayerMView(entry: $0) },
+        w("r2.tuner", "الوسائط", "بكرة الإذاعات", "الإذاعة الحالية وأزرارها، وبجانبها إذاعاتك تشغّلها بضغطة", [.systemMedium], .media) { R2TunerView(entry: $0) },
         w("hilal.m.ctrl", "الوسائط", "تحكّم", "العنوان وأزرار السابق والتشغيل والتالي", [.systemSmall], .media) { MediaCtrlView(entry: $0) },
         w("hilal.m.cassette", "الوسائط", "كاسيت", "شريط كاسيت باسم المقطع، مع أزرار التحكم", [.systemSmall], .media) { MediaCassetteView(entry: $0) },
         w("hilal.m.bigbtn", "الوسائط", "زر كبير", "زر تشغيل كبير بين السابق والتالي", [.systemSmall], .media) { MediaBigButtonView(entry: $0) },
@@ -109,18 +138,42 @@ enum Catalog {
         w("hilal.m.tuner", "الوسائط", "بكرة الإذاعات", "الإذاعة الحالية وأزرارها، وبجانبها إذاعاتك تقلّبها بالأسهم وتشغّل أيًّا منها بضغطة", [.systemMedium], .media) { RadioTunerView(entry: $0) },
         w("hilal.m.tuners", "الوسائط", "بكرة الإذاعات الصغيرة", "الإذاعة الحالية، وإذاعتان من قائمتك تقلّبهما بالأسهم وتشغّل أيًّا منهما بضغطة، مع أزرار التحكم", [.systemSmall], .media) { RadioTunerSmallView(entry: $0) },
         w("hilal.m.dial", "الوسائط", "قرص الإذاعات", "قرص موالفة دائري: الإذاعة في وسطه، والسابقة والتالية على حافته؛ اضغط الجانبية فيدور القرص، وزر الوسط للتشغيل", [.systemSmall], .media) { RadioDialView(entry: $0) },
+        w("r2.tv", "القنوات", "قناة", "آخر قناة شاهدتها بشعارها، تقلّب بالأسهم وتفتح البث بضغطة", [.systemSmall], .day) { R2ChannelView(entry: $0) },
+        w("r2.tvreel", "القنوات", "بكرة القنوات", "«شاهدت مؤخرًا» أولًا، أربع قنوات تقلّبها وتفتحها بضغطة", [.systemMedium], .day) { R2ChannelsView(entry: $0) },
         w("hilal.tv.reel", "القنوات", "بكرة القنوات", "أربع قنوات عربية بشعاراتها تقلّبها بالأسهم، واضغط القناة لتفتح بثها", [.systemMedium], .day) { TVReelView(entry: $0) },
         w("hilal.tv.one", "القنوات", "قناة", "قناة واحدة بشعارها وتصنيفها، تقلّب بين القنوات وتفتح البث بضغطة", [.systemSmall], .day) { TVOneView(entry: $0) },
         w("hilal.m.wheel", "الوسائط", "عجلة", "عجلة تحكم دائرية، وبطاقة المقطع", [.systemMedium], .media) { MediaWheelView(entry: $0) },
         w("hilal.m.simple", "الوسائط", "الوسائط", "العنوان كبيرًا والأزرار، مع الغلاف", [.systemMedium], .media) { MediaSimpleView(entry: $0) },
         w("hilal.m.slim", "الوسائط", "وسائط موجة", "غلاف دائري، والعنوان والأزرار، وموجة صوتية بالتقدّم", [.systemMedium], .media) { MediaSlimView(entry: $0) },
-        // ── القرآن ──
-        w("hilal.wird", "القرآن", "ورد القرآن", "الجزء الذي تقرؤه وتقدّم الختمة، مع زرّين للتقدّم والرجوع من الويدجت نفسها", [.systemSmall], .day) { WirdView(entry: $0) },
-        w("hilal.verse", "القرآن", "آية وأوقات الصلاة", "آية قصيرة تتجدّد كل يوم، وتحتها أوقات صلوات اليوم", [.systemMedium], .prayer) { VersePrayersView(entry: $0) },
+        // ── القرآن والأذكار ──
+        w("r2.wird", "القرآن والأذكار", "الورد", "ثلاثون نقطة للأجزاء، وزرّا التقدّم والرجوع من الويدجت نفسها", [.systemSmall], .day) { R2WirdView(entry: $0) },
+        w("r2.verse", "القرآن والأذكار", "آية اليوم", "آية قصيرة تتجدّد كل يوم بخط واضح", [.systemMedium], .day) { R2VerseView(entry: $0) },
+        w("r2.dhikr", "القرآن والأذكار", "الذكر", "ذكر الوقت (الصباح أو المساء)، والضغط على الحلقة يعدّ من الويدجت نفسها", [.systemSmall, .systemMedium], .prayer) { R2DhikrView(entry: $0) },
+        w("r3.quote", "القرآن والأذكار", "اقتباسات", "آية أو حديث أو ذكر أو بيت شعر كل يوم؛ أزرار التصنيف تعمل من الويدجت، والضغط على النص ينقل للتالي", [.systemMedium, .systemLarge], .day) { R3QuoteView(entry: $0) },
+        w("r3.tasbih", "القرآن والأذكار", "المسبحة", "عدّاد تسبيح يعدّ من الويدجت مباشرة؛ والكبير فيه إحصائيات الأسبوع", [.systemSmall, .systemLarge], .day) { R3TasbihView(entry: $0) },
+        w("hilal.wird", "القرآن والأذكار", "ورد القرآن", "الجزء الذي تقرؤه وتقدّم الختمة، مع زرّين للتقدّم والرجوع من الويدجت نفسها", [.systemSmall], .day) { WirdView(entry: $0) },
+        w("hilal.verse", "القرآن والأذكار", "آية وأوقات الصلاة", "آية قصيرة تتجدّد كل يوم، وتحتها أوقات صلوات اليوم", [.systemMedium], .prayer) { VersePrayersView(entry: $0) },
+        // ── الأدوات ──
+        w("r2.scan", "الأدوات", "الماسح", "مسح مستند بضغطة، ومعه رمز QR والهوية", [.systemSmall], .day) { R2ScanView(entry: $0) },
+        w("r2.storage", "الأدوات", "المساحة", "المستخدم من مساحة الجوال، والمتاح، وحجم ملفات رفيقي", [.systemSmall], .day) { R2StorageView(entry: $0) },
+        w("r2.files", "الأدوات", "آخر الملفات", "آخر أربعة ملفات تفتحها بضغطة (تختفي إذا قفلت الملفات)", [.systemMedium], .day) { R2FilesView(entry: $0) },
+        w("r2.qibla", "الأدوات", "القبلة", "اتجاه القبلة بالدرجات من الشمال والمسافة لمكة؛ الضغطة تفتح البوصلة", [.systemSmall], .day) { R2QiblaView(entry: $0) },
     ]
 
     /// ويدجتات شاشة القفل (للمعرض داخل التطبيق)
     static let lock: [WInfo] = [
+        w("r2.lock.next", "شاشة القفل", "الصلاة القادمة", "اسم الصلاة بالثلث والعدّاد بالثواني", [.accessoryRectangular], .prayer) { R2LockNextView(entry: $0) },
+        w("r2.lock.day", "شاشة القفل", "مواقيت اليوم", "القادمة مع العدّاد، وتحتها أوقات الصلوات الخمس", [.accessoryRectangular], .prayer) { R2LockDayView(entry: $0) },
+        w("r2.lock.prevnext", "شاشة القفل", "السابقة والقادمة", "ما مضى من السابقة والمتبقي على القادمة", [.accessoryRectangular], .prayer) { R2LockPrevNextView(entry: $0) },
+        w("r2.lock.date", "شاشة القفل", "التاريخ", "«(اليوم) الشهر» وتحته السنة — هجري أو ميلادي", [.accessoryRectangular], .day, cal: true) { R2LockDateView(entry: $0) },
+        w("r2.lock.daydate", "شاشة القفل", "اليوم والتاريخ", "اسم اليوم بالثلث وتحته التاريخ — هجري أو ميلادي", [.accessoryRectangular], .day, cal: true) { R2LockDayDateView(entry: $0) },
+        w("r2.lock.daynum", "شاشة القفل", "رقم اليوم", "رقم اليوم واسم الشهر — هجري أو ميلادي", [.accessoryCircular], .day, cal: true) { R2LockDayNumView(entry: $0) },
+        w("r2.lock.ring", "شاشة القفل", "حلقة الصلاة", "اسم الصلاة القادمة داخل حلقة تمتلئ", [.accessoryCircular], .prayer) { R2LockRingView(entry: $0) },
+        w("r2.lock.weekday", "شاشة القفل", "اسم اليوم", "اسم اليوم بخط الثلث", [.accessoryCircular], .day) { R2LockWeekdayView(entry: $0) },
+        w("r2.lock.tasbih", "شاشة القفل", "التسبيح", "عدّاد ذكر الوقت؛ الضغطة تعدّ من شاشة القفل", [.accessoryCircular], .prayer) { R2LockTasbihView(entry: $0) },
+        w("r2.lock.occasion", "شاشة القفل", "المناسبة القادمة", "الأيام الباقية على أقرب مناسبة", [.accessoryCircular], .day) { R2LockOccasionView(entry: $0) },
+        w("r2.lock.idate", "شاشة القفل", "التاريخ أعلى الساعة", "التاريخ في سطر أعلى الساعة — هجري أو ميلادي", [.accessoryInline], .day, cal: true) { R2LockInlineDateView(entry: $0) },
+        w("r2.lock.iprayer", "شاشة القفل", "الصلاة أعلى الساعة", "الصلاة القادمة ووقتها في سطر أعلى الساعة", [.accessoryInline], .prayer) { R2LockInlinePrayerView(entry: $0) },
         w("lock.next", "شاشة القفل", "الصلاة القادمة", "اسم الصلاة بخط الثلث ووقتها، مع العدّاد", [.accessoryRectangular], .prayer) { LockNextView(entry: $0) },
         w("lock.dayprayers", "شاشة القفل", "مواقيت اليوم", "الصلاة القادمة مع العدّاد، وتحتها أوقات الصلوات الخمس بخط الثلث", [.accessoryRectangular], .prayer) { LockDayPrayersView(entry: $0) },
         w("lock.prevnext", "شاشة القفل", "الصلاة السابقة والقادمة", "الوقت المنقضي منذ الصلاة السابقة، والمتبقي على القادمة", [.accessoryRectangular], .prayer) { LockPrevNextView(entry: $0) },
@@ -147,7 +200,22 @@ enum Catalog {
         return (all + lock).filter { $0.group == group }
     }
 
-    static func info(_ id: String) -> WInfo { all.first { $0.id == id } ?? all[0] }
+    static func info(_ id: String) -> WInfo { all.first { $0.id == id } ?? lock.first { $0.id == id } ?? all[0] }
+
+    /// اسم الويدجت المختصر في «تعديل الأداة» (القسم ورقمها فيه): الجديدة أولًا ثم الحالية
+    static let prefixes: [String: String] = ["التاريخ": "التاريخ", "الصلاة": "الصلاة", "الساعة": "الساعة", "الطقس": "الطقس",
+                                             "القرآن والأذكار": "القرآن", "الوسائط": "الوسائط", "القنوات": "القنوات",
+                                             "الأدوات": "الأدوات", "شاشة القفل": "القفل"]
+    private static let numbers: [String: String] = {
+        var out: [String: String] = [:], counts: [String: Int] = [:]
+        for w in all + lock {
+            let c = (counts[w.group] ?? 0) + 1
+            counts[w.group] = c
+            out[w.id] = L(prefixes[w.group] ?? w.group) + " " + (Lang.isEN ? "\(c)" : ar(c))
+        }
+        return out
+    }()
+    static func number(_ id: String) -> String { numbers[id] ?? "" }
 
     static func sizeName(_ f: WidgetFamily) -> String {
         switch f {

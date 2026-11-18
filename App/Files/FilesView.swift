@@ -30,6 +30,12 @@ final class FilesRouter: ObservableObject {
     @Published var openTab = false
     /// طلب فتح الماسح (من زر مركز التحكم)
     @Published var openScanner = false
+    /// وضع الماسح المطلوب (QR أو الهوية) من ويدجت الأدوات
+    var scanMode: ScanMode? = nil
+    /// طلب فتح «تحليل المساحة» أو ملف معيّن من ويدجت الملفات — يُنفّذ بعد فتح القفل فقط
+    @Published var openStorage = false
+    @Published var openFile: URL? = nil
+    func takeScanMode() -> ScanMode { defer { scanMode = nil }; return scanMode ?? .document }
 }
 
 struct FilesTab: View {
@@ -53,6 +59,9 @@ struct FilesTab: View {
         .sheet(isPresented: $showSettings) { FilesSettingsView() }
         .sheet(isPresented: $showWiFi) { WiFiTransferView() }
         .sheet(isPresented: $showStorage) { StorageView() }
+        .onChange(of: router.openStorage, initial: true) { _, _ in runPending() }
+        .onChange(of: router.openFile, initial: true) { _, _ in runPending() }
+        .onChange(of: locked) { _, _ in runPending() }
         .onChange(of: phase) { _, p in
             if p == .background {
                 store.relockAll()
@@ -106,6 +115,17 @@ struct FilesTab: View {
 
     private var bottomStack: some View {
         BarSpacer()
+    }
+
+    /// طلبات ويدجت الملفات: لا تتجاوز قفل «إدارة الملفات» أبدًا
+    private func runPending() {
+        guard !locked else { return }
+        if router.openStorage { router.openStorage = false; showStorage = true }
+        if let u = router.openFile {
+            router.openFile = nil
+            guard FileManager.default.fileExists(atPath: u.path) else { return }
+            FileOpener.open(u, siblings: FileStore.shared.list(u.deletingLastPathComponent()).filter { !$0.isDir }.map(\.url))
+        }
     }
 
     private var lockScreen: some View {

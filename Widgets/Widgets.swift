@@ -10,6 +10,11 @@ struct HilalWidgetBundle: WidgetBundle {
     var body: some Widget {
         RafiqiSmall()
         RafiqiMedium()
+        RafiqiLarge()
+        // شاشة القفل: ثلاث ويدجت قابلة للتعديل (مستطيل، دائرة، سطر)
+        RafiqiLockRect()
+        RafiqiLockCircle()
+        RafiqiLockInline()
         LockGroup().body
         LockGroup2().body
         // عدّاد الصلاة في الجزيرة الديناميكية وشاشة القفل

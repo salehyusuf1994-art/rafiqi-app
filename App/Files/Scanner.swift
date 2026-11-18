@@ -469,7 +469,7 @@ enum ScanExporter {
 
 struct ScannerHome: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var mode: ScanMode = .document
+    @State private var mode: ScanMode = FilesRouter.shared.takeScanMode()
     @State private var pages: [ScanPage] = []
     @State private var showCamera = false
     @State private var showLive = false

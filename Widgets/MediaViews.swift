@@ -18,12 +18,13 @@ struct MediaArt: View {
     var label: String? = nil
     /// خلفية فقط (بلا اسم ولا رمز) — حين تكون الأزرار فوق الغلاف
     var plain = false
+    /// ألوان هادئة متناسقة لكل مصدر (فاتح، أوسط، داكن) — مثل أغلفة الألبومات الحديثة
     var colors: [Color] {
         switch source {
-        case .quran: return [Color(red: 0.86, green: 0.70, blue: 0.42), Color(red: 0.42, green: 0.28, blue: 0.14), Color(red: 0.12, green: 0.10, blue: 0.09)]
-        case .radio: return [Color(red: 0.20, green: 0.62, blue: 0.70), Color(red: 0.12, green: 0.24, blue: 0.48), Color(red: 0.06, green: 0.08, blue: 0.16)]
-        case .music: return [Color(red: 0.93, green: 0.38, blue: 0.56), Color(red: 0.52, green: 0.36, blue: 0.86), Color(red: 0.28, green: 0.62, blue: 0.86)]
-        case .files: return [Color(red: 0.36, green: 0.66, blue: 0.66), Color(red: 0.16, green: 0.30, blue: 0.34), Color(red: 0.07, green: 0.09, blue: 0.12)]
+        case .quran: return [Color(red: 0.89, green: 0.76, blue: 0.52), Color(red: 0.55, green: 0.38, blue: 0.20), Color(red: 0.13, green: 0.10, blue: 0.08)]
+        case .radio: return [Color(red: 0.42, green: 0.78, blue: 0.80), Color(red: 0.16, green: 0.33, blue: 0.55), Color(red: 0.06, green: 0.08, blue: 0.15)]
+        case .music: return [Color(red: 0.96, green: 0.56, blue: 0.62), Color(red: 0.50, green: 0.36, blue: 0.80), Color(red: 0.10, green: 0.10, blue: 0.22)]
+        case .files: return [Color(red: 0.55, green: 0.80, blue: 0.72), Color(red: 0.20, green: 0.38, blue: 0.40), Color(red: 0.06, green: 0.09, blue: 0.11)]
         }
     }
     var icon: String {
@@ -36,31 +37,44 @@ struct MediaArt: View {
     }
     var body: some View {
         GeometryReader { g in
+            let w = g.size.width, h = g.size.height, m = min(w, h)
             ZStack {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                Ellipse().stroke(Color.white.opacity(0.35), lineWidth: max(1, g.size.width * 0.012))
-                    .frame(width: g.size.width * 1.3, height: g.size.height * 0.5)
-                    .offset(y: -g.size.height * 0.28)
-                    .blur(radius: 1)
+                // قاعدة داكنة ثم بقعتا ضوء ناعمتان (تدرّج شبكي) — بدل التدرّج الخطي الصارخ
+                colors[2]
+                RadialGradient(colors: [colors[0].opacity(0.95), colors[0].opacity(0)], center: UnitPoint(x: 0.22, y: 0.18),
+                               startRadius: 0, endRadius: m * 0.95)
+                RadialGradient(colors: [colors[1].opacity(0.9), colors[1].opacity(0)], center: UnitPoint(x: 0.85, y: 0.9),
+                               startRadius: 0, endRadius: m * 1.0)
+                // قوس ضوء رفيع يعطي عمقًا
+                Circle().stroke(Color.white.opacity(0.16), lineWidth: max(0.8, m * 0.008))
+                    .frame(width: m * 1.5, height: m * 1.5)
+                    .offset(x: w * 0.42, y: -h * 0.38)
+                Circle().stroke(Color.white.opacity(0.09), lineWidth: max(0.8, m * 0.008))
+                    .frame(width: m * 1.15, height: m * 1.15)
+                    .offset(x: w * 0.42, y: -h * 0.38)
                 if plain {
                     EmptyView()
-                } else if let label, source == .quran, g.size.width > 40 {
+                } else if let label, source == .quran, w > 40 {
                     Text(label)
-                        .font(.custom("DecoTypeThuluthII", size: min(g.size.width * 0.3, g.size.height * 0.42)))
+                        .font(.custom("DecoTypeThuluthII", size: min(w * 0.3, h * 0.42)))
                         .foregroundStyle(.white)
                         .lineLimit(1).minimumScaleFactor(0.4)
-                        .padding(.horizontal, g.size.width * 0.08)
+                        .padding(.horizontal, w * 0.08)
                         .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: min(g.size.width, g.size.height) * 0.32, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .font(.system(size: m * 0.3, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.94))
+                        .shadow(color: .black.opacity(0.25), radius: m * 0.04, y: m * 0.015)
                 }
             }
-            // الإطار البيضاوي أعرض من الغلاف: نثبّت الحجم قبل القص حتى لا يتمدد الغلاف فوق ما بجانبه
-            .frame(width: g.size.width, height: g.size.height)
+            // الإطار أعرض من الغلاف: نثبّت الحجم قبل القص حتى لا يتمدد فوق ما بجانبه
+            .frame(width: w, height: h)
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            // حافة زجاجية: لمعة علوية تتلاشى
+            .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(LinearGradient(colors: [Color.white.opacity(0.35), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom),
+                        lineWidth: 0.8))
         }
     }
 }
@@ -104,8 +118,10 @@ struct MBtn: View {
                 .frame(width: size, height: size)
                 .background(RoundedRectangle(cornerRadius: round ? size / 2 : size * 0.28, style: .continuous)
                     .fill(solid ? Color.white : Color.white.opacity(fill)))
+                // حافة زجاجية: أفتح من أعلى وتخفت للأسفل
                 .overlay(RoundedRectangle(cornerRadius: round ? size / 2 : size * 0.28, style: .continuous)
-                    .stroke(Color.white.opacity(solid ? 0 : 0.16), lineWidth: 1))
+                    .stroke(LinearGradient(colors: [Color.white.opacity(solid || fill == 0 ? 0 : 0.30), Color.white.opacity(solid || fill == 0 ? 0 : 0.06)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.8))
         }
         .buttonStyle(.plain)
     }
@@ -218,44 +234,110 @@ struct Waveform: View {
     }
 }
 
-/// أسطوانة
+/// أسطوانة: أخاديد حقيقية بكثافة متفاوتة، ولمعة ضوء مائلة، وملصق في الوسط بثقب
 struct Vinyl: View {
     let source: MediaSource
     var size: CGFloat = 110
     var label: String? = nil
     var body: some View {
         ZStack {
-            Circle().fill(Color(white: 0.07))
-            ForEach(1..<7, id: \.self) { k in
-                Circle().stroke(Color.white.opacity(0.07), lineWidth: 1).padding(CGFloat(k) * size * 0.045)
+            Circle().fill(RadialGradient(colors: [Color(white: 0.13), Color(white: 0.05)], center: .center, startRadius: 0, endRadius: size / 2))
+            // الأخاديد: حلقات رفيعة متقاربة، مع فواصل أوسع بين «المقاطع»
+            ForEach(0..<22, id: \.self) { k in
+                let r = size * (0.48 - CGFloat(k) * 0.0118)
+                Circle().stroke(Color.white.opacity(k % 6 == 5 ? 0.02 : (k % 2 == 0 ? 0.075 : 0.045)), lineWidth: 0.6)
+                    .frame(width: r * 2, height: r * 2)
             }
-            MediaArt(source: source, corner: size, label: label).frame(width: size * 0.44, height: size * 0.44).clipShape(Circle())
-            Circle().fill(Color(white: 0.06)).frame(width: size * 0.05, height: size * 0.05)
+            // لمعة الضوء على الفينيل (قطاعان متقابلان)
+            Circle().fill(AngularGradient(gradient: Gradient(stops: [
+                .init(color: .clear, location: 0.0), .init(color: Color.white.opacity(0.16), location: 0.08), .init(color: .clear, location: 0.18),
+                .init(color: .clear, location: 0.5), .init(color: Color.white.opacity(0.12), location: 0.58), .init(color: .clear, location: 0.68),
+                .init(color: .clear, location: 1.0)]), center: .center, angle: .degrees(-30)))
+                .blendMode(.screen)
+            // حافة خارجية
+            Circle().stroke(Color.white.opacity(0.12), lineWidth: 0.8)
+            // الملصق
+            MediaArt(source: source, corner: size, label: label, plain: label == nil)
+                .frame(width: size * 0.4, height: size * 0.4).clipShape(Circle())
+                .overlay(Circle().stroke(Color.black.opacity(0.35), lineWidth: 0.8))
+            // الثقب ومحوره
+            Circle().fill(Color(white: 0.85)).frame(width: size * 0.045, height: size * 0.045)
+            Circle().fill(Color(white: 0.2)).frame(width: size * 0.02, height: size * 0.02)
         }
         .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
+        .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
     }
 }
 
-/// شريط كاسيت
+/// بكرة الكاسيت: حلقة شريط داكنة وبكرة بستة أسنان
+private struct Reel: View {
+    let tape: CGFloat   // نصف قطر الشريط الملفوف
+    let hub: CGFloat
+    var body: some View {
+        ZStack {
+            Circle().fill(Color(red: 0.22, green: 0.16, blue: 0.12)).frame(width: tape * 2, height: tape * 2)
+            Circle().stroke(Color.black.opacity(0.35), lineWidth: 0.6).frame(width: tape * 2, height: tape * 2)
+            Circle().fill(Color(white: 0.92)).frame(width: hub * 2, height: hub * 2)
+            ForEach(0..<6, id: \.self) { k in
+                Capsule().fill(Color(white: 0.55)).frame(width: hub * 0.22, height: hub * 0.5)
+                    .offset(y: -hub * 0.62).rotationEffect(.degrees(Double(k) * 60))
+            }
+            Circle().fill(Color(white: 0.35)).frame(width: hub * 0.55, height: hub * 0.55)
+        }
+    }
+}
+
+/// شريط كاسيت: هيكل ببراغي، ملصق بعنوان المقطع، نافذة ببكرتين وشريط بينهما، وقاعدة شبه منحرفة
 struct Cassette: View {
     let np: NowPlaying
     var body: some View {
-        VStack(spacing: 5) {
-            Text(np.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
-                .frame(maxWidth: .infinity).padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 7).fill(LinearGradient(colors: MediaArt(source: np.source).colors, startPoint: .leading, endPoint: .trailing)))
-            HStack {
-                Image(systemName: "gear").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.63))
-                Spacer()
-                Image(systemName: "gear").font(.system(size: 16)).foregroundStyle(TXT.opacity(0.63))
+        let p = np.live ? 0.5 : (np.duration > 0 ? min(1, max(0, np.elapsed() / np.duration)) : 0)
+        let cols = MediaArt(source: np.source).colors
+        GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            let rMax = h * 0.2, rMin = h * 0.1
+            ZStack {
+                // الهيكل
+                RoundedRectangle(cornerRadius: h * 0.09, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(white: 0.24), Color(white: 0.13)], startPoint: .top, endPoint: .bottom))
+                RoundedRectangle(cornerRadius: h * 0.09, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
+                // البراغي في الأركان
+                ForEach(0..<4, id: \.self) { k in
+                    Circle().fill(Color(white: 0.42)).frame(width: h * 0.05, height: h * 0.05)
+                        .overlay(Capsule().fill(Color(white: 0.2)).frame(width: h * 0.035, height: 0.8).rotationEffect(.degrees(35)))
+                        .position(x: k % 2 == 0 ? h * 0.08 : w - h * 0.08, y: k < 2 ? h * 0.08 : h * 0.92)
+                }
+                // الملصق
+                RoundedRectangle(cornerRadius: h * 0.05, style: .continuous)
+                    .fill(LinearGradient(colors: [cols[0], cols[1]], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: w * 0.84, height: h * 0.66)
+                    .position(x: w / 2, y: h * 0.42)
+                Text(np.title).font(.system(size: max(9, h * 0.1), weight: .semibold)).foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .frame(width: w * 0.74).position(x: w / 2, y: h * 0.17)
+                // النافذة
+                RoundedRectangle(cornerRadius: h * 0.12, style: .continuous).fill(Color.black.opacity(0.72))
+                    .frame(width: w * 0.62, height: h * 0.32).position(x: w / 2, y: h * 0.46)
+                // البكرتان: الشريط ينتقل من اليسرى إلى اليمنى مع التقدّم
+                Reel(tape: rMin + (rMax - rMin) * CGFloat(1 - p), hub: h * 0.075).position(x: w * 0.32, y: h * 0.46)
+                Reel(tape: rMin + (rMax - rMin) * CGFloat(p), hub: h * 0.075).position(x: w * 0.68, y: h * 0.46)
+                RoundedRectangle(cornerRadius: h * 0.12, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 0.6)
+                    .frame(width: w * 0.62, height: h * 0.32).position(x: w / 2, y: h * 0.46)
+                // القاعدة شبه المنحرفة
+                Path { q in
+                    q.move(to: CGPoint(x: w * 0.2, y: h)); q.addLine(to: CGPoint(x: w * 0.26, y: h * 0.8))
+                    q.addLine(to: CGPoint(x: w * 0.74, y: h * 0.8)); q.addLine(to: CGPoint(x: w * 0.8, y: h))
+                }
+                .fill(Color(white: 0.1))
+                ForEach(0..<2, id: \.self) { k in
+                    Circle().fill(Color.black.opacity(0.7)).frame(width: h * 0.06, height: h * 0.06)
+                        .position(x: w * (k == 0 ? 0.36 : 0.64), y: h * 0.9)
+                }
             }
-            .padding(.horizontal, 18).padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.35)))
         }
-        .padding(7)
-        .background(RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.08)))
-        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color.white.opacity(0.14), lineWidth: 1))
+        .aspectRatio(1.58, contentMode: .fit)
+        .environment(\.layoutDirection, .leftToRight)
     }
 }
 
@@ -714,13 +796,25 @@ struct MediaTurntableView: View {     // «جرامافون»
                     RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.06))
                         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
                     Vinyl(source: np.source, size: 110, label: np.title).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // ذراع الإبرة
-                    VStack(spacing: 0) {
-                        Circle().fill(Color(white: 0.75)).frame(width: 12, height: 12)
-                        Capsule().fill(Color(white: 0.7)).frame(width: 3, height: 70)
-                            .rotationEffect(.degrees(np.playing ? 18 : 6), anchor: .top)
+                    // ذراع الإبرة: قاعدة دوّارة، ذراع معدني بانحناءة، ورأس الإبرة
+                    ZStack(alignment: .top) {
+                        Circle().fill(RadialGradient(colors: [Color(white: 0.85), Color(white: 0.45)], center: .topLeading, startRadius: 0, endRadius: 12))
+                            .frame(width: 16, height: 16)
+                            .overlay(Circle().fill(Color(white: 0.3)).frame(width: 5, height: 5))
+                        Path { q in
+                            q.move(to: CGPoint(x: 8, y: 8)); q.addLine(to: CGPoint(x: 8, y: 58))
+                            q.addQuadCurve(to: CGPoint(x: 0, y: 76), control: CGPoint(x: 8, y: 70))
+                        }
+                        .stroke(LinearGradient(colors: [Color(white: 0.9), Color(white: 0.55)], startPoint: .leading, endPoint: .trailing),
+                                style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+                        .frame(width: 16, height: 84)
+                        RoundedRectangle(cornerRadius: 1.5).fill(Color(white: 0.8)).frame(width: 7, height: 11)
+                            .rotationEffect(.degrees(30)).offset(x: -6, y: 74)
                     }
-                    .padding(.top, 10).padding(.trailing, 14)
+                    .frame(width: 16, height: 86)
+                    .rotationEffect(.degrees(np.playing ? 20 : 4), anchor: UnitPoint(x: 0.5, y: 8 / 86))
+                    .shadow(color: .black.opacity(0.45), radius: 2, y: 1.5)
+                    .padding(.top, 8).padding(.trailing, 10)
                 }
                 .frame(width: 132, height: 132)
                 .environment(\.layoutDirection, .leftToRight)

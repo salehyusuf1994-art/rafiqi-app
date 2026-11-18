@@ -98,17 +98,32 @@ struct ClockHands: View {
         let c = Cal.gregCal.dateComponents([.hour, .minute, .second], from: d)
         let s = Double(c.second ?? 0), m = Double(c.minute ?? 0) + s / 60, h = Double((c.hour ?? 0) % 12) + m / 60
         let r = size / 2
-        func hand(_ deg: Double, _ w: CGFloat, _ len: CGFloat, _ col: Color) -> some View {
+        // عقرب مثل الساعات الفاخرة: ساق رفيعة من المركز، ثم كبسولة بيضاء بخط غائر في وسطها، وظل خفيف
+        func hand(_ deg: Double, _ w: CGFloat, _ len: CGFloat) -> some View {
             VStack(spacing: 0) {
-                Capsule().fill(col).frame(width: w, height: len)
+                ZStack {
+                    Capsule().fill(Color.white)
+                    Capsule().fill(Color.black.opacity(0.32))
+                        .frame(width: max(1, w * 0.3)).padding(.vertical, w * 0.55)
+                }
+                .frame(width: w, height: len * 0.76)
+                .shadow(color: Color.black.opacity(0.4), radius: 1.2, y: 0.6)
+                Capsule().fill(Color.white).frame(width: max(1.6, w * 0.36), height: len * 0.24)
                 Color.clear.frame(width: w, height: len)
             }
             .rotationEffect(.degrees(deg))
         }
+        func needle(_ deg: Double, _ len: CGFloat) -> some View {
+            VStack(spacing: 0) {
+                Capsule().fill(Color(red: 0.9, green: 0.33, blue: 0.29)).frame(width: 1.2, height: len * 1.2)
+                Color.clear.frame(width: 1.2, height: len * 0.8)
+            }
+            .rotationEffect(.degrees(deg))
+        }
         return ZStack {
-            hand(h * 30, 5, r * 0.5, .white)
-            hand(m * 6, 3.6, r * 0.74, .white)
-            if seconds { hand(s * 6, 1.4, r * 0.84, Color(red: 0.9, green: 0.33, blue: 0.29)) }
+            hand(h * 30, max(4.5, r * 0.075), r * 0.52)
+            hand(m * 6, max(3.4, r * 0.055), r * 0.78)
+            if seconds { needle(s * 6, r * 0.42 + r * 0.42) }
             pin
         }
         .frame(width: size, height: size)

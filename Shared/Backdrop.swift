@@ -262,6 +262,7 @@ enum Backdrop {
 
 enum Tint {
     static let presets: [(String, String, Color)] = [
+        ("auto", "تلقائي", Tint.autoColor),
         ("white", "أبيض", Color.white),
         ("glass", "زجاجي", Tint.glassColor),
         ("gold", "ذهبي", Color(red: 0.93, green: 0.80, blue: 0.52)),
@@ -277,7 +278,7 @@ enum Tint {
     static var appColor: Color {
         get {
             if let a = AppGroup.defaults.array(forKey: "tint") as? [Double], a.count == 3 { return Color(red: a[0], green: a[1], blue: a[2]) }
-            return .white
+            return autoColor
         }
         set {
             let u = UIColor(newValue)
@@ -293,6 +294,27 @@ enum Tint {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
         return abs(r - 0.60) < 0.006 && abs(g - 0.71) < 0.006 && abs(b - 0.80) < 0.006
+    }
+
+    /// «تلقائي»: خط زجاجي فوق الخلفيات الداكنة، وأبيض بظل خفيف فوق الفاتحة (العلامة هي هذا اللون نفسه)
+    static let autoColor = Color(red: 0.61, green: 0.62, blue: 0.63)
+    static func isAuto(_ c: Color) -> Bool {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return abs(r - 0.61) < 0.006 && abs(g - 0.62) < 0.006 && abs(b - 0.63) < 0.006
+    }
+
+    /// مرة واحدة: «تلقائي» يصير الأساس — إلا لمن اختار لونًا (ذهبي، سماوي…) فيبقى لونه
+    static func migrateToAuto() {
+        let d = AppGroup.defaults
+        guard !d.bool(forKey: "tint_auto_v1") else { return }
+        d.set(true, forKey: "tint_auto_v1")
+        if let a = d.array(forKey: "tint") as? [Double], a.count == 3 {
+            let c = Color(red: a[0], green: a[1], blue: a[2])
+            let white = a.allSatisfy { $0 > 0.97 }
+            guard white || isGlass(c) else { return }
+        }
+        appColor = autoColor
     }
 
     static func color(_ key: String) -> Color {

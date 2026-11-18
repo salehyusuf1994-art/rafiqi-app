@@ -18,6 +18,8 @@ struct HilalApp: App {
                                             logo: q.logo, source: "قائمة تجربة")])
             if !TVChannels.favorites.contains("custom.test") { TVChannels.toggle("custom.test") }
         }
+        // الخامة «تلقائي» هي الأساس (مرة واحدة، ولا تغيّر لونًا اختاره المستخدم)
+        Tint.migrateToAuto()
         // أوامر ويدجت الوسائط وشاشة القفل تُنفَّذ هنا حتى لو فُتح التطبيق في الخلفية
         AudioPlayer.shared.configure()
         // إشعارات الصلاة وأزرارها
@@ -144,10 +146,31 @@ struct ContentView: View {
         let d = AppGroup.defaults
         guard let t = d.string(forKey: "open_target"), Date().timeIntervalSince1970 - d.double(forKey: "open_target_at") < 60 else { return }
         d.removeObject(forKey: "open_target")
+        route(t)
+    }
+
+    /// فتح صفحة من ويدجت أو زر: miqat://open/<الهدف> أو من «open_target»
+    private func route(_ t: String) {
+        func scanner(_ m: ScanMode?) {
+            tab = 5; filesRouter.path = []; filesRouter.page = .files
+            filesRouter.scanMode = m; filesRouter.openScanner = true
+        }
         switch t {
-        case "scanner": tab = 5; filesRouter.path = []; filesRouter.page = .files; filesRouter.openScanner = true
+        case "scanner": scanner(nil)
+        case "qr": scanner(.qr)
+        case "idcard": scanner(.idCard)
         case "qibla": tab = 0; HomeRouter.shared.open = .qibla
-        default: break
+        case "files": tab = 5; filesRouter.path = []; filesRouter.page = .files
+        case "storage": tab = 5; filesRouter.path = []; filesRouter.page = .files; filesRouter.openStorage = true
+        default:
+            // file:<المسار النسبي داخل ملفاتي>
+            if t.hasPrefix("file:") {
+                let rel = String(t.dropFirst(5)).removingPercentEncoding ?? String(t.dropFirst(5))
+                let u = FileStore.shared.root.appendingPathComponent(rel)
+                // لا يُقبل مسار يخرج من مجلد الملفات
+                guard u.standardizedFileURL.path.hasPrefix(FileStore.shared.root.standardizedFileURL.path) else { return }
+                tab = 5; filesRouter.path = []; filesRouter.page = .files; filesRouter.openFile = u
+            }
         }
     }
 
@@ -223,6 +246,12 @@ struct ContentView: View {
             }
             // miqat://edit/<kind> — الضغط على ويدجت يفتح صفحة تصميمها
             if url.host == "media" { tab = 4; return }
+            // miqat://open/<الهدف> — أزرار ويدجت الأدوات (الماسح، القبلة، الملفات، المساحة)
+            if url.host == "open" {
+                let t = url.path.hasPrefix("/") ? String(url.path.dropFirst()) : url.path
+                if !t.isEmpty { route(t) }
+                return
+            }
             // miqat://download?url=… (من الاختصارات أو أي تطبيق): يُضاف للتنزيلات
             if url.host == "download", let link = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "url" })?.value {
                 DownloadManager.shared.add(link)
@@ -243,6 +272,8 @@ struct ContentView: View {
         }
         .onChange(of: filesRouter.openTab) { _, on in if on { tab = 5; filesRouter.openTab = false } }
         .onChange(of: phase) { _, p in
+            // لقطة «آخر الملفات» و«المساحة» لويدجت الأدوات
+            if p == .background { FilesWidgetSnapshot.write() }
             guard p == .active else { return }
             tvRouter.checkPending()
             openPendingTarget()
