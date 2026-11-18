@@ -2,15 +2,14 @@ import XCTest
 @testable import Hilal
 
 /// قفل المشغّل: الرمز لا يُحفظ نصًا، والتحقق صحيح، والمحاولات الخاطئة تُبطئ التخمين
-@MainActor
 final class PlayerLockTests: XCTestCase {
     override func tearDown() {
         PlayerLockCode.clear()
-        PlayerLockCode.registerSuccess()
+        MainActor.assumeIsolated { PlayerLockCode.registerSuccess() }
         super.tearDown()
     }
 
-    func testSetVerifyClear() {
+    @MainActor func testSetVerifyClear() {
         PlayerLockCode.clear()
         XCTAssertFalse(PlayerLockCode.isSet)
         XCTAssertTrue(PlayerLockCode.set("2580"))
@@ -24,7 +23,7 @@ final class PlayerLockTests: XCTestCase {
         XCTAssertFalse(PlayerLockCode.verify("2580"))
     }
 
-    func testRejectsInvalidCodes() {
+    @MainActor func testRejectsInvalidCodes() {
         XCTAssertFalse(PlayerLockCode.set("123"))
         XCTAssertFalse(PlayerLockCode.set("12345"))
         XCTAssertFalse(PlayerLockCode.set("12a4"))
@@ -33,7 +32,7 @@ final class PlayerLockTests: XCTestCase {
     }
 
     /// المخزَّن ملح + بصمة (٤٨ بايت)، ولا يحتوي الرمز نفسه، والملح يختلف كل مرة
-    func testStoredValueIsSaltedHash() {
+    @MainActor func testStoredValueIsSaltedHash() {
         XCTAssertTrue(PlayerLockCode.set("1234"))
         let a = SecureStore.data(service: "app.rafiqi.playerlock", account: "code.v1")
         XCTAssertEqual(a?.count, 48)
@@ -44,7 +43,7 @@ final class PlayerLockTests: XCTestCase {
         XCTAssertTrue(PlayerLockCode.verify("1234"))
     }
 
-    func testThrottleAfterFiveFailures() {
+    @MainActor func testThrottleAfterFiveFailures() {
         PlayerLockCode.registerSuccess()
         for _ in 0..<4 { PlayerLockCode.registerFailure() }
         XCTAssertNil(PlayerLockCode.blockedUntil)
@@ -57,7 +56,7 @@ final class PlayerLockTests: XCTestCase {
         XCTAssertNil(PlayerLockCode.blockedUntil)
     }
 
-    func testFlow() {
+    @MainActor func testFlow() {
         XCTAssertEqual(PlayerLockFlow.after(.unlock, ok: true).mode, .open)
         XCTAssertNil(PlayerLockFlow.after(.unlock, ok: false).mode)
         XCTAssertEqual(PlayerLockFlow.after(.create(lockAfter: true), ok: true).mode, .code)
