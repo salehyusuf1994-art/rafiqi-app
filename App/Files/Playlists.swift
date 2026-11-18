@@ -196,8 +196,10 @@ struct ReminderSheet: View {
                         Task {
                             _ = await Notify.askIfNeeded()
                             let c = UNMutableNotificationContent()
-                            c.title = LF("تذكير: %@", item.name)
-                            c.body = note.isEmpty ? L("اضغط لفتح الملف في رفيقي.") : note
+                            // ملف مقفل (أو «إدارة الملفات» مقفلة): لا يظهر اسمه ولا ملاحظته على شاشة القفل
+                            let hidden = FileStore.shared.inVault(item.url) || FilePrefs.lockTab
+                            c.title = hidden ? L("تذكير بملف") : LF("تذكير: %@", item.name)
+                            c.body = hidden || note.isEmpty ? L("اضغط لفتح الملف في رفيقي.") : note
                             c.sound = .default
                             c.userInfo = ["file": FileStore.shared.key(item.url)]
                             let comps = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day, .hour, .minute], from: date)

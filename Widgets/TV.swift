@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import UIKit
 import AppIntents
+import Security
 
 // MARK: - القنوات التلفزيونية العربية (مصدر مفتوح: iptv-org)
 // قائمة مختارة بأسماء عربية وتصنيفات، وروابط البث تتجدّد يوميًا من قوائم iptv-org المفتوحة
@@ -149,9 +150,30 @@ enum TVChannels {
     }
 
     // ── قنوات يضيفها المستخدم برابط بثها ──
+    /// ترويسات البث (قد تحوي توكن أو كوكي) تُحفظ في سلسلة المفاتيح لا في الإعدادات؛
+    /// وإن تعذّر الحفظ هناك تبقى كما كانت حتى لا تتوقف القناة
     static var custom: [TVChannel] {
-        get { d.data(forKey: "tv_custom").flatMap { try? JSONDecoder().decode([TVChannel].self, from: $0) } ?? [] }
-        set { d.set(try? JSONEncoder().encode(newValue), forKey: "tv_custom") }
+        get {
+            let raw = d.data(forKey: "tv_custom").flatMap { try? JSONDecoder().decode([TVChannel].self, from: $0) } ?? []
+            return raw.map { c in
+                guard c.headers == nil, let h = TVSecrets.get(c.id) else { return c }
+                var n = c; n.headers = h; return n
+            }
+        }
+        set {
+            let stored: [TVChannel] = newValue.map { c in
+                guard let h = c.headers, !h.isEmpty else { TVSecrets.set(c.id, nil); return c }
+                guard TVSecrets.set(c.id, h) else { return c }   // تعذّر: تبقى في مكانها القديم
+                var n = c; n.headers = nil; return n
+            }
+            d.set(try? JSONEncoder().encode(stored), forKey: "tv_custom")
+        }
+    }
+    /// مرة عند التشغيل: نقل ترويسات القنوات المحفوظة سابقًا إلى سلسلة المفاتيح
+    static func migrateSecrets() {
+        let raw = d.data(forKey: "tv_custom").flatMap { try? JSONDecoder().decode([TVChannel].self, from: $0) } ?? []
+        guard raw.contains(where: { !($0.headers ?? [:]).isEmpty }) else { return }
+        custom = custom
     }
     static func isCustom(_ id: String) -> Bool { id.hasPrefix("custom.") }
     static func addCustom(name: String, url: String, cat: TVCat, referer: String?,
@@ -178,6 +200,7 @@ enum TVChannels {
     }
     static func removeCustom(_ id: String) { removeCustom(Set([id])) }
     static func removeCustom(_ ids: Set<String>) {
+        for id in ids { TVSecrets.set(id, nil) }
         custom = custom.filter { !ids.contains($0.id) }
         favorites = favorites.filter { !ids.contains($0) }
     }
@@ -372,5 +395,52 @@ struct ReelIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         Reel.move(kind, by: delta)
         return .result()
+    }
+}
+
+
+/// ترويسات القنوات المضافة في سلسلة المفاتيح (مشفّرة، ولا تظهر في ملفات الإعدادات)
+enum TVSecrets {
+    private static let service = "rafiqi.tv.headers"
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: [String: String]] = [:]
+
+    static func get(_ id: String) -> [String: String]? {
+        lock.lock(); defer { lock.unlock() }
+        if let c = cache[id] { return c.isEmpty ? nil : c }
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecAttrAccount as String: id, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var out: CFTypeRef?
+        let h: [String: String] = SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess
+            ? ((out as? Data).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]) : [:]
+        cache[id] = h
+        return h.isEmpty ? nil : h
+    }
+
+    /// يحفظ ثم يتأكد بالقراءة؛ ويرجع false إن لم يُحفظ فعلًا. nil = حذف
+    @discardableResult
+    static func set(_ id: String, _ h: [String: String]?) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id]
+        guard let h, !h.isEmpty else {
+            SecItemDelete(base as CFDictionary)
+            cache[id] = [:]
+            return true
+        }
+        guard let data = try? JSONEncoder().encode(h) else { return false }
+        SecItemDelete(base as CFDictionary)
+        var add = base
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock   // ينتقل مع النسخة الاحتياطية المشفّرة
+        guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { cache[id] = nil; return false }
+        var q = base
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, (out as? Data) == data else {
+            SecItemDelete(base as CFDictionary); cache[id] = nil; return false
+        }
+        cache[id] = h
+        return true
     }
 }

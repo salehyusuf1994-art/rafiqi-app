@@ -605,6 +605,8 @@ final class FileStore: ObservableObject {
     }
 
     func moveToTrash(_ urls: [URL]) {
+        let gone = urls.map { key($0) }
+        Task.detached(priority: .utility) { ScanProjects.forget(keys: gone) }
         for u in urls {
             if isTrash(u) { deleteForever([u]); continue }
             // ما في الخزنة يبقى في سلة الخزنة (لا يظهر في تطبيق «الملفات»)

@@ -782,3 +782,8 @@ T.update({
 'الاتصال مشفّر (HTTPS)': 'Encrypted connection (HTTPS)',
 'سيحذّرك المتصفح أول مرة لأن الشهادة صادرة من جوالك لا من جهة عامة؛ اختر «متقدم» ثم «متابعة». للتأكد أنه جوالك: بصمة الشهادة في المتصفح تبدأ بـ': 'Your browser will warn you the first time because the certificate was issued by your phone, not a public authority; choose “Advanced” then “Continue”. To confirm it’s your phone, the certificate fingerprint in the browser starts with',
 })
+T.update({
+'مسح السجل': 'Clear History',
+'تُحذف كل نسخ المسح المحفوظة للتعديل. الملفات المحفوظة في «إدارة الملفات» لا تتأثر.': 'All scans saved for editing will be deleted. Files saved in Files are not affected.',
+'تذكير بملف': 'File reminder',
+})

@@ -274,6 +274,9 @@ struct ContentView: View {
         .onChange(of: phase) { _, p in
             // لقطة «آخر الملفات» و«المساحة» لويدجت الأدوات
             if p == .background { FilesWidgetSnapshot.write() }
+            // غطاء الخصوصية: الملفات المقفلة لا تظهر في مبدّل التطبيقات
+            if p != .active, tab == 5, FilePrefs.lockTab || !FileStore.shared.unlocked.isEmpty { PrivacyCover.show() }
+            if p == .active { PrivacyCover.hide() }
             guard p == .active else { return }
             tvRouter.checkPending()
             openPendingTarget()
@@ -281,6 +284,8 @@ struct ContentView: View {
         }
         .task {
             TVBridge.open = { id in TVRouter.shared.show(id: id) }
+            // ترويسات القنوات المضافة (توكنات) تنتقل من الإعدادات إلى سلسلة المفاتيح — مرة واحدة وبأمان
+            TVChannels.migrateSecrets()
             // إعادة ربط التنزيلات الجارية بالخلفية
             _ = DownloadManager.shared
             if ProcessInfo.processInfo.arguments.contains("-sepTest") {

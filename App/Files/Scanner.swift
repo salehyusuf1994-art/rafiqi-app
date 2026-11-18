@@ -1155,7 +1155,8 @@ struct ExportSheet: View {
                                     FileStore.shared.touch()
                                     // يُحفظ المسح كمشروع لفتحه وتعديله أو إضافة صفحات لاحقًا
                                     let title = (name.isEmpty ? ScanExporter.defaultName() : name)
-                                    Task.detached(priority: .utility) { ScanProjects.save(pages, title: title, project: projectID) }
+                                    let keys = out.map { FileStore.shared.key($0) }
+                                    Task.detached(priority: .utility) { ScanProjects.save(pages, title: title, project: projectID, files: keys) }
                                 } catch { self.error = error.localizedDescription }
                                 working = false
                             }
@@ -1199,12 +1200,16 @@ final class DocToPDF: NSObject, WKNavigationDelegate {
 
     private func run(_ url: URL) async throws -> URL {
         src = url
-        let w = WKWebView(frame: CGRect(x: 0, y: 0, width: 595, height: 842))
+        // المستند قد يأتي من الإنترنت: بلا جافاسكربت، ولا يقرأ إلا نفسه (لا الملفات المجاورة)
+        let cfg = WKWebViewConfiguration()
+        cfg.defaultWebpagePreferences.allowsContentJavaScript = false
+        cfg.websiteDataStore = .nonPersistent()
+        let w = WKWebView(frame: CGRect(x: 0, y: 0, width: 595, height: 842), configuration: cfg)
         w.navigationDelegate = self
         web = w
         return try await withCheckedThrowingContinuation { c in
             cont = c
-            w.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+            w.loadFileURL(url, allowingReadAccessTo: url)
         }
     }
 
@@ -1276,6 +1281,8 @@ enum ScanProjects {
         var title: String
         var date: Double
         var pages: [PageRec]
+        /// مفاتيح الملفات المحفوظة من هذا المسح (يُحذف المشروع إذا حُذفت)
+        var files: [String]? = nil
     }
 
     static var root: URL {
@@ -1285,7 +1292,7 @@ enum ScanProjects {
     }
 
     /// يحفظ (أو يحدّث) مشروع المسح؛ يبقى آخر ٣٠ فقط
-    static func save(_ pages: [ScanPage], title: String, project: UUID?) {
+    static func save(_ pages: [ScanPage], title: String, project: UUID?, files: [String] = []) {
         guard !pages.isEmpty else { return }
         let id = project ?? UUID()
         let fm = FileManager.default
@@ -1317,7 +1324,7 @@ enum ScanProjects {
             let t = ScanProcessor.render(first, maxSide: 360)
             try? t.jpegData(compressionQuality: 0.8)?.write(to: tmp.appendingPathComponent("thumb.jpg"))
         }
-        let rec = Rec(title: title, date: Date().timeIntervalSince1970, pages: recs)
+        let rec = Rec(title: title, date: Date().timeIntervalSince1970, pages: recs, files: files.isEmpty ? nil : files)
         try? JSONEncoder().encode(rec).write(to: tmp.appendingPathComponent("project.json"))
         try? fm.removeItem(at: dir)
         try? fm.moveItem(at: tmp, to: dir)
@@ -1363,6 +1370,23 @@ enum ScanProjects {
     static func delete(_ id: UUID) {
         try? FileManager.default.removeItem(at: root.appendingPathComponent(id.uuidString, isDirectory: true))
     }
+
+    /// حُذف ملف (أو مجلد) من «إدارة الملفات»: تُحذف نسخ المسح المرتبطة به (لا تبقى نسخ صور الهويات بعد حذفها)
+    static func forget(keys: [String]) {
+        guard !keys.isEmpty else { return }
+        let fm = FileManager.default
+        for d in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+            guard let data = try? Data(contentsOf: d.appendingPathComponent("project.json")),
+                  let r = try? JSONDecoder().decode(Rec.self, from: data), let files = r.files else { continue }
+            let hit = files.contains { f in keys.contains { k in f == k || f.hasPrefix(k + "/") } }
+            if hit { try? fm.removeItem(at: d) }
+        }
+    }
+
+    /// «مسح السجل»: كل نسخ المسح المحفوظة للتعديل (الملفات المحفوظة لا تتأثر)
+    static func deleteAll() {
+        try? FileManager.default.removeItem(at: root)
+    }
 }
 
 /// قائمة آخر المسحات في صفحة الماسح
@@ -1370,12 +1394,18 @@ struct RecentScans: View {
     let open: (ScanProject) -> Void
     @State private var items: [ScanProject] = []
     @State private var confirm: ScanProject?
+    @State private var confirmAll = false
 
     var body: some View {
         Group {
             if !items.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("آخر المسحات").font(Theme.f(.headline)).foregroundStyle(.white)
+                    HStack {
+                        Text("آخر المسحات").font(Theme.f(.headline)).foregroundStyle(.white)
+                        Spacer()
+                        Button { confirmAll = true } label: { Text("مسح السجل").font(Theme.f(.subheadline)) }
+                            .foregroundStyle(Theme.gold)
+                    }
                     ForEach(items.prefix(8)) { p in
                         Button { open(p) } label: {
                             HStack(spacing: 12) {
@@ -1405,6 +1435,9 @@ struct RecentScans: View {
         .task { items = await Task.detached { ScanProjects.list() }.value }
         .confirmationDialog(L("يُحذف من «آخر المسحات» فقط، ويبقى الملف المحفوظ."), isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }), titleVisibility: .visible) {
             Button(L("حذف"), role: .destructive) { if let c = confirm { ScanProjects.delete(c.id); items.removeAll { $0.id == c.id } }; confirm = nil }
+        }
+        .confirmationDialog(L("تُحذف كل نسخ المسح المحفوظة للتعديل. الملفات المحفوظة في «إدارة الملفات» لا تتأثر."), isPresented: $confirmAll, titleVisibility: .visible) {
+            Button(L("مسح السجل"), role: .destructive) { ScanProjects.deleteAll(); items = [] }
         }
     }
 }
