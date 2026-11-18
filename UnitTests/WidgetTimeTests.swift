@@ -47,21 +47,29 @@ final class WidgetTimeTests: XCTestCase {
         XCTAssertEqual(Cal.nextMidnight(after: utc("2026-10-25T12:00:00Z")), utc("2026-10-26T00:00:00Z"))
     }
 
-    /// الشروق والظهر والعصر والمغرب والعشاء بتوقيت لندن المحلي، قبل التغيير وبعده (الفجر مستثنى: قواعد العروض العالية تختلف بين الحاسبات)
-    private func check(_ day: Date, _ ref: [(Int, Int)], file: StaticString = #filePath, line: UInt = #line) {
-        let t = Prayer.times(for: day, lat: 51.5074, lng: -0.1278, method: CalcMethods.get("uqu"))
+    /// الأوقات بساعة الحائط في لندن (يوم/شهر/سنة + ساعة:دقيقة) — لا بإضافة ساعات إلى بداية اليوم،
+    /// لأن يوم التغيير ٢٣ أو ٢٥ ساعة فالإضافة تكرر خطأ الخوارزمية بدل كشفه.
+    /// المفاتيح: ١ الشروق، ٢ الظهر، ٣ العصر، ٤ المغرب، ٥ العشاء (الفجر مستثنى: قواعد العروض العالية تختلف بين الحاسبات)
+    private func check(_ y: Int, _ m: Int, _ d: Int, _ ref: [Int: (Int, Int)], file: StaticString = #filePath, line: UInt = #line) {
         var c = Calendar(identifier: .gregorian); c.timeZone = london
-        let base = c.startOfDay(for: day)
-        for (i, r) in ref.enumerated() {
-            let idx = i + 1
-            let exp = c.date(byAdding: DateComponents(hour: r.0, minute: r.1), to: base)!
+        let day = c.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!
+        let t = Prayer.times(for: day, lat: 51.5074, lng: -0.1278, method: CalcMethods.get("uqu"))
+        for (idx, r) in ref.sorted(by: { $0.key < $1.key }) {
+            let exp = c.date(from: DateComponents(year: y, month: m, day: d, hour: r.0, minute: r.1))!
             let diff = abs(t[idx].timeIntervalSince(exp)) / 60
-            XCTAssertLessThanOrEqual(diff, 2, "الوقت \(idx): الفرق \(Int(diff.rounded())) دقيقة", file: file, line: line)
+            XCTAssertLessThanOrEqual(diff, 2, "\(d)/\(m) الوقت \(idx): الفرق \(Int(diff.rounded())) دقيقة", file: file, line: line)
         }
     }
 
     func testPrayerTimesAcrossSpringForward() {
-        check(utc("2026-03-28T12:00:00Z"), [(5, 45), (12, 6), (15, 33), (18, 27), (19, 57)])
-        check(utc("2026-03-29T11:00:00Z"), [(6, 43), (13, 5), (16, 33), (19, 29), (20, 59)])
+        check(2026, 3, 28, [1: (5, 45), 2: (12, 6), 3: (15, 33), 4: (18, 27), 5: (19, 57)])
+        check(2026, 3, 29, [1: (6, 43), 2: (13, 5), 3: (16, 33), 4: (19, 29), 5: (20, 59)])
+    }
+
+    /// يوم الرجوع للتوقيت الشتوي (٢٥ ساعة) — AlAdhan طريقة ٤، اطّلع عليه ١٨ نوفمبر ٢٠٢٦:
+    /// https://api.aladhan.com/v1/timings/25-10-2026?latitude=51.5074&longitude=-0.1278&method=4&timezonestring=Europe/London
+    /// (العصر مستثنى: الفرق بين الحاسبات يقارب دقيقتين هنا)
+    func testPrayerTimesOnFallBack() {
+        check(2026, 10, 25, [1: (6, 42), 2: (11, 45), 4: (16, 47), 5: (18, 17)])
     }
 }

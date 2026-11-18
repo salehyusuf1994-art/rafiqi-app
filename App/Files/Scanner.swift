@@ -424,8 +424,14 @@ enum ScanExporter {
             } }
             UIGraphicsEndPDFContext()
             let u = await unique("\(base).pdf")
-            if !password.isEmpty, let doc = PDFDocument(data: data as Data) {
-                doc.write(to: u, withOptions: [.userPasswordOption: password, .ownerPasswordOption: password])
+            if !password.isEmpty {
+                // طلب حماية: لا يُحفظ أبدًا بدونها — فشل التشفير خطأ ظاهر لا ملف مكشوف
+                guard let doc = PDFDocument(data: data as Data),
+                      doc.write(to: u, withOptions: [.userPasswordOption: password, .ownerPasswordOption: password]),
+                      PDFDocument(url: u)?.isEncrypted == true else {
+                    try? FileManager.default.removeItem(at: u)
+                    throw ToolError.failed(L("تعذّر حفظ الملف بكلمة سر، ولم يُحفظ بدونها."))
+                }
             } else {
                 try (data as Data).write(to: u)
             }

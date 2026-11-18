@@ -788,3 +788,9 @@ T.update({
 'تذكير بملف': 'File reminder',
 })
 T.update({'آخر تحديث للطقس': 'Weather last updated'})
+T.update({
+ 'تعذّر حفظ الملف بكلمة سر، ولم يُحفظ بدونها.': 'Couldn’t save the file with a password, so it wasn’t saved without one.',
+ 'تنزيل من رابط خارجي؟': 'Download from an external link?',
+ 'تنزيل': 'Download',
+ 'طلب تطبيق أو موقع تنزيل ملف من %@': 'An app or website asked to download a file from %@',
+})

@@ -133,6 +133,8 @@ struct ContentView: View {
     @ObservedObject private var filesRouter = FilesRouter.shared
     @ObservedObject private var sepTest = SepTestResult.shared
     @Environment(\.scenePhase) private var phase
+    /// رابط تنزيل وصل من خارج التطبيق وينتظر موافقة المستخدم
+    @State private var pendingLink: String?
     var body: some View {
         if SHOT.hasPrefix("notify") {
             NavigationStack { NotifyCenterView() }
@@ -236,9 +238,9 @@ struct ContentView: View {
             if url.isFileURL {
                 let inbox = FileStore.shared.root.appendingPathComponent(L("الواردة"), isDirectory: true)
                 try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
-                FileStore.shared.importFiles([url], to: inbox)
-                // نسخة النظام في Inbox لم تعد لازمة
-                if url.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: url) }
+                let saved = FileStore.shared.importFiles([url], to: inbox)
+                // نسخة النظام في Inbox لم تعد لازمة — تُحذف فقط بعد نجاح الحفظ (وإلا تبقى ولا يضيع الملف)
+                if !saved.isEmpty, url.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: url) }
                 FilesRouter.shared.page = .files
                 FilesRouter.shared.path = [inbox]
                 tab = 5
@@ -252,11 +254,10 @@ struct ContentView: View {
                 if !t.isEmpty { route(t) }
                 return
             }
-            // miqat://download?url=… (من الاختصارات أو أي تطبيق): يُضاف للتنزيلات
+            // miqat://download?url=… (من الاختصارات أو أي تطبيق): يُسأل المستخدم أولًا،
+            // لأن أي موقع أو تطبيق يستطيع فتح هذا الرابط
             if url.host == "download", let link = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "url" })?.value {
-                DownloadManager.shared.add(link)
-                FilesRouter.shared.page = .downloads
-                tab = 5
+                pendingLink = link
                 return
             }
             // miqat://tv/<القناة>
@@ -271,8 +272,23 @@ struct ContentView: View {
             }
         }
         .onChange(of: filesRouter.openTab) { _, on in if on { tab = 5; filesRouter.openTab = false } }
+        .alert(L("تنزيل من رابط خارجي؟"), isPresented: Binding(get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } })) {
+            Button(L("تنزيل")) {
+                if let link = pendingLink { DownloadManager.shared.add(link) }
+                pendingLink = nil
+                FilesRouter.shared.page = .downloads
+                tab = 5
+            }
+            Button(L("إلغاء"), role: .cancel) { pendingLink = nil }
+        } message: {
+            Text(verbatim: (URL(string: pendingLink ?? "")?.host).map { LF("طلب تطبيق أو موقع تنزيل ملف من %@", $0) } ?? (pendingLink ?? ""))
+        }
         // تغيّر توقيت الجوال (سفر) أو تعديل الوقت: الويدجت تُعاد حسابها فورًا بدل انتظار تحديثها التالي
-        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in reloadWidgets() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
+            reloadWidgets()
+            // نصوص التنبيهات وأوقاتها تُعاد بتوقيت المكان الجديد
+            if Notify.enabled { Task { await Notify.reschedule() } }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in reloadWidgets() }
         .onChange(of: phase) { _, p in
             // لقطة «آخر الملفات» و«المساحة» لويدجت الأدوات

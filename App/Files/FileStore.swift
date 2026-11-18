@@ -826,10 +826,25 @@ final class FileStore: ObservableObject {
             for u in (try? fm.contentsOfDirectory(at: d, includingPropertiesForKeys: nil)) ?? [] {
                 // لا نحذف ذاكرة القرآن ولا صور الويدجت
                 if u.lastPathComponent.hasPrefix("com.apple") { continue }
-                try? fm.removeItem(at: u)
+                // صفحات المسح الحالية تبقى يومًا، وغيرها ساعة: لا يُحذف ملف تستخدمه عملية جارية
+                // (تحويل، تنزيل وصل للتو، صفحات مسح لم تُحفظ بعد)
+                purgeTemp(u, olderThan: u.lastPathComponent == "scan-pages" ? 86400 : 3600)
             }
         }
         touch()
+    }
+
+    /// يحذف الملف (أو محتويات المجلد ملفًا ملفًا) إن لم يُعدَّل منذ المدة المحددة
+    private func purgeTemp(_ u: URL, olderThan age: TimeInterval) {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
+        let v = try? u.resourceValues(forKeys: keys)
+        if v?.isDirectory == true {
+            for c in (try? fm.contentsOfDirectory(at: u, includingPropertiesForKeys: Array(keys))) ?? [] { purgeTemp(c, olderThan: age) }
+            if ((try? fm.contentsOfDirectory(atPath: u.path)) ?? ["x"]).isEmpty { try? fm.removeItem(at: u) }
+            return
+        }
+        let modified = v?.contentModificationDate ?? .distantPast
+        if Date().timeIntervalSince(modified) > age { try? fm.removeItem(at: u) }
     }
 
     // MARK: عرض تجريبي

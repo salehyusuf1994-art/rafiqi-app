@@ -2318,3 +2318,6 @@
 "تُحذف كل نسخ المسح المحفوظة للتعديل. الملفات المحفوظة في «إدارة الملفات» لا تتأثر." = "All scans saved for editing will be deleted. Files saved in Files are not affected.";
 "تذكير بملف" = "File reminder";
 "آخر تحديث للطقس" = "Weather last updated";
+"تعذّر حفظ الملف بكلمة سر، ولم يُحفظ بدونها." = "Couldn’t save the file with a password, so it wasn’t saved without one.";
+"تنزيل من رابط خارجي؟" = "Download from an external link?";
+"طلب تطبيق أو موقع تنزيل ملف من %@" = "An app or website asked to download a file from %@";

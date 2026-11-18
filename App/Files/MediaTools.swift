@@ -603,7 +603,8 @@ enum MediaTools {
         let req = VNRecognizeTextRequest()
         req.recognitionLevel = .accurate
         req.usesLanguageCorrection = true
-        req.recognitionLanguages = ["ar-SA", "en-US"]
+        // نفس لغات السكانر: العربية فقط إن كان الجهاز يدعمها (iOS 17 لا يدعمها فيفشل الطلب)
+        req.recognitionLanguages = ScanProcessor.ocrLanguages
         try VNImageRequestHandler(cgImage: cg, orientation: CGImagePropertyOrientation(img.imageOrientation)).perform([req])
         let lines = (req.results ?? []).compactMap { $0.topCandidates(1).first?.string }
         guard !lines.isEmpty else { throw ToolError.failed(L("لم يُعثر على نص في الصورة.")) }
@@ -773,11 +774,17 @@ extension MediaTools {
         await s.export()
         progress(1)
         guard s.status == .completed else { throw ToolError.failed(s.error?.localizedDescription ?? L("تعذّر الحفظ.")) }
-        // يحلّ محل الأصل (بنفس الاسم، وامتداد MP4/M4A)
-        let dest = src.deletingPathExtension().appendingPathExtension(ext)
-        if dest != src { try? FileManager.default.removeItem(at: src) }
-        try? FileManager.default.removeItem(at: dest)
-        try FileManager.default.moveItem(at: tmp, to: dest)
+        // يحلّ محل الأصل (بنفس الاسم، وامتداد MP4/M4A) — الجديد يُحفظ أولًا، ولا يُحذف الأصل إلا بعد نجاحه،
+        // ولا يُطغى على ملف آخر بالاسم نفسه وامتداد مختلف (مثل «أغنية.m4a» بجانب «أغنية.mp3»)
+        let fm = FileManager.default
+        if src.pathExtension.lowercased() == ext {
+            do { _ = try fm.replaceItemAt(src, withItemAt: tmp) } catch { try? fm.removeItem(at: tmp); throw error }
+            return src
+        }
+        let dest = uniqueFileURL(src.deletingPathExtension().appendingPathExtension(ext).lastPathComponent,
+                                 in: src.deletingLastPathComponent())
+        do { try fm.moveItem(at: tmp, to: dest) } catch { try? fm.removeItem(at: tmp); throw error }
+        try? fm.removeItem(at: src)
         return dest
     }
 

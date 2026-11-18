@@ -72,7 +72,12 @@ final class AudioPlayer: ObservableObject {
         }
         timeControlObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
             let waiting = p.timeControlStatus == .waitingToPlayAtSpecifiedRate
-            Task { @MainActor in AudioPlayer.shared.loading = waiting }
+            let playing = p.timeControlStatus == .playing
+            Task { @MainActor in
+                AudioPlayer.shared.loading = waiting
+                // رجع الصوت: عدّاد إعادة الاتصال يبدأ من جديد
+                if playing { AudioPlayer.shared.stallRetries = 0 }
+            }
         }
         // مكالمة أو منبّه (ومنه الأذان) يوقف الصوت: نحدّث الحالة حتى لا تبقى الويدجت على «يعمل»، ونكمل بعدها إن سمح النظام
         NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { n in
@@ -226,7 +231,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func start(_ url: URL, retry: Bool = false) {
-        if !retry { retries = 0 }
+        if !retry { retries = 0; stallRetries = 0 }
         if state.source != .radio { altQueue = []; altKey = nil }
         // تشغيل القرآن أو الإذاعة يوقف بث القناة وأي فيديو (ولو في النافذة العائمة)
         PlaybackGate.claim(.audio)
@@ -294,11 +299,21 @@ final class AudioPlayer: ObservableObject {
     }
 
     private var stallObserver: Any?
-    /// انقطع البث: إن لم يرجع خلال ثوانٍ نعيد الاتصال تلقائيًا
+    /// محاولات إعادة الاتصال المتتالية دون أن يرجع الصوت
+    fileprivate var stallRetries = 0
+    private static let maxStallRetries = 5
+    /// انقطع البث: إن لم يرجع خلال ثوانٍ نعيد الاتصال، بمهلة تتضاعف (٦، ١٢، ٢٤، ٤٨، ٩٦ ثانية)،
+    /// وبعد ٥ محاولات بلا صوت نتوقف بدل الاستنزاف المستمر للشبكة والبطارية
     private func stalled(_ url: URL) {
         guard state.source == .radio else { return }
+        guard stallRetries < Self.maxStallRetries else {
+            state.playing = false; loading = false; save()
+            return
+        }
+        let wait = UInt64(6 << stallRetries) * 1_000_000_000
+        stallRetries += 1
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            try? await Task.sleep(nanoseconds: wait)
             let a = AudioPlayer.shared
             guard url == a.currentURL, a.state.playing, a.player.timeControlStatus != .playing else { return }
             a.start(url, retry: true)

@@ -334,7 +334,9 @@ enum Prayer {
         } else if !reaches(method.isha ?? 18, t[5]) || h[5] - h[4] > portion {
             h[5] = h[4] + portion
         }
-        let base = g.startOfDay(for: noon)
+        // منتصف الليل بفارق الظهر نفسه (tz): يوم تغيّر التوقيت الصيفي يكون اليوم ٢٣ أو ٢٥ ساعة،
+        // فبداية اليوم الفعلية + ساعات بفارق آخر تزيح الأوقات ساعة — نطرح ١٢ ساعة من الظهر بدلها
+        let base = noon.addingTimeInterval(-12 * 3600)
         return h.map { base.addingTimeInterval((($0 + tz - lng / 15) * 60).rounded() * 60) }
     }
 
