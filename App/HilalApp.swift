@@ -138,6 +138,13 @@ struct ContentView: View {
     var body: some View {
         if SHOT.hasPrefix("notify") {
             NavigationStack { NotifyCenterView() }
+        } else if SHOT.hasPrefix("lockpad") {
+            // لقطات مراجعة تصميم قفل المشغّل (فوق مشهد فيديو تجريبي)
+            ZStack {
+                LinearGradient(colors: [Color(red: 0.10, green: 0.16, blue: 0.24), Color(red: 0.32, green: 0.22, blue: 0.14)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
+                PasscodePad(purpose: SHOT == "lockpad2" ? .create(lockAfter: true) : .unlock) { _ in }
+            }
         } else {
             tabs
         }

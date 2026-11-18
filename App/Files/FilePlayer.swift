@@ -247,7 +247,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
             flash.frame = CGRect(x: 0, y: 0, width: 110, height: 60)
             o.addSubview(flash)
         }
-        // قفل الشاشة (للأطفال): يمنع اللمس أثناء المشاهدة، ويُفتح بضغطة مطوّلة على القفل
+        // قفل الشاشة (للأطفال): يمنع اللمس أثناء المشاهدة. القائمة: بلا رمز (ضغطة مطوّلة) أو برمز سري
         blocker.backgroundColor = UIColor.black.withAlphaComponent(0.001)
         blocker.isHidden = true
         blocker.translatesAutoresizingMaskIntoConstraints = false
@@ -257,10 +257,25 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         lockButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
         lockButton.layer.cornerRadius = 22
         lockButton.translatesAutoresizingMaskIntoConstraints = false
+        lockButton.accessibilityLabel = L("قفل المشغّل")
         lockButton.addTarget(self, action: #selector(lockTap), for: .touchUpInside)
+        lockButton.addTarget(self, action: #selector(holdBegan), for: .touchDown)
+        lockButton.addTarget(self, action: #selector(holdEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
         let lp = UILongPressGestureRecognizer(target: self, action: #selector(unlockHold(_:)))
         lp.minimumPressDuration = 1.2
         lockButton.addGestureRecognizer(lp)
+        lockButton.menu = UIMenu(title: L("قفل المشغّل"), children: [UIDeferredMenuElement.uncached { [weak self] done in
+            MainActor.assumeIsolated { done(self?.lockMenu() ?? []) }
+        }])
+        lockButton.showsMenuAsPrimaryAction = true
+        // حلقة ذهبية تمتلئ حول القفل أثناء الضغط المطوّل
+        ring.fillColor = UIColor.clear.cgColor
+        ring.strokeColor = UIColor(Theme.gold).cgColor
+        ring.lineWidth = 3
+        ring.lineCap = .round
+        ring.strokeEnd = 0
+        ring.path = UIBezierPath(arcCenter: CGPoint(x: 22, y: 22), radius: 25, startAngle: -.pi / 2, endAngle: .pi * 1.5, clockwise: true).cgPath
+        lockButton.layer.addSublayer(ring)
         view.addSubview(lockButton)
         NSLayoutConstraint.activate([
             blocker.topAnchor.constraint(equalTo: view.topAnchor), blocker.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -543,25 +558,76 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         sleepButton.setImage(UIImage(systemName: on ? "moon.zzz.fill" : "moon.zzz", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
         sleepButton.tintColor = on ? UIColor(Theme.gold) : .white
     }
-    private var locked = false
+    private var lockMode: PlayerLockMode = .open
+    private var locked: Bool { lockMode != .open }
+    private let ring = CAShapeLayer()
+    private let pad = PasscodeHost()
+
+    /// قائمة القفل (والمشغّل مفتوح): بلا رمز، برمز سري، وإدارة الرمز
+    private func lockMenu() -> [UIMenuElement] {
+        let isSet = PlayerLockCode.isSet
+        var items: [UIMenuElement] = [
+            UIAction(title: L("قفل الشاشة"), subtitle: L("يُفتح بضغطة مطوّلة على القفل"), image: UIImage(systemName: "lock")) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setLockMode(.hold) } },
+            UIAction(title: L("قفل برمز سري"), subtitle: isSet ? L("يُفتح بالرمز أو ببصمة الوجه") : L("تختار رمزًا من ٤ أرقام"),
+                     image: UIImage(systemName: "lock.shield")) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    if PlayerLockCode.isSet { self?.setLockMode(.code) } else { self?.showPad(.create(lockAfter: true)) }
+                } },
+        ]
+        if isSet {
+            items.append(UIMenu(options: .displayInline, children: [
+                UIAction(title: L("تغيير الرمز السري"), image: UIImage(systemName: "key")) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.showPad(.verifyToChange) } },
+                UIAction(title: L("حذف الرمز السري"), image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.showPad(.verifyToRemove) } },
+            ]))
+        }
+        return items
+    }
+
+    private func showPad(_ p: PlayerLockFlow.Purpose) {
+        pad.present(p, over: self) { [weak self] purpose, ok in
+            guard let self else { return }
+            let r = PlayerLockFlow.after(purpose, ok: ok)
+            if let m = r.mode { self.setLockMode(m); if m == .open { self.showBar() } }
+            if let next = r.next { self.showPad(next) } else { self.pad.dismiss(); self.view.bringSubviewToFront(self.lockButton) }
+        }
+    }
 
     @objc private func lockTap() {
-        guard !locked else {
-            flash.text = L("اضغط مطوّلًا لفتح القفل")
-            flash.frame.size.width = 230
-            flash.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
-            UIView.animate(withDuration: 0.15, animations: { self.flash.alpha = 1 }) { _ in UIView.animate(withDuration: 0.4, delay: 1.2) { self.flash.alpha = 0 } }
-            return
-        }
-        setLocked(true)
+        // والمشغّل مفتوح يفتح الزر قائمته؛ والمقفل يعرض طريقة الفتح
+        guard locked else { return }
+        flash.text = PlayerLockFlow.hint(lockMode)
+        flash.frame.size.width = min(view.bounds.width - 48, 320)
+        flash.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        UIView.animate(withDuration: 0.15, animations: { self.flash.alpha = 1 }) { _ in UIView.animate(withDuration: 0.4, delay: 1.4) { self.flash.alpha = 0 } }
     }
+
+    @objc private func holdBegan() {
+        guard locked else { return }
+        ring.removeAllAnimations()
+        let a = CABasicAnimation(keyPath: "strokeEnd")
+        a.fromValue = 0; a.toValue = 1; a.duration = 1.2
+        a.timingFunction = CAMediaTimingFunction(name: .linear)
+        a.fillMode = .forwards; a.isRemovedOnCompletion = false
+        ring.add(a, forKey: "hold")
+    }
+    @objc private func holdEnded() { ring.removeAllAnimations() }
 
     @objc private func unlockHold(_ g: UILongPressGestureRecognizer) {
-        if g.state == .began, locked { setLocked(false); showBar() }
+        guard g.state == .began, locked else { return }
+        ring.removeAllAnimations()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if lockMode == .code { showPad(.unlock) } else { setLockMode(.open); showBar() }
     }
 
-    private func setLocked(_ on: Bool) {
-        locked = on
+    private func setLockMode(_ m: PlayerLockMode) {
+        lockMode = m
+        let on = m != .open
+        lockButton.showsMenuAsPrimaryAction = !on
+        lockButton.accessibilityLabel = on ? L("المشغّل مقفل") : L("قفل المشغّل")
+        lockButton.accessibilityHint = on ? PlayerLockFlow.hint(m) : nil
         showsPlaybackControls = !on
         blocker.isHidden = !on
         sleepButton.isHidden = on
@@ -569,8 +635,11 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         lockButton.alpha = 1
         view.bringSubviewToFront(blocker)
         view.bringSubviewToFront(lockButton)
-        lockButton.setImage(UIImage(systemName: on ? "lock.fill" : "lock.open", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
+        let icon = m == .code ? "lock.shield.fill" : (on ? "lock.fill" : "lock.open")
+        lockButton.setImage(UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
         lockButton.tintColor = on ? UIColor(Theme.gold) : .white
+        lockButton.layer.borderWidth = on ? 1 : 0
+        lockButton.layer.borderColor = UIColor(Theme.gold).withAlphaComponent(0.4).cgColor
     }
 
     @objc private func doubleTap(_ g: UITapGestureRecognizer) {

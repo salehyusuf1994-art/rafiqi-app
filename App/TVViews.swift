@@ -351,6 +351,8 @@ struct TVPlayerScreen: View {
     private let onClose: (() -> Void)?
 
     private let reused: Bool
+    /// قفل المشغّل (بلا رمز أو برمز سري) — يمنع اللمس أثناء المشاهدة
+    @State private var lockMode: PlayerLockMode = .open
 
     @MainActor init(channel: TVChannel, reuse: TVPlayback? = nil, onClose: (() -> Void)? = nil) {
         _tv = StateObject(wrappedValue: reuse ?? TVPlayback(channel))
@@ -365,6 +367,7 @@ struct TVPlayerScreen: View {
                 Color.black.ignoresSafeArea()
                 if landscape {
                     video.ignoresSafeArea()
+                        .anchorPreference(key: PlayerLockAnchorKey.self, value: .bounds) { $0 }
                     HStack(spacing: 10) { closeButton; refreshButton }.padding(16)
                 } else {
                     VStack(spacing: 0) {
@@ -372,9 +375,17 @@ struct TVPlayerScreen: View {
                         video
                             .aspectRatio(16 / 9, contentMode: .fit)
                             .frame(maxWidth: .infinity)
+                            .anchorPreference(key: PlayerLockAnchorKey.self, value: .bounds) { $0 }
                         zapper
                         Spacer(minLength: 0)
                     }
+                }
+            }
+            // القفل فوق كل شيء: زرّه في منتصف حافة الفيديو، وعند القفل يغطي الشاشة كلها
+            .overlayPreferenceValue(PlayerLockAnchorKey.self) { a in
+                GeometryReader { lg in
+                    let r = a.map { lg[$0] } ?? CGRect(origin: .zero, size: lg.size)
+                    PlayerLockLayer(mode: $lockMode, knobCenter: CGPoint(x: min(r.maxX, lg.size.width) - 38, y: r.midY))
                 }
             }
         }

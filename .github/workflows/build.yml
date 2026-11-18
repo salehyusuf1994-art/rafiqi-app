@@ -196,6 +196,8 @@ jobs:
           L notifyd 9; S 8c_notify_detail
           L cities 9; S 9_cities
           L detail 9 -wid lock.next; S 5b_detail_lock
+          L lockpad 6; S 9j_player_lock_unlock
+          L lockpad2 6; S 9k_player_lock_create
           ls -la shots
 
       - name: Publish output branch
