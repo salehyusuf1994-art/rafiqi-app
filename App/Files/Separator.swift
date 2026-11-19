@@ -18,14 +18,26 @@ enum Separator {
     /// يرجع ملف M4A فيه الجزء المطلوب
     static func separate(_ src: URL, keep: Keep, progress: @escaping (Double) -> Void) async throws -> URL {
         guard let murl = modelURL else { throw ToolError.failed(L("نموذج الفصل غير موجود في هذه النسخة.")) }
-        let cfg = MLModelConfiguration()
-        cfg.computeUnits = .all
-        let model = try MLModel(contentsOf: murl, configuration: cfg)
+        progress(0.01)
+        // المعالج الرسومي لا المحرك العصبي: تجهيز هذا النموذج الكبير للمحرك العصبي في أول مرة يأخذ دقائق
+        // (تبقى النسبة ٠٪ ويسخن الجوال). المعالج الرسومي يبدأ فورًا، وإن تعذّر نرجع للمعالج العادي
+        let model: MLModel
+        do {
+            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuAndGPU
+            model = try MLModel(contentsOf: murl, configuration: cfg)
+        } catch {
+            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuOnly
+            model = try MLModel(contentsOf: murl, configuration: cfg)
+        }
+        try Task.checkCancellation()
+        progress(0.02)
         let inName = model.modelDescription.inputDescriptionsByName.keys.first ?? "input"
         let outName = model.modelDescription.outputDescriptionsByName.keys.first ?? "output"
 
         // ١) قراءة الصوت ستيريو ٤٤١٠٠ هرتز
         let (lch, rch) = try await readPCM(src)
+        try Task.checkCancellation()
+        progress(0.05)
         let n = lch.count
         guard n > nfft else { throw ToolError.failed(L("المقطع قصير جدًا.")) }
         guard Double(n) / rate <= 20 * 60 else { throw ToolError.failed(L("المقطع أطول من ٢٠ دقيقة.")) }
@@ -77,11 +89,12 @@ enum Separator {
                 }
             }
             let out = try await model.prediction(from: MLDictionaryFeatureProvider(dictionary: [inName: input]))
-            guard let y = out.featureValue(for: outName)?.multiArrayValue else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
-            func val(_ idx: Int) -> Float {
-                y.dataType == .float16 ? Float(y.dataPointer.bindMemory(to: Float16.self, capacity: y.count)[idx])
-                                       : y.dataPointer.bindMemory(to: Float.self, capacity: y.count)[idx]
-            }
+            guard let y = out.featureValue(for: outName)?.multiArrayValue, y.count >= 4 * bins * frames else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
+            // ربط الذاكرة مرة واحدة لكل دفعة (كان يتكرر لكل قيمة: ملايين المرات)
+            let half16 = y.dataType == .float16
+            let p16 = half16 ? y.dataPointer.bindMemory(to: Float16.self, capacity: y.count) : nil
+            let p32 = half16 ? nil : y.dataPointer.bindMemory(to: Float.self, capacity: y.count)
+            func val(_ idx: Int) -> Float { p16.map { Float($0[idx]) } ?? p32![idx] }
             for f in 0..<count {
                 let t = chunkStart + f
                 for c in 0..<2 {

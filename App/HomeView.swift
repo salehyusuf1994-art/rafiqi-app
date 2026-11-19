@@ -75,8 +75,9 @@ struct HomeView: View {
             Spacer(minLength: 0)
             VStack(spacing: 2) {
                 Fit("app_title_t", 120, 52)
+                // بلا تصغير تلقائي (كان يقصّ أول حرف: رقم اليوم)؛ يلتف لسطرين عند الخطوط الكبيرة
                 Text(DateLine.today()).font(Theme.title(13)).foregroundStyle(Theme.sub)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(2).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             CircleButton(icon: "location.north.line.fill") { path.append(.qibla) }
@@ -101,6 +102,7 @@ private struct HomeWidget: View {
             .frame(width: width, height: s.height * k)
             .contentShape(RoundedRectangle(cornerRadius: 24 * k, style: .continuous))
             .onTapGesture { open() }
+            .accessibilityAction(named: L("فتح")) { open() }
     }
 }
 

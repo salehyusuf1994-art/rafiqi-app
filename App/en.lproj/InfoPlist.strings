@@ -1,10 +1,10 @@
 "CFBundleDisplayName" = "Rafiqi";
 "CFBundleName" = "Rafiqi";
-"NSPhotoLibraryUsageDescription" = "Rafiqi reads your latest screenshot to match the widget background with your wallpaper, and imports photos and videos into Files.";
-"NSPhotoLibraryAddUsageDescription" = "Rafiqi saves photos and videos from Files to the Photos app.";
-"NSCameraUsageDescription" = "Rafiqi uses the camera to take a photo or video and save it straight to Files, and to scan documents.";
-"NSMicrophoneUsageDescription" = "Rafiqi records sound with the video when you shoot from Files.";
-"NSFaceIDUsageDescription" = "Rafiqi uses Face ID to lock Files and private folders, and to unlock the player lock.";
+"NSPhotoLibraryUsageDescription" = "Rafiqi reads your latest screenshot to match the widget background with your wallpaper, and imports photos and videos into File Manager.";
+"NSPhotoLibraryAddUsageDescription" = "Rafiqi saves photos and videos from File Manager to the Photos app.";
+"NSCameraUsageDescription" = "Rafiqi uses the camera to take a photo or video and save it straight to File Manager, and to scan documents.";
+"NSMicrophoneUsageDescription" = "Rafiqi records sound with the video when you shoot from File Manager.";
+"NSFaceIDUsageDescription" = "Rafiqi uses Face ID or Touch ID to lock File Manager and locked folders, and to unlock the player lock.";
 "NSLocalNetworkUsageDescription" = "Rafiqi transfers files between your phone and computer over the same Wi-Fi network.";
 "NSSpeechRecognitionUsageDescription" = "Rafiqi transcribes speech in audio and video files to text on your device.";
 "NSLocationWhenInUseUsageDescription" = "Rafiqi uses your location to calculate accurate prayer times, weather and the Qibla direction wherever you are.";

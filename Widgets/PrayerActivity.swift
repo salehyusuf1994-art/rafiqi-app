@@ -79,7 +79,7 @@ struct StartPrayerActivityIntent: LiveActivityIntent {
 struct PrayerActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PrayerActivityAttributes.self) { ctx in
-            PrayerActivityLockView(s: ctx.state, stale: ctx.isStale)
+            PrayerActivityLockView(s: ctx.state, stale: ctx.isStale).digitsLocale()
                 .activityBackgroundTint(Color.black.opacity(0.55))
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { ctx in
@@ -103,7 +103,7 @@ struct PrayerActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 2) {
                         Text(verbatim: s.name).font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
-                        Text(s.time, style: .time).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                        Text(R2.time(s.time)).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -142,7 +142,7 @@ struct PrayerActivityLockView: View {
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                 Text(verbatim: s.name).font(.system(size: 24, weight: .bold)).foregroundStyle(.white)
                 HStack(spacing: 6) {
-                    Text(s.time, style: .time)
+                    Text(R2.time(s.time))
                     if !s.place.isEmpty { Text(verbatim: "· " + s.place).lineLimit(1) }
                 }
                 .font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.7))
@@ -261,6 +261,13 @@ struct OpenRafiqiIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         AppGroup.defaults.set(target, forKey: "open_target")
         AppGroup.defaults.set(Date().timeIntervalSince1970, forKey: "open_target_at")
+        // إن كان التطبيق نشطًا قبل وصول الطلب: ينبَّه فورًا بدل انتظار تغيّر حالته
+        await MainActor.run { NotificationCenter.default.post(name: .rafiqiOpenTarget, object: nil) }
         return .result()
     }
+}
+
+extension Notification.Name {
+    /// طلب فتح صفحة من مركز التحكم أو زر ويدجت
+    static let rafiqiOpenTarget = Notification.Name("rafiqi.openTarget")
 }

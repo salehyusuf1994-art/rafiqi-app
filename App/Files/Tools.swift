@@ -174,6 +174,7 @@ struct ToolHost: View {
     @Environment(\.dismiss) private var dismiss
     @State private var progress: Double = 0
     @State private var running = false
+    @State private var job: Task<Void, Never>?
     @State private var result: URL?
     @State private var text: String?
     @State private var codes: [String] = []
@@ -231,7 +232,8 @@ struct ToolHost: View {
             .hiddenNavBar()
         }
         .task { await prepare() }
-        .onDisappear { player?.pause() }
+        // إغلاق الأداة يوقف المهمة الجارية (لا تبقى تعمل في الخلفية وتسخّن الجوال)
+        .onDisappear { player?.pause(); job?.cancel() }
         .modifier(CueTranslator(active: $translating, source: String(lang.prefix(2)), target: target, cues: cues) { out, err in
             translating = false
             if let err { error = err; return }
@@ -443,7 +445,7 @@ struct ToolHost: View {
     private func seekPreview(_ t: Double) { player?.seek(to: CMTime(seconds: max(0, t), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
 
     private var runButton: some View {
-        Button { Task { await go() } } label: {
+        Button { job = Task { await go() } } label: {
             Text(tool == .editText ? L("حفظ") : L("تنفيذ")).font(Theme.f(.headline)).foregroundStyle(.black)
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.gold))
@@ -652,6 +654,8 @@ struct ToolHost: View {
                 }
                 dismiss()
             }
+        } catch is CancellationError {
+            // أُغلقت الأداة: لا رسالة خطأ
         } catch {
             self.error = error.localizedDescription
         }

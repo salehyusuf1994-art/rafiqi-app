@@ -257,6 +257,8 @@ struct Chip: View {
             .environment(\.colorScheme, .dark)
         }
         .buttonStyle(.plain)
+        // قارئ الشاشة يعلن الاختيار الحالي
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

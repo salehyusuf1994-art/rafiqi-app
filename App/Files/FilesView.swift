@@ -395,7 +395,13 @@ struct FolderContent: View {
         .onChange(of: router.openScanner, initial: true) { _, on in
             guard on, isRoot else { return }
             router.openScanner = false
-            showScannerHome = true
+            // أُغلق الماسح للتو من رابط (مركز التحكم) وحالته باقية: نصفّرها ثم نفتحه من جديد
+            if showScannerHome {
+                showScannerHome = false
+                DispatchQueue.main.async { showScannerHome = true }
+            } else {
+                showScannerHome = true
+            }
         }
         .fullScreenCover(isPresented: $showScanner) {
             DocScanner { pdf in

@@ -65,13 +65,13 @@
 		</dict>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>لالتقاط صورة أو فيديو وحفظه مباشرة في «إدارة الملفات».</string>
+	<string>لالتقاط صورة أو فيديو وحفظه مباشرة في «إدارة الملفات»، ولمسح المستندات ضوئيًا.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>لتسجيل الصوت مع الفيديو عند التصوير من «إدارة الملفات».</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>لحفظ الصور ومقاطع الفيديو من «إدارة الملفات» في تطبيق «الصور».</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>لقفل «إدارة الملفات» والمجلدات الخاصة وفتح قفل المشغّل ببصمة الوجه.</string>
+	<string>لقفل «إدارة الملفات» والمجلدات المقفلة، وفتح قفل المشغّل بالبصمة.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>لنقل الملفات بين الجوال والكمبيوتر عبر شبكة الواي فاي نفسها.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -81,9 +81,9 @@
 	<key>NSAppleMusicUsageDescription</key>
 	<string>يحتاج رفيقي إلى الوصول إلى Apple Music لعرض اسم المقطع والتحكم في تشغيله من الويدجت.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>يحتاج التطبيق إلى موقعك لحساب أوقات الصلاة والطقس واتجاه القبلة بدقة، وتحديثها أينما ذهبت.</string>
+	<string>يحتاج رفيقي إلى موقعك لحساب أوقات الصلاة والطقس واتجاه القبلة بدقة، وتحديثها أينما ذهبت.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>يحتاج التطبيق إلى الصور لمطابقة خلفية الويدجت مع خلفية شاشتك، ولاستيراد الصور ومقاطع الفيديو إلى «إدارة الملفات».</string>
+	<string>يحتاج رفيقي إلى الصور لمطابقة خلفية الويدجت مع خلفية شاشتك، ولاستيراد الصور ومقاطع الفيديو إلى «إدارة الملفات».</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>HilalDigits-Regular.ttf</string>

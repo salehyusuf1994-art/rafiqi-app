@@ -31,6 +31,8 @@ struct ChoiceTile<Icon: View>: View {
             Text(title).font(Theme.f(.caption2, on ? .semibold : .regular))
                 .foregroundStyle(on ? Theme.gold : .white.opacity(0.8)).lineLimit(1)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -81,7 +83,8 @@ struct StyleEditor: View {
                             let p = Palette.solids[i]
                             Button { style.color = p.1 } label: { Swatch(fill: Palette.color(p.1), on: Palette.same(p.1, style.color)) }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel(L(p.0))
+                                // «رمادي» مفتاح مستخدم لفلتر المسح (بالإنجليزية Grayscale): للّون اسم خاص
+                                .accessibilityLabel(L(p.0 == "رمادي" ? "رمادي داكن" : p.0))
                                 .accessibilityAddTraits(Palette.same(p.1, style.color) ? .isSelected : [])
                         }
                     }
@@ -193,13 +196,16 @@ struct StyleEditor: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(Tint.presets, id: \.0) { p in
+                        let sel = UIColor(p.2) == UIColor(tint) || Palette.same(Palette.rgb(p.2), Palette.rgb(tint))
                         Button { tint = p.2 } label: {
                             VStack(spacing: 2) {
-                                Swatch(fill: p.2, on: UIColor(p.2) == UIColor(tint) || Palette.same(Palette.rgb(p.2), Palette.rgb(tint)))
+                                Swatch(fill: p.2, on: sel)
                                 Text(L(p.1)).font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(sel ? .isSelected : [])
                     }
                 }
             }
@@ -216,6 +222,7 @@ struct GlobalStyleView: View {
     @State private var style = Styles.global
     @State private var tint = Tint.appColor
     @State private var msg = ""
+    @State private var confirmReset = false
     @State private var customCount = (Catalog.all).filter { Styles.hasCustom($0.id) }.count
 
     private let sampleS = Catalog.all.first { $0.id == "hilal.dnum" }
@@ -248,14 +255,20 @@ struct GlobalStyleView: View {
                             .background(Capsule().fill(Theme.gold))
                     }
                     if customCount > 0 {
-                        Button(role: .destructive) {
-                            for w in Catalog.all { Styles.set(w.id, nil) }
-                            customCount = 0
-                            reloadWidgets()
-                            msg = "أُلغيت التصاميم الخاصة، وأصبحت كل الويدجت على التصميم العام."
-                        } label: {
+                        // حذف جماعي لا رجعة فيه: يُطلب تأكيد
+                        Button(role: .destructive) { confirmReset = true } label: {
                             Text(verbatim: LF("إلغاء التصاميم الخاصة (%@)", ar(customCount))).font(Theme.f(.subheadline))
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
+                        }
+                        .confirmationDialog(L("إلغاء كل التصاميم الخاصة؟"), isPresented: $confirmReset, titleVisibility: .visible) {
+                            Button(L("إلغاء التصاميم الخاصة"), role: .destructive) {
+                                for w in Catalog.all { Styles.set(w.id, nil) }
+                                customCount = 0
+                                reloadWidgets()
+                                msg = "أُلغيت التصاميم الخاصة، وأصبحت كل الويدجت على التصميم العام."
+                            }
+                        } message: {
+                            Text("تعود كل الويدجت إلى التصميم العام، ولا يمكن التراجع.")
                         }
                     }
                     if !msg.isEmpty {

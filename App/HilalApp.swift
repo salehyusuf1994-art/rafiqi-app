@@ -103,7 +103,9 @@ enum LatestShot {
         let st = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard st == .authorized || st == .limited else { return nil }
         let o = PHFetchOptions()
-        o.predicate = NSPredicate(format: "(mediaSubtypes & %d) != 0", Int(PHAssetMediaSubtype.photoScreenshot.rawValue))
+        // لقطة حديثة فقط (آخر ساعة): مع «وصول محدود للصور» قد لا تظهر اللقطة الجديدة فتُستخدم لقطة قديمة بالخطأ
+        o.predicate = NSPredicate(format: "(mediaSubtypes & %d) != 0 AND creationDate > %@",
+                                  Int(PHAssetMediaSubtype.photoScreenshot.rawValue), Date().addingTimeInterval(-3600) as NSDate)
         o.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         o.fetchLimit = 1
         guard let asset = PHAsset.fetchAssets(with: .image, options: o).firstObject else { return nil }
@@ -194,9 +196,23 @@ struct ContentView: View {
     static func saveIncoming(_ url: URL) -> URL {
         let inbox = FileStore.shared.root.appendingPathComponent(L("الواردة"), isDirectory: true)
         try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
-        let saved = FileStore.shared.importFiles([url], to: inbox)
-        // نسخة النظام في Inbox لم تعد لازمة — تُحذف فقط بعد نجاح الحفظ (وإلا تبقى ولا يضيع الملف)
-        if !saved.isEmpty, url.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: url) }
+        let dest = FileStore.shared.unique(FileStore.shared.sanitize(url.lastPathComponent), in: inbox)
+        // النسخ في الخلفية: فيديو كبير أو ملف من iCloud لم يُنزَّل بعد لا يجمّد الواجهة (يظهر في «الواردة» حين يكتمل)
+        Task.detached(priority: .userInitiated) {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            var ok = false
+            var err: NSError?
+            NSFileCoordinator().coordinate(readingItemAt: url, options: [.withoutChanges], error: &err) { src in
+                let fm = FileManager.default
+                ok = (try? fm.copyItem(at: src, to: dest)) != nil
+                // لا نكتب فوق ملف موجود أبدًا
+                if !ok, !fm.fileExists(atPath: dest.path) { ok = FileStore.streamCopy(src, to: dest) }
+            }
+            // نسخة النظام في Inbox لم تعد لازمة — تُحذف فقط بعد نجاح الحفظ (وإلا تبقى ولا يضيع الملف)
+            if ok, url.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: url) }
+            await MainActor.run { FileStore.shared.touch() }
+        }
         return inbox
     }
 
@@ -212,7 +228,9 @@ struct ContentView: View {
         // شريط الحالة من المشهد نفسه (يتوفر حتى قبل أن تصبح النافذة رئيسية)، وأقلّه ٥٤ في أجهزة الجزيرة
         let bar = scenes.compactMap { $0.statusBarManager?.statusBarFrame.height }.max() ?? 0
         let safe = scenes.flatMap(\.windows).map(\.safeAreaInsets.top).max() ?? 0
-        return max(bar, safe, 54)
+        // قبل جاهزية النافذة تكون القيمتان صفرًا: ٥٤ مؤقتًا. أما الجوال ذو الزر (SE: ٢٠) فلا يُفرض عليه ظل أعلى من شريطه فيغطي العناوين
+        let v = max(bar, safe)
+        return v > 0 ? v : 54
     }
 
     private let items = [TabItem(tag: 0, title: "الرئيسية", icon: "moon.stars.fill"),
@@ -332,6 +350,10 @@ struct ContentView: View {
             if Notify.enabled { Task { await Notify.reschedule() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in reloadWidgets() }
+        // طلب فتح صفحة وصل والتطبيق نشط أصلًا
+        .onReceive(NotificationCenter.default.publisher(for: .rafiqiOpenTarget).receive(on: DispatchQueue.main)) { _ in
+            if phase == .active { openPendingTarget() }
+        }
         .onChange(of: phase) { _, p in
             // لقطة «آخر الملفات» و«المساحة» لويدجت الأدوات
             if p == .background { FilesWidgetSnapshot.write() }
@@ -511,7 +533,7 @@ struct SettingsView: View {
                 liveCountdown = v; PrayerActivity.enabled = v
                 Task { if v { await PrayerActivity.start() } else { await PrayerActivity.stop() } }
             })) {
-                TileRow(title: "عدّاد الصلاة في الجزيرة الديناميكية", icon: "timer", color: Theme.gold,
+                TileRow(title: "عدّاد الصلاة في شاشة القفل والجزيرة الديناميكية", icon: "timer", color: Theme.gold,
                         subtitle: "على شاشة القفل أيضًا؛ يُحدَّث كلما فتحت رفيقي")
             }
             .tint(Theme.gold)
@@ -571,16 +593,19 @@ struct SettingsView: View {
                 TileRow(title: "تعديل التاريخ الهجري", icon: "moon.fill", color: .teal,
                         subtitle: hijriToday + offsetText)
             }
-            Toggle(isOn: Binding(get: { shami }, set: { shami = $0; Settings.shamiMonths = $0; reloadWidgets() })) {
-                TileRow(title: "أسماء الأشهر الشامية", icon: "calendar", color: .orange,
-                        subtitle: shami ? "كانون الثاني، شباط، آذار…" : "يناير، فبراير، مارس…")
+            // بالإنجليزية الأشهر والأرقام إنجليزية دائمًا: الخياران بلا أثر فلا يُعرضان
+            if !Lang.isEN {
+                Toggle(isOn: Binding(get: { shami }, set: { shami = $0; Settings.shamiMonths = $0; reloadWidgets() })) {
+                    TileRow(title: "أسماء الأشهر الشامية", icon: "calendar", color: .orange,
+                            subtitle: shami ? "كانون الثاني، شباط، آذار…" : "يناير، فبراير، مارس…")
+                }
+                .tint(Theme.gold)
+                Toggle(isOn: Binding(get: { western }, set: { western = $0; Settings.westernDigits = $0; reloadWidgets() })) {
+                    TileRow(title: "الأرقام الإنجليزية", icon: "textformat.123", color: .mint,
+                            subtitle: western ? "123 بدلًا من ١٢٣" : "١٢٣ (الأرقام العربية)")
+                }
+                .tint(Theme.gold)
             }
-            .tint(Theme.gold)
-            Toggle(isOn: Binding(get: { western }, set: { western = $0; Settings.westernDigits = $0; reloadWidgets() })) {
-                TileRow(title: "الأرقام الإنجليزية", icon: "textformat.123", color: .mint,
-                        subtitle: western ? "123 بدلًا من ١٢٣" : "١٢٣ (الأرقام العربية)")
-            }
-            .tint(Theme.gold)
         } header: {
             Text("التاريخ والوقت").id("date")
         } footer: {
@@ -627,7 +652,7 @@ struct SettingsView: View {
                 }
             }
         } footer: {
-            Text("لتغيير لغة التطبيق إلى الإنجليزية أو العكس، افتح «الإعدادات» في الجوال ← «رفيقي» ← «اللغة».")
+            Text("لتغيير لغة التطبيق، افتح «الإعدادات» في الجوال ← «رفيقي» ← «اللغة المفضلة» (تظهر إذا أضفت أكثر من لغة للجوال).")
         }
         // الإصدار ظاهر في بطاقة رفيقي أعلى الصفحة
         Section("حول التطبيق") {
@@ -818,7 +843,7 @@ struct WallpaperSettings: View {
                 Task {
                     let img = await LatestShot.load()
                     await MainActor.run {
-                        if let img { use(img) } else { msg = "تعذّر العثور على لقطة شاشة. تأكّد من السماح بالوصول إلى الصور."; busy = false }
+                        if let img { use(img) } else { msg = "لم نجد لقطة شاشة حديثة. التقط لقطة جديدة، وتأكّد من السماح بالوصول إلى كل الصور (أو اخترها من «الصور»)."; busy = false }
                     }
                 }
             } label: {
@@ -845,7 +870,7 @@ struct WallpaperSettings: View {
                 StepsList(items: [
                     "اضغط مطوّلًا على الشاشة الرئيسية حتى تهتز الأيقونات.",
                     "مرّر إلى آخر صفحة حتى تظهر صفحة فارغة.",
-                    "التقط صورة للشاشة بالضغط على الزر الجانبي وزر رفع الصوت معًا.",
+                    "التقط صورة للشاشة بالضغط على الزر الجانبي وزر رفع الصوت معًا (أو الزر الجانبي وزر الشاشة الرئيسية في الأجهزة ذات الزر).",
                     "عُد إلى التطبيق واختر «استخدام آخر لقطة شاشة».",
                 ])
             } label: {

@@ -31,6 +31,8 @@ enum AppIcons {
 struct AppIconPicker: View {
     @State private var current = SHOT == "appicon" ? "AppIcon-Gold" : AppIcons.currentID
     @State private var error = ""
+    /// طلب تغيير جارٍ: لا يُقبل غيره حتى ينتهي (تتداخل المحاولات فتختلف العلامة عن الأيقونة الفعلية)
+    @State private var busy = false
     private let cols = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
@@ -41,6 +43,7 @@ struct AppIconPicker: View {
                 LazyVGrid(columns: cols, spacing: 18) {
                     ForEach(AppIcons.all) { c in
                         Button { choose(c) } label: { cell(c) }
+                            .disabled(busy)
                             .buttonStyle(PressStyle())
                             .accessibilityLabel(L(c.title))
                             .accessibilityAddTraits(c.id == current ? .isSelected : [])
@@ -91,11 +94,12 @@ struct AppIconPicker: View {
     private func choose(_ c: AppIcons.Choice) {
         guard c.id != current else { return }
         guard UIApplication.shared.supportsAlternateIcons else {
-            error = L("هذا الجهاز لا يدعم تغيير الأيقونة."); return
+            error = L("هذا الجوال لا يدعم تغيير الأيقونة."); return
         }
         let prev = current
-        current = c.id; error = ""
+        current = c.id; error = ""; busy = true
         apply(c.id, attempt: 1) { ok in
+            busy = false
             if ok { AppIcons.currentID = c.id }
             else { current = prev; error = L("تعذّر تغيير الأيقونة، حاول مرة أخرى.") }
         }

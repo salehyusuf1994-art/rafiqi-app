@@ -80,6 +80,8 @@ struct GalleryView: View {
             .onAppear {
                 let s = Styles.stamp
                 if s != stamp { stamp = s; tint = Tint.appColor; favs = Styles.favorites; rev += 1 }
+                // زار المعرض: يختفي التعريف بالويدجت من الرئيسية
+                UserDefaults.standard.set(true, forKey: "home.widgetsSeen")
                 openRequested()
             }
             .onChange(of: nav.open) { _, _ in openRequested() }
@@ -91,7 +93,14 @@ struct GalleryView: View {
         nav.open = nil
         if let w = (Catalog.all + Catalog.lock).first(where: { $0.id == id }) {
             nav.lock = Catalog.isLock(w.families[0])
-            selected = w
+            // قد تكون صفحة ويدجت أُغلقت للتو من خارج SwiftUI (رابط أو زر ويدجت) وحالتها باقية:
+            // نصفّرها أولًا ثم نفتح في الدورة التالية، فتظهر الصفحة دائمًا حتى لو كانت الويدجت نفسها
+            if selected != nil {
+                selected = nil
+                DispatchQueue.main.async { selected = w }
+            } else {
+                selected = w
+            }
         }
     }
 
@@ -223,6 +232,10 @@ struct GalleryContent: View {
                                     WidgetCard(info: it.0, family: it.1, date: date, weather: weather, tint: tint)
                                 }
                                 .buttonStyle(PressStyle())
+                                // قارئ الشاشة: اسم الويدجت ورقمها ومقاسها بدل قراءة كل ما في المعاينة
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(it.0.number + "، " + it.0.name + "، " + Catalog.sizeName(it.1))
+                                .accessibilityAddTraits(.isButton)
                             }
                         }
                         .frame(maxWidth: .infinity)
@@ -355,6 +368,7 @@ struct WidgetDetail: View {
     @State private var tint: Color
     @State private var fav: Bool
     @State private var custom: Bool
+    @State private var confirmAll = false
     @State private var msg = ""
     @State private var showSteps: Bool
 
@@ -437,15 +451,21 @@ struct WidgetDetail: View {
                                     .background(Capsule().fill(Theme.gold))
                             }
                             HStack(spacing: 10) {
-                                Button(action: applyAll) {
+                                Button { confirmAll = true } label: {
                                     Text("تطبيق على الكل").font(Theme.f(.subheadline, .semibold)).foregroundStyle(.white)
                                         .frame(maxWidth: .infinity).padding(.vertical, 11)
                                         .background(Capsule().fill(Theme.card))
                                         .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
                                 }
+                                // يلغي التصاميم الخاصة لكل الويدجت: تأكيد قبل التنفيذ
+                                .confirmationDialog(L("تطبيق هذا التصميم على كل الويدجت؟"), isPresented: $confirmAll, titleVisibility: .visible) {
+                                    Button(L("تطبيق على الكل")) { applyAll() }
+                                } message: {
+                                    Text("يصبح هذا التصميم العام لكل الويدجت، وتُلغى التصاميم الخاصة بكل ويدجت.")
+                                }
                                 if custom {
                                     Button(action: reset) {
-                                        Text("الرجوع للتصميم العام").font(Theme.f(.subheadline)).foregroundStyle(.red.opacity(0.9))
+                                        Text("الرجوع إلى التصميم العام").font(Theme.f(.subheadline)).foregroundStyle(.red.opacity(0.9))
                                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                                             .background(Capsule().fill(Theme.card))
                                     }
@@ -558,7 +578,7 @@ struct WidgetDetail: View {
             step(2, "اضغط «تعديل» أعلى الشاشة، ثم اختر «إضافة أداة».")
             step(3, "اكتب «رفيقي» في خانة البحث، ثم اضغط على التطبيق.")
             step(4, LF("اختر مقاس «%@»", Catalog.sizeName(info.families[0])) + (info.families.count > 1 ? L(" (أو أي مقاس متاح لها)") : "") + L("، ثم اضغط «إضافة أداة»، واسحبها إلى مكانها واضغط «تم»."))
-            step(5, "اضغط مطوّلًا على الويدجت، ثم «تعديل الأداة».")
+            step(5, "اضغط مطوّلًا على الويدجت، ثم اضغط «تعديل الأداة».")
             step(6, LF("من «الويدجت» اختر «%@»", info.number) + (info.hasCalendar ? L("، ومن «التقويم» اختر الهجري أو الميلادي.") : "."))
             step(7, "لمطابقة الخلفية الشفافة حدّد «المكان» وفق موضع الويدجت، واضبط الخلفية من «الإعدادات» ← «الخلفية الشفافة» إن لم تُضبط بعد.")
         }
