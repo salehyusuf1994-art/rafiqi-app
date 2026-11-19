@@ -745,6 +745,7 @@ struct WeatherWeekView: View {
     var body: some View {
         let w = entry.weather
         let days = Array((w?.days ?? []).prefix(6))
+        let weekS = ((0...6).map { fitS("wd\($0)_t", 50, 20) } + [fitS("lbl_today_t", 50, 20)]).min() ?? 0.1
         Root(entry: entry) {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
@@ -758,7 +759,8 @@ struct WeatherWeekView: View {
                     ForEach(Array(days.enumerated()), id: \.offset) { i, d in
                         let date = Date(timeIntervalSince1970: d.t)
                         VStack(spacing: 4) {
-                            Fit(i == 0 ? "lbl_today_t" : "wd\(Cal.weekday(date))_t", 50, 20, i == 0 ? 1 : 0.85)
+                            // مقياس واحد لأسماء الأيام و«اليوم» (لا يكبر اسم ويصغر آخر)
+                            CImg(name: i == 0 ? "lbl_today_t" : "wd\(Cal.weekday(date))_t", s: weekS, opacity: i == 0 ? 1 : 0.85)
                             if let u = Calli.ui(Weather.iconFor(code: d.code)) {
                                 WxImage(img: u).frame(width: 26, height: 26)
                             }

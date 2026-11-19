@@ -90,12 +90,14 @@ struct LeftToLine: View {
 struct WxRows: View {
     let days: [WDay]
     var width: CGFloat = 190
+    /// مقياس واحد لأسماء الأيام في القائمة
+    private var dayS: CGFloat { (0...6).map { fitS("wd\($0)_t", 58, 19) }.min() ?? 0.1 }
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(days.enumerated()), id: \.offset) { i, d in
                 let date = Date(timeIntervalSince1970: d.t)
                 HStack(spacing: 6) {
-                    Fit("wd\(Cal.weekday(date))_t", 58, 19, 0.9)
+                    CImg(name: "wd\(Cal.weekday(date))_t", s: dayS, opacity: 0.9)
                         .frame(width: 62, alignment: .leading)
                     Spacer(minLength: 0)
                     if let u = Calli.ui(Weather.iconFor(code: d.code)) {

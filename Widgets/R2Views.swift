@@ -288,10 +288,12 @@ struct R2WeekView: View {
                         .frame(width: 76, alignment: .leading)
                         ForEach(0..<5, id: \.self) { j in
                             let on = i == 0 && st.next.time == t[idx[j]]
-                            Digits(text: hm12(t[idx[j]]), size: 13, color: .white, bold: on)
+                            Digits(text: hm12(t[idx[j]]), size: 13, color: .white, bold: on, tight: true)
                                 .frame(maxWidth: .infinity)
                         }
                     }
+                    // ارتفاع ثابت للصف: لا يختلف الجدول من خط لآخر (فراغ سطر الأرقام يختلف بين الخطوط)
+                    .frame(height: 22)
                     .padding(.vertical, 4).padding(.horizontal, 4)
                     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(i == 0 ? 0.13 : 0)))
                     .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.white.opacity(i == 0 ? 0.3 : 0), lineWidth: 0.6))
@@ -1309,7 +1311,8 @@ struct R2StorageView: View {
             VStack(spacing: 6) {
                 ZStack {
                     Ring2(p: used, line: 9)
-                    VStack(spacing: 0) {
+                    // مسافة بين النسبة وكلمتها: كانت الأرقام تنزل على «مستخدم» في كل الخطوط
+                    VStack(spacing: 7) {
                         GradDigits(text: R2.num(Int((used * 100).rounded())) + PCT, size: 25)
                         T2(text: L("مستخدم"), size: 11)
                     }

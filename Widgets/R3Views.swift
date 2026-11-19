@@ -117,7 +117,8 @@ struct R3QuoteView: View {
                 Button(intent: QuoteNextIntent()) {
                     VStack(spacing: 6) {
                         Text(verbatim: q.text)
-                            .font(.custom("Amiri-Bold", size: big ? 24 : 17))
+                            // النص القصير يكبر ليملأ الويدجت (كان صغيرًا وسط فراغ كبير)، والطويل يصغر حتى يتسع
+                            .font(.custom("Amiri-Bold", size: quoteSize(q.text.count, big)))
                             .foregroundStyle(.white)
                             .multilineTextAlignment(.center)
                             .lineSpacing(big ? 6 : 2)
@@ -147,6 +148,11 @@ struct R3QuoteView: View {
             .padding(.horizontal, 12).padding(.top, big ? 18 : 12).padding(.bottom, 12)
             .frame(width: sz.width, height: sz.height)
         }
+    }
+
+    private func quoteSize(_ n: Int, _ big: Bool) -> CGFloat {
+        if big { return n < 35 ? 36 : (n < 80 ? 30 : 24) }
+        return n < 35 ? 22 : 17
     }
 }
 

@@ -270,7 +270,7 @@ struct TVVideo: UIViewControllerRepresentable {
     /// الصوت يكمل في الخلفية: النظام يوقف أي فيديو مربوط بالشاشة عند الخروج من التطبيق،
     /// فنفكّ المشغّل عن الشاشة عند الخروج (يكمل الصوت) ونعيده عند الرجوع
     @MainActor
-    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
         weak var vc: AVPlayerViewController?
         let player: AVPlayer
         let tv: TVPlayback

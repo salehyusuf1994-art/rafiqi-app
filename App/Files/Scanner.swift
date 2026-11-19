@@ -327,7 +327,7 @@ enum ScanExport: String, CaseIterable, Identifiable {
 }
 
 enum ScanExporter {
-    static var folder: URL {
+    @MainActor static var folder: URL {
         let d = FileStore.shared.root.appendingPathComponent(L("المسح الضوئي"), isDirectory: true)
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         return d

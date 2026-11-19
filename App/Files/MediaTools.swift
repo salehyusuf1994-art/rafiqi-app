@@ -435,7 +435,8 @@ enum MediaTools {
         engine.connect(eq, to: engine.mainMixerNode, format: format)
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 4096)
         try engine.start()
-        node.scheduleFile(input, at: nil, completionHandler: nil)
+        // جدولة بلا انتظار (التصيير يدوي بعدها؛ النسخة async تنتظر انتهاء التشغيل فتعلق)
+        schedule(node, input)
         node.play()
         let out = output(for: src, suffix: L("معدّل"), ext: "m4a")
         let settings: [String: Any] = [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: format.sampleRate,
@@ -864,4 +865,9 @@ extension CGImagePropertyOrientation {
         @unknown default: self = .up
         }
     }
+}
+
+/// جدولة ملف في مشغّل صوتي دون انتظار انتهائه (للتصيير اليدوي)
+private func schedule(_ node: AVAudioPlayerNode, _ file: AVAudioFile) {
+    node.scheduleFile(file, at: nil, completionHandler: nil)
 }

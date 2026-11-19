@@ -189,7 +189,12 @@ struct MediaView: View {
                 }
             } else {
                 Button {
-                    Task { musicOK = await AudioPlayer.requestMusicAccess(); if musicOK { AudioPlayer.shared.useAppleMusic() } }
+                    // رُفض الإذن سابقًا: النظام لا يسأل مرة ثانية، فنفتح إعدادات رفيقي ليفعّله المستخدم
+                    if MPMediaLibrary.authorizationStatus() == .denied || MPMediaLibrary.authorizationStatus() == .restricted {
+                        if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
+                    } else {
+                        Task { musicOK = await AudioPlayer.requestMusicAccess(); if musicOK { AudioPlayer.shared.useAppleMusic() } }
+                    }
                 } label: {
                     TileRow(title: "السماح بالوصول إلى Apple Music", icon: "music.note", color: .pink,
                             subtitle: "لعرض اسم المقطع والتحكم فيه")

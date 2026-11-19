@@ -85,10 +85,13 @@ struct MTitle: View {
     var size: CGFloat = 17
     @Environment(\.wfont) private var wf
     var body: some View {
+        // النسخ والنستعليق سطرها أطول بكثير من حروفها: لا تُصغَّر بسبب الارتفاع (كانت تظهر صغيرة جدًا)، بل بالعرض فقط
+        let k: CGFloat = wf == .nastaliq ? 1.25 : (wf == .naskh || wf == .ruqaa ? 1.12 : 1)
         Text(text)
-            .font(wf == .thuluth ? .custom("DecoTypeThuluthII", size: size * 1.45) : .custom(wf.ps, size: size))
+            .font(wf == .thuluth ? .custom("DecoTypeThuluthII", size: size * 1.45) : .custom(wf.ps, size: size * k))
             .foregroundStyle(.white)
             .lineLimit(1).minimumScaleFactor(0.5)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

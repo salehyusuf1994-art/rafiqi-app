@@ -841,4 +841,5 @@ T.update({
  'افتح رفيقي لتجديد تنبيهات الصلاة للأيام القادمة.': 'Open Rafiqi to renew prayer alerts for the coming days.',
  'اليوم الوطني': 'National Day',
  'السنة الهجرية': 'Hijri New Year',
+ 'البوصلة': 'Compass',
 })

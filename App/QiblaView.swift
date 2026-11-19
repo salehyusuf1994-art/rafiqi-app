@@ -240,6 +240,10 @@ struct QiblaView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .frame(maxWidth: 380)
+        // قارئ الشاشة: البوصلة عنصر واحد يُقرأ اتجاهه (لا عشرات الأرقام والحروف الدوّارة)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("البوصلة"))
+        .accessibilityValue(compass.hasHeading ? (aligned ? L("أنت باتجاه القبلة") : (diff > 0 ? LF("أدِر يمينًا %@°", ar(Int(abs(diff).rounded()))) : LF("أدِر يسارًا %@°", ar(Int(abs(diff).rounded()))))) : L("جارٍ تحديد الاتجاه…"))
     }
 
     // ── تنبيهات حسب الحالة ──

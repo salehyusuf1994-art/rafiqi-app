@@ -91,7 +91,8 @@ struct CImg: View {
     @Environment(\.wfont) private var wf
     var body: some View {
         // الزخرفة الرمادية للثلث الكبير فقط: تحت هذا المقياس تصير ضجيجًا حول الحروف، فتُستخدم النسخة بلا زخرفة
-        let plain = wf == .thuluth && !Lang.isEN && s < 0.42 && !Calli.isNumeric(name) && Calli.hasPlain(name)
+        // (أيقونات الطقس «ic_» ليست خطًا: نسختها بلا زخرفة تمسح جسم الغيمة الرمادي فتختفي الأيقونة)
+        let plain = wf == .thuluth && !Lang.isEN && s < 0.42 && !Calli.isNumeric(name) && !name.hasPrefix("ic_") && Calli.hasPlain(name)
         if let u = Calli.img(plain ? name + "_n" : name, wf) {
             let b = Calli.size(name)
             // قالب (شكل الحرف فقط) بلون الخط نفسه: يطابق الأرقام والنصوص في كل الأوضاع،

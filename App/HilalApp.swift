@@ -9,6 +9,8 @@ import UserNotifications
 @main
 struct HilalApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    /// إعداد «الأرقام الإنجليزية» يُراقَب هنا: تتبدّل أرقام العدّادات والمنتقيات فورًا لا بعد إعادة التشغيل
+    @AppStorage("western_digits", store: AppGroup.defaults) private var westernDigits = false
     init() {
         // اختبار الواجهة: قناة مضافة تجريبية (نسخة من رابط قناة القرآن)
         if ProcessInfo.processInfo.arguments.contains("-seedTV"), TVChannels.custom.isEmpty,
@@ -64,7 +66,7 @@ struct HilalApp: App {
             ContentView()
                 .font(Theme.f(.body))
                 .environment(\.layoutDirection, Lang.dir)
-                .digitsLocale()
+                .environment(\.locale, Locale(identifier: Lang.isEN ? "en_US" : (westernDigits ? "ar@numbers=latn" : "ar@numbers=arab")))
                 .preferredColorScheme(.dark)
         }
     }

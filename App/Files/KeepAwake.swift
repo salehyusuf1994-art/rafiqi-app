@@ -17,10 +17,14 @@ enum KeepAwake {
     }
 
     /// مهمة خلفية قصيرة يمنحها النظام عند الخروج من التطبيق
+    @MainActor
     final class Background {
         private var id: UIBackgroundTaskIdentifier = .invalid
         init(_ name: String) {
-            id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in self?.finish() }
+            // انتهاء المهلة يأتي من خيط النظام: الإنهاء يعود للخيط الرئيسي
+            id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+                Task { @MainActor in self?.finish() }
+            }
         }
         func finish() {
             guard id != .invalid else { return }

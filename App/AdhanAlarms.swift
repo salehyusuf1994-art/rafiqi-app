@@ -66,7 +66,13 @@ enum AdhanAlarms {
                 ok = false
             }
         }
+        // نجاح جزئي: نلغي ما جُدول ونرجع للإشعارات العادية كلها (كانت بعض الأوقات تُنبَّه مرتين: منبّه وإشعار)
+        if !ok {
+            for s in ids { if let id = UUID(uuidString: s) { try? AlarmManager.shared.cancel(id: id) } }
+            d.set([String](), forKey: idsKey)
+            return false
+        }
         d.set(ids, forKey: idsKey)
-        return ok && !ids.isEmpty
+        return !ids.isEmpty
     }
 }
