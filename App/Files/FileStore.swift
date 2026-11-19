@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 import LocalAuthentication
 import Photos
 import ZIPFoundation
-import AVFoundation
 
 // MARK: - إدارة الملفات: التخزين
 // الملفات في مجلد «المستندات» للتطبيق، فتظهر أيضًا في تطبيق «الملفات» ← «على الـiPhone» ← «رفيقي».
@@ -923,11 +922,6 @@ final class FileStore: ObservableObject {
     // MARK: عرض تجريبي
 
     private func seedDemo() {
-        // فيديو قصير (فحص قفل المشغّل): يُكتب في الخلفية إن لم يوجد
-        let video = root.appendingPathComponent("فيديو.mp4")
-        if ProcessInfo.processInfo.arguments.contains("-seedVideo"), !fm.fileExists(atPath: video.path) {
-            Task.detached { await Self.writeDemoVideo(to: video); await MainActor.run { FileStore.shared.touch() } }
-        }
         guard list(root).isEmpty else { return }
         createFolder(L("قرآن"), in: root)
         createFolder(L("شعر"), in: root)
@@ -953,29 +947,6 @@ final class FileStore: ObservableObject {
             for t in ["صفحة ١", "صفحة ٢"] { c.beginPage(); (t as NSString).draw(at: CGPoint(x: 100, y: 180), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 28)]) }
         }
         importData(pdf, name: "مستند.pdf", to: root)
-    }
-
-    /// فيديو أسود ٢٠ ثانية بلا صوت (للفحص الآلي فقط)
-    nonisolated private static func writeDemoVideo(to url: URL) async {
-        guard let w = try? AVAssetWriter(outputURL: url, fileType: .mp4) else { return }
-        let size = CGSize(width: 320, height: 240)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264,
-                                                                         AVVideoWidthKey: size.width, AVVideoHeightKey: size.height])
-        let ad = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
-            kCVPixelBufferWidthKey as String: Int(size.width), kCVPixelBufferHeightKey as String: Int(size.height)])
-        w.add(input)
-        guard w.startWriting() else { return }
-        w.startSession(atSourceTime: .zero)
-        for i in 0..<20 {
-            while !input.isReadyForMoreMediaData { try? await Task.sleep(nanoseconds: 10_000_000) }
-            guard let pool = ad.pixelBufferPool else { break }
-            var pb: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb)
-            if let pb { ad.append(pb, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: 1)) }
-        }
-        input.markAsFinished()
-        await w.finishWriting()
     }
 }
 

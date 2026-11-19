@@ -522,7 +522,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     }
 
     private let blocker = UIView()
-    private let lockButton = UIButton(type: .system)
+    let lockButton = UIButton(type: .system)
     private let sleepButton = UIButton(type: .system)
 
     /// مؤقّت النوم: يوقف الفيديو بعد مدة
@@ -626,7 +626,8 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         if lockMode == .code { showPad(.unlock) } else { setLockMode(.open); showBar() }
     }
 
-    private func setLockMode(_ m: PlayerLockMode) {
+    /// (داخلي للاختبار)
+    func setLockMode(_ m: PlayerLockMode) {
         lockMode = m
         let on = m != .open
         lockButton.showsMenuAsPrimaryAction = !on
