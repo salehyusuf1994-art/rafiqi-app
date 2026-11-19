@@ -153,8 +153,6 @@ enum Notify {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
-    /// يطلب إذن الإشعارات أول مرة فقط (لو ما سبق سؤال المستخدم) — بدونه ما يظهر «الإشعارات» في إعدادات الآيفون أصلًا
-    @discardableResult
     /// ينسخ أصوات التنبيهات (صوت التنبيه وجزء الأذان) إلى «Library/Sounds» في المجلد المشترك:
     /// النظام يبحث عن الصوت في حزمة العملية التي جدولت الإشعار، والويدجت لا تحمل الأصوات
     static func shareSounds() {
@@ -175,6 +173,8 @@ enum Notify {
         }
     }
 
+    /// يطلب إذن الإشعارات أول مرة فقط (لو ما سبق سؤال المستخدم) — بدونه ما يظهر «الإشعارات» في إعدادات الآيفون أصلًا
+    @discardableResult
     static func askIfNeeded() async -> Bool {
         let s = await UNUserNotificationCenter.current().notificationSettings()
         if s.authorizationStatus == .notDetermined { return await requestPermission() }

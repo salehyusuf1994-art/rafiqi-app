@@ -62,4 +62,19 @@ final class QualityTests: XCTestCase {
         XCTAssertEqual(Calli.resolve("gm3"), "gm3")
         XCTAssertEqual(Words.text("gm1"), Words.gm[0])
     }
+
+    /// ويدجت التاريخين (بلا تحويل للتقويم): «ميلادي شامي» يغيّر أسماء الأشهر الميلادية فيها، والتاريخ الأساسي يبقى كما هو
+    func testShamiOnBothDatesWidget() {
+        XCTAssertFalse(Catalog.info("hilal.daytwoy").hasCalendar)
+        var i = RafiqiSmallIntent()
+        i.design = DesignSmall(rawValue: "hilal.daytwoy") ?? i.design
+        XCTAssertEqual(i.designID, "hilal.daytwoy")
+        i.calendar = .gregorianShami
+        XCTAssertEqual(i.shamiChoice, true)
+        XCTAssertFalse(i.isGregorian)
+        i.calendar = .gregorian
+        XCTAssertEqual(i.shamiChoice, false)
+        i.calendar = .hijri
+        XCTAssertNil(i.shamiChoice)
+    }
 }

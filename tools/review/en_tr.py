@@ -553,7 +553,7 @@ T.update({
 "اختر مقاس «%@»":"Choose the “%@” size"," (أو أي مقاس متاح لها)":" (or any size it supports)",
 "، ثم اضغط «إضافة أداة»، واسحبها إلى مكانها واضغط «تم».":", tap “Add Widget”, drag it into place and tap “Done”.",
 "اضغط مطوّلًا على الويدجت، ثم اضغط «تعديل الأداة».":'Touch and hold the widget, then tap “Edit Widget”.',
-"من «الويدجت» اختر «%@»":"Under “Widget”, choose “%@”","، ومن «التقويم» اختر الهجري أو الميلادي.":", and under “Calendar” choose Hijri or Gregorian.",
+"من «الويدجت» اختر «%@»":"Under “Widget”, choose “%@”","، ومن «التقويم» اختر الهجري أو الميلادي أو الميلادي الشامي.":", and under “Calendar” choose Hijri, Gregorian or Gregorian (Levantine months).","، ولأسماء الأشهر الشامية اختر من «التقويم»: «ميلادي شامي».":". For Levantine month names, choose “Gregorian (Levantine months)” under “Calendar”.",
 "لمطابقة الخلفية الشفافة حدّد «المكان» وفق موضع الويدجت، واضبط الخلفية من «الإعدادات» ← «الخلفية الشفافة» إن لم تُضبط بعد.":"To match the transparent background, set “Position” to where the widget sits, and set up the background in Settings → Transparent background if you haven’t yet.",
 
 'تعذّر التنزيل، تحقّق من الاتصال.':'Download failed. Check your connection.',

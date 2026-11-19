@@ -297,7 +297,8 @@ struct RafiqiSmallIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
     var designID: String? { design.rawValue }
     var isGregorian: Bool { calendar.isGregorian && Catalog.info(design.rawValue).hasCalendar }
-    var shamiChoice: Bool? { Catalog.info(design.rawValue).hasCalendar ? calendar.shami : nil }
+    /// أسماء الأشهر الميلادية تتبع «التقويم» في كل ويدجت، حتى التي تعرض التاريخين معًا: «ميلادي شامي» شامية، «ميلادي» عادية، «هجري» حسب إعداد التطبيق
+    var shamiChoice: Bool? { calendar.shami }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { source == .current ? "" : source.rawValue }
@@ -316,7 +317,8 @@ struct RafiqiMediumIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
     var designID: String? { design.rawValue }
     var isGregorian: Bool { calendar.isGregorian && Catalog.info(design.rawValue).hasCalendar }
-    var shamiChoice: Bool? { Catalog.info(design.rawValue).hasCalendar ? calendar.shami : nil }
+    /// أسماء الأشهر الميلادية تتبع «التقويم» في كل ويدجت، حتى التي تعرض التاريخين معًا: «ميلادي شامي» شامية، «ميلادي» عادية، «هجري» حسب إعداد التطبيق
+    var shamiChoice: Bool? { calendar.shami }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { source == .current ? "" : source.rawValue }
@@ -334,7 +336,8 @@ struct RafiqiLargeIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "الخط", default: .app) var font: FontOpt
     var designID: String? { design.rawValue }
     var isGregorian: Bool { calendar.isGregorian && Catalog.info(design.rawValue).hasCalendar }
-    var shamiChoice: Bool? { Catalog.info(design.rawValue).hasCalendar ? calendar.shami : nil }
+    /// أسماء الأشهر الميلادية تتبع «التقويم» في كل ويدجت، حتى التي تعرض التاريخين معًا: «ميلادي شامي» شامية، «ميلادي» عادية، «هجري» حسب إعداد التطبيق
+    var shamiChoice: Bool? { calendar.shami }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { "" }
