@@ -9,7 +9,7 @@ on:
         default: macos-15
 
 permissions:
-  contents: read   # لا ينشر شيئًا في المستودع
+  contents: write  # يرفع مخرجات مشفّرة فقط (ci/seal.sh)
 
 jobs:
   uitest:
@@ -43,13 +43,11 @@ jobs:
           mkdir -p uiout && cp applog.txt uiout/ || true
           mkdir -p uiout && cp -R ~/uitest/* uiout/ 2>/dev/null || true
           cp ui.log uiout/ ; ls uiout
-      - uses: actions/upload-artifact@v4
+      - name: Seal outputs (encrypted; only the owner's private key opens them)
         if: always()
-        with:
-          name: uiout
-          path: uiout
-          # خاص بالمطوّر: لا فروع عامة؛ يُحذف تلقائيًا بعد يوم
-          retention-days: 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash ci/seal.sh uiout uiout
       - name: Verdict
         if: always()
         run: |

@@ -33,11 +33,11 @@ Before committing UI text: add English strings to `tools/review/en_files.py`, ru
 1. No IPA is installed unless the build, unit tests, UI tests and the Release launch test all pass.
 2. Screenshots from the run are reviewed and approved before the IPA is installed.
 3. Commits that should not trigger CI carry `[skip ci]`.
-4. Workflows have read-only repository access and never push branches; outputs are 1-day artifacts.
+4. Workflows push nothing readable: output branches contain only encrypted data.
 
 ## Rollback
 
-- Nothing is published to public branches. Each run uploads its outputs (IPA, screenshots, logs) as a private-to-the-owner artifact kept for 1 day only; the delivered IPA is kept by the owner. Note the commit hash of every installed IPA.
+- Run outputs (IPA, screenshots, logs) are never published readable. `ci/seal.sh` encrypts them (AES-256 with a random key, wrapped by the RSA public key in `ci/transport_pub.pem`) and pushes only the ciphertext to the output branch. The private key is not in the repository; without it the branch is unreadable. Note the commit hash of every installed IPA.
 - **Do not downgrade below the version that introduced the locked-folder vault** (one-time migration flag `files_vault_v1`). Older builds do not know `Application Support/LockedVault`, so files in locked folders would disappear from the list (they are not deleted, and reappear when a newer build is installed again).
 - Data migrations are flagged in `UserDefaults` (`files_vault_v1`) and must stay additive: never delete the old location until the new one is verified.
 

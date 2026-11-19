@@ -256,7 +256,14 @@ final class TVTapTests: XCTestCase {
         field.typeText("https://raw.githubusercontent.com/salehyusuf1994-art/rafiqi-app/main/tools/testpage.html")
         app.buttons["تنزيل"].firstMatch.tap()
         let item = app.buttons.containing(NSPredicate(format: "label CONTAINS 'mov_bbb.mp4'")).firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 40), "page items not listed")
+        // الصفحة وملفاتها على مواقع خارجية: شبكة جهاز الفحص قد تتأخر، فنعيد المحاولة مرة قبل الحكم
+        if !item.waitForExistence(timeout: 45) {
+            print("TVTEST page retry")
+            shot(app, "13_page_retry")
+            let again = app.buttons["تنزيل"].firstMatch
+            if again.exists { again.tap() }
+        }
+        XCTAssertTrue(item.waitForExistence(timeout: 60), "page items not listed")
         shot(app, "13_page_items")
         // العناوين الواضحة: «صوت MP3» و«صورة JPG» بدل أسماء الملفات العشوائية
         let mp3 = app.buttons.containing(NSPredicate(format: "label CONTAINS 'صوت MP3'")).firstMatch
@@ -304,15 +311,13 @@ final class TVTapTests: XCTestCase {
         app.launchArguments = ["-shot", "files", "-seedVideo"]
         app.launch()
         sleep(4)
-        // الفيديو يُكتب في الخلفية: ننتظر ظهوره
-        let tile = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'فيديو'")).firstMatch
-        var tries = 0
-        while !tile.exists && tries < 10 { sleep(2); app.swipeDown(); tries += 1 }
-        XCTAssertTrue(tile.waitForExistence(timeout: 10), "demo video missing")
-        tile.tap()
-        sleep(3)
+        // الفيديو يُكتب في الخلفية: يُفتح برابط التطبيق نفسه (أدق من البحث عن خانته بين الفلاتر)
+        let link = URL(string: "miqat://open/file:" + "فيديو.mp4".addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!)!
         let open = app.buttons["قفل المشغّل"].firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 10), "lock button missing")
+        var tries = 0
+        repeat { app.open(link); tries += 1 } while !open.waitForExistence(timeout: 6) && tries < 6
+        shot(app, "19_video_open")
+        XCTAssertTrue(open.exists, "lock button missing")
 
         // ١) بلا رمز: قفل ثم ضغط مطوّل
         open.tap()

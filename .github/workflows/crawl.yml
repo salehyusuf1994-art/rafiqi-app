@@ -15,7 +15,7 @@ on:
         default: macos-15
 
 permissions:
-  contents: read   # لا ينشر شيئًا في المستودع
+  contents: write  # يرفع مخرجات مشفّرة فقط (ci/seal.sh)
 
 jobs:
   crawl:
@@ -63,3 +63,18 @@ jobs:
           name: crawl-${{ matrix.tab }}
           path: out
           retention-days: 1
+  publish:
+    needs: crawl
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: all
+      - name: Seal outputs (encrypted)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir pub && cp -R all/*/* pub/ 2>/dev/null || true
+          bash ci/seal.sh pub crawlout

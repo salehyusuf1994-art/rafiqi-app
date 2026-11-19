@@ -20,7 +20,7 @@ on:
         default: false
 
 permissions:
-  contents: read   # لا ينشر شيئًا في المستودع
+  contents: write  # يرفع مخرجات مشفّرة فقط (ci/seal.sh)
 
 jobs:
   build:
@@ -228,10 +228,8 @@ jobs:
           grep -E "error:" ../sim.log > sim_errors.txt 2>/dev/null || true
           xcodebuild -version > xcode.txt
           echo "${{ job.status }}" > status.txt
-      - uses: actions/upload-artifact@v4
+      - name: Seal outputs (encrypted; only the owner's private key opens them)
         if: always()
-        with:
-          name: out
-          path: out
-          # خاص بالمطوّر: لا فروع عامة؛ يُحذف تلقائيًا بعد يوم
-          retention-days: 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash ci/seal.sh out out
