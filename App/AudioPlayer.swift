@@ -118,7 +118,8 @@ final class AudioPlayer: ObservableObject {
         } else {
             let was = pausedByInterruption
             pausedByInterruption = false
-            if was && resume { play() }
+            // يُستأنف الصوت فقط إن بقي هو المالك (لم تبدأ قناة أو فيديو أثناء المكالمة)
+            if was && resume && PlaybackGate.owner == .audio { play() }
         }
     }
 
@@ -344,6 +345,8 @@ final class AudioPlayer: ObservableObject {
         sleepTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(minutes) * 60_000_000_000)
             guard !Task.isCancelled else { return }
+            // المؤقّت بساعة الجوال: إن تأخر كثيرًا (كان التطبيق معلّقًا) لا يوقف ما بدأه المستخدم بعده
+            if Date().timeIntervalSince(at) > 60 { AudioPlayer.shared.cancelSleep(); return }
             await AudioPlayer.shared.fadeOutAndStop()
         }
     }
@@ -388,6 +391,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func play() {
+        pausedByInterruption = false
         PlaybackGate.claim(.audio)
         if state.source == .music { MPMusicPlayerController.systemMusicPlayer.play(); refreshMusic(later: true); return }
         // الإذاعة بث مباشر: الاستئناف يرجع للحظة الحالية لا لمكان الإيقاف
@@ -414,6 +418,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func pause() {
+        pausedByInterruption = false
         if state.source == .music { MPMusicPlayerController.systemMusicPlayer.pause(); refreshMusic(later: true); return }
         player.pause()
         state.position = currentTime()
@@ -509,7 +514,7 @@ final class AudioPlayer: ObservableObject {
         let u = fileQueue[i]
         state.source = .files
         state.title = u.deletingPathExtension().lastPathComponent
-        state.subtitle = u.deletingLastPathComponent().lastPathComponent
+        state.subtitle = FileStore.plainName(u.deletingLastPathComponent())
         start(u)
         if rate != 1 { player.rate = rate }
     }
@@ -532,6 +537,10 @@ final class AudioPlayer: ObservableObject {
     func endSession() {
         if state.source == .files { stopFiles() } else { pause() }
         sessionActive = false
+        // تطبيقات الصوت الأخرى (بودكاست، موسيقى) تستأنف بعد انتهائنا — إلا إن كانت قناة أو فيديو تعمل الآن
+        if PlaybackGate.owner == .audio {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     func stopFiles() {
@@ -622,9 +631,13 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func updateNowPlayingInfo() {
+        // بطاقة شاشة القفل لمن يملك التشغيل الآن فقط (لا تكتب فوق بطاقة قناة أو فيديو يعمل)
+        guard PlaybackGate.owner == .audio else { return }
+        // ملف من مجلد مقفل: لا يظهر اسمه ولا اسم مجلده على شاشة القفل
+        let hidden = currentFile.map { FileStore.isProtectedPath($0) } ?? false
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: state.title,
-            MPMediaItemPropertyArtist: state.subtitle,
+            MPMediaItemPropertyTitle: hidden ? L("ملف محمي") : state.title,
+            MPMediaItemPropertyArtist: hidden ? L("رفيقي") : state.subtitle,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: state.position,
             MPNowPlayingInfoPropertyPlaybackRate: state.playing ? Double(state.source == .files ? rate : 1) : 0.0,
             MPNowPlayingInfoPropertyIsLiveStream: state.source == .radio,
@@ -635,6 +648,9 @@ final class AudioPlayer: ObservableObject {
         let rc = MPRemoteCommandCenter.shared()
         rc.skipForwardCommand.isEnabled = state.source == .files
         rc.skipBackwardCommand.isEnabled = state.source == .files
+        // مدة التقديم قد تتغير من الإعدادات بعد التشغيل
+        rc.skipForwardCommand.preferredIntervals = [NSNumber(value: FilePrefs.skip)]
+        rc.skipBackwardCommand.preferredIntervals = [NSNumber(value: FilePrefs.skip)]
         rc.changePlaybackPositionCommand.isEnabled = state.source != .radio
     }
 }

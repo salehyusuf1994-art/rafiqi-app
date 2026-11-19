@@ -35,7 +35,7 @@ final class SecurityTests: XCTestCase {
         throw XCTSkip("على الجوال الحقيقي يستبدل شهادة النقل الفعلية: المحاكي فقط")
         #endif
         guard let id = WiFiTLS.identity(ip: "192.168.1.20") else {
-            throw XCTSkip("سلسلة المفاتيح غير متاحة في بيئة الاختبار هذه")
+            return XCTFail("تعذّر إنشاء شهادة النقل عبر الواي فاي")
         }
         XCTAssertEqual(id.fingerprint.split(separator: ":").count, 8)
         var cert: SecCertificate?
@@ -113,7 +113,13 @@ final class SecurityTests: XCTestCase {
 
     func testChannelHeadersLeaveUserDefaults() throws {
         let probe = "probe-\(UUID().uuidString)"
-        guard TVSecrets.set(probe, ["x": "y"]) else { throw XCTSkip("سلسلة المفاتيح غير متاحة في بيئة الاختبار هذه") }
+        guard TVSecrets.set(probe, ["x": "y"]) else {
+            #if targetEnvironment(simulator)
+            return XCTFail("حفظ ترويسات القناة في سلسلة المفاتيح فشل")
+            #else
+            throw XCTSkip("سلسلة المفاتيح غير متاحة في بيئة الاختبار هذه")
+            #endif
+        }
         TVSecrets.set(probe, nil)
         let token = "Bearer SECTEST-\(UUID().uuidString)"
         let url = "https://example.com/sectest-\(UUID().uuidString).m3u8"

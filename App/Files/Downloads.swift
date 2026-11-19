@@ -201,6 +201,7 @@ final class DownloadManager: NSObject, ObservableObject {
     /// إزالة من القائمة (الملف المكتمل يبقى في «ملفاتي»)
     func remove(_ ids: Set<UUID>) {
         for id in ids {
+            HLSDownloader.shared.cancel(id)
             tasks[id]?.cancel()
             tasks[id] = nil
             try? FileManager.default.removeItem(at: resumeDir.appendingPathComponent(id.uuidString))
@@ -214,7 +215,8 @@ final class DownloadManager: NSObject, ObservableObject {
 
     func pauseAll() { for it in items where it.state == .running { pause(it.id) } }
     func resumeAll() {
-        for i in items.indices where items[i].state == .paused || items[i].state == .failed { items[i].state = .queued }
+        // تنزيلات البث لا تُستأنف من هنا (تُعاد من رابطها): كانت تبقى تدور بلا نهاية
+        for i in items.indices where (items[i].state == .paused || items[i].state == .failed) && items[i].external != true { items[i].state = .queued }
         save(); pump()
     }
 

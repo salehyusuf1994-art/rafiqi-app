@@ -278,9 +278,9 @@ struct RamadanView: View {
     }
 
     func before(_ r: (inRamadan: Bool, day: Int, len: Int, daysLeft: Int)) -> some View {
-        // يوم / يومان / ٣–١٠ أيام / ١١ يومًا فأكثر
-        let n = r.daysLeft
-        let word = n == 2 ? "lbl_days2_t" : ((3...10).contains(n) ? "lbl_days_t" : (n >= 11 ? "lbl_dayn_t" : "lbl_day_t"))
+        // يوم / يومان / ٣–١٠ أيام / ١١–٩٩ يومًا، والمئات بآخر رقمين (١٠٠ يوم، ١٠٣ أيام، ١٢٠ يومًا)
+        let n = r.daysLeft, m = n % 100
+        let word = n == 2 ? "lbl_days2_t" : ((3...10).contains(m) ? "lbl_days_t" : ((11...99).contains(m) ? "lbl_dayn_t" : "lbl_day_t"))
         return VStack(spacing: 4) {
             Image(systemName: "moon.stars.fill").font(.system(size: 22)).foregroundStyle(TXT)
             Digits(text: ar(r.daysLeft), size: 56, color: .white, bold: true, tight: true)

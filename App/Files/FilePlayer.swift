@@ -2,6 +2,7 @@ import SwiftUI
 import AVKit
 import QuickLook
 import MediaPlayer
+import Combine
 
 // MARK: - فتح الملفات: الصوت في مشغّل رفيقي، والفيديو بملء الشاشة، والباقي بالمعاينة
 
@@ -17,6 +18,7 @@ enum FileOpener {
 
     /// يفتح الملف بحسب نوعه؛ «siblings» لتشغيل الملفات المجاورة بالتتابع
     static func open(_ url: URL, siblings: [URL] = []) {
+        guard !PlayerLockState.active else { return }
         switch FileKind.of(url, isDir: false) {
         case .audio:
             let list = siblings.filter { FileKind.of($0, isDir: false) == .audio }
@@ -31,11 +33,35 @@ enum FileOpener {
     }
 
     static func presentVideo(_ url: URL, playlist: [URL]) {
+        // مشغّل مقفل معروض: لا يُغلق بفتح فيديو آخر
+        guard !PlayerLockState.active else { return }
         let vc = VideoController(playlist: playlist, start: playlist.firstIndex(of: url) ?? 0)
         // فيديو جديد: يوقف الصوت والقنوات، ويغلق أي فيديو سابق ولو كان في النافذة العائمة
         PlaybackGate.claim(.video, video: vc)
         vc.modalPresentationStyle = .fullScreen
+        mark(vc, playlist)
         top()?.present(vc, animated: true)
+    }
+
+    // ── إغلاق المعروض عند القفل ──
+    private static var markKey = 0
+    /// يعلّم شاشةً عُرضت لملف (معاينة، فيديو، أداة) بروابط ملفاتها؛ لتُغلق عند ذهاب التطبيق للخلفية إن لزم
+    static func mark(_ vc: UIViewController, _ urls: [URL]) {
+        objc_setAssociatedObject(vc, &markKey, urls as NSArray, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+    /// عند الذهاب للخلفية: «all» يغلق كل شاشات الملفات (قفل التبويب مفعّل)، وإلا ما كان من مجلد مقفل فقط
+    @MainActor static func closeForLock(all: Bool) {
+        let store = FileStore.shared
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        var vc = scenes.compactMap { $0.keyWindow ?? $0.windows.first }.first?.rootViewController
+        while let p = vc?.presentedViewController {
+            if let urls = objc_getAssociatedObject(p, &markKey) as? [URL],
+               all || urls.contains(where: { store.inVault($0) || store.insideLocked($0) }) {
+                if let v = p as? VideoController { v.closeForLock() } else { p.presentingViewController?.dismiss(animated: false) }
+                return
+            }
+            vc = p
+        }
     }
 
     static func preview(_ url: URL, siblings: [URL]) {
@@ -46,6 +72,7 @@ enum FileOpener {
         ql.delegate = ds
         ql.currentPreviewItemIndex = items.firstIndex(of: url) ?? 0
         objc_setAssociatedObject(ql, &PreviewSource.key, ds, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        mark(ql, items)
         top()?.present(ql, animated: true)
     }
 
@@ -100,7 +127,11 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         }
     }
 
+    /// يُغلق لأن التطبيق ذهب للخلفية والملف محمي
+    func closeForLock() { shutDown() }
+
     private func shutDown() {
+        if locked { PlayerLockState.active = false }
         statusObs = nil
         if let timeObs, let p = player { p.removeTimeObserver(timeObs); self.timeObs = nil }
         if let endObs { NotificationCenter.default.removeObserver(endObs); self.endObs = nil }
@@ -154,7 +185,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     /// «الرجوع إلى ملء الشاشة» من النافذة العائمة
     func playerViewController(_ playerViewController: AVPlayerViewController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
         if view.window != nil || presentingViewController != nil { completionHandler(true); return }
-        guard let top = FileOpener.top() else { completionHandler(false); return }
+        guard let top = FileOpener.top(), !top.isBeingPresented, !top.isBeingDismissed else { completionHandler(false); return }
         modalPresentationStyle = .fullScreen
         top.present(self, animated: true) { completionHandler(true) }
     }
@@ -347,15 +378,16 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     func updateNowPlaying() {
         guard PlaybackGate.owner == .video, VideoController.active === self || VideoController.active == nil, let p = player else { return }
         let url = playlist[index]
+        let hidden = FileStore.isProtectedPath(url)
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: url.deletingPathExtension().lastPathComponent,
+            MPMediaItemPropertyTitle: hidden ? L("ملف محمي") : url.deletingPathExtension().lastPathComponent,
             MPMediaItemPropertyArtist: hasNeighbours ? LF("%@ من %@", ar((order.firstIndex(of: index) ?? 0) + 1), ar(playlist.count)) : L("رفيقي"),
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.video.rawValue,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: max(0, p.currentTime().seconds.isFinite ? p.currentTime().seconds : 0),
             MPNowPlayingInfoPropertyPlaybackRate: Double(p.rate),
         ]
         if let d = p.currentItem?.duration.seconds, d.isFinite, d > 0 { info[MPMediaItemPropertyPlaybackDuration] = d }
-        if let nowPlayingArt { info[MPMediaItemPropertyArtwork] = nowPlayingArt }
+        if let nowPlayingArt, !hidden { info[MPMediaItemPropertyArtwork] = nowPlayingArt }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         let rc = MPRemoteCommandCenter.shared()
         rc.skipForwardCommand.isEnabled = false
@@ -483,7 +515,8 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
 
     private func toast(_ s: String) {
         flash.text = L(s)
-        flash.frame.size.width = min(view.bounds.width - 40, 290)
+        flash.numberOfLines = 1
+        flash.frame.size = CGSize(width: min(view.bounds.width - 40, 290), height: 60)
         flash.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY - 90)
         UIView.animate(withDuration: 0.15, animations: { self.flash.alpha = 1 }) { _ in UIView.animate(withDuration: 0.4, delay: 1.1) { self.flash.alpha = 0 } }
         keepBar()
@@ -536,7 +569,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         sleepButton.menu = UIMenu(title: L("مؤقّت النوم"), children: [UIDeferredMenuElement.uncached { [weak self] done in MainActor.assumeIsolated {
             let a = AudioPlayer.shared
             var items: [UIMenuElement] = []
-            if a.sleepAt != nil {
+            if a.sleepAt != nil || a.sleepAtEnd {
                 items.append(UIAction(title: L("إلغاء المؤقّت"), image: UIImage(systemName: "xmark"), attributes: .destructive) { _ in
                     MainActor.assumeIsolated { a.cancelSleep(); self?.refreshSleepIcon() } })
             }
@@ -552,10 +585,16 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
             sleepButton.bottomAnchor.constraint(equalTo: lockButton.topAnchor, constant: -14),
         ])
         refreshSleepIcon()
+        // المؤقّت قد ينتهي أو يُلغى من مكان آخر: الأيقونة تتبع حالته دائمًا
+        sleepSub = AudioPlayer.shared.$sleepAt.combineLatest(AudioPlayer.shared.$sleepAtEnd)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.refreshSleepIcon() } }
     }
+    private var sleepSub: AnyCancellable?
 
     private func refreshSleepIcon() {
-        let on = AudioPlayer.shared.sleepAt != nil
+        let a = AudioPlayer.shared
+        let on = a.sleepAt != nil || a.sleepAtEnd
         sleepButton.setImage(UIImage(systemName: on ? "moon.zzz.fill" : "moon.zzz", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)), for: .normal)
         sleepButton.tintColor = on ? UIColor(Theme.gold) : .white
     }
@@ -573,7 +612,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         var items: [UIMenuElement] = [
             UIAction(title: L("قفل الشاشة"), subtitle: L("يُفتح بضغطة مطوّلة على القفل"), image: UIImage(systemName: "lock")) { [weak self] _ in
                 MainActor.assumeIsolated { self?.setLockMode(.hold) } },
-            UIAction(title: L("قفل برمز سري"), subtitle: isSet ? L("يُفتح بالرمز أو ببصمة الوجه") : L("تختار رمزًا من ٤ أرقام"),
+            UIAction(title: L("قفل برمز سري"), subtitle: isSet ? (PlayerLockCode.ownerAuthAvailable ? Biometry.text(face: "يُفتح بالرمز أو ببصمة الوجه", touch: "يُفتح بالرمز أو ببصمة الإصبع") : L("يُفتح بالرمز")) : L("تختار رمزًا من ٤ أرقام"),
                      image: UIImage(systemName: "lock.shield")) { [weak self] _ in
                 MainActor.assumeIsolated {
                     if PlayerLockCode.isSet { self?.setLockMode(.code) } else { self?.showPad(.create(lockAfter: true)) }
@@ -603,8 +642,11 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         // والمشغّل مفتوح يفتح الزر قائمته؛ والمقفل يعرض طريقة الفتح
         guard locked else { return }
         flash.text = PlayerLockFlow.hint(lockMode)
-        flash.frame.size.width = min(view.bounds.width - 48, 320)
+        // التلميح جملة كاملة: سطران عند الحاجة بدل قصّه بنقاط
+        flash.numberOfLines = 2
+        flash.frame.size = CGSize(width: min(view.bounds.width - 48, 340), height: 84)
         flash.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        UIAccessibility.post(notification: .announcement, argument: flash.text)
         UIView.animate(withDuration: 0.15, animations: { self.flash.alpha = 1 }) { _ in UIView.animate(withDuration: 0.4, delay: 1.4) { self.flash.alpha = 0 } }
     }
 
@@ -630,10 +672,19 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     func setLockMode(_ m: PlayerLockMode) {
         lockMode = m
         let on = m != .open
+        PlayerLockState.active = on
         lockButton.showsMenuAsPrimaryAction = !on
         lockButton.menu = on ? nil : openMenu
         lockButton.accessibilityLabel = on ? L("المشغّل مقفل") : L("قفل المشغّل")
         lockButton.accessibilityHint = on ? PlayerLockFlow.hint(m) : nil
+        // قارئ الشاشة: إجراء «فتح القفل» يسلك الطريق نفسه (الرمز يُطلب في القفل بالرمز)
+        lockButton.accessibilityCustomActions = on ? [UIAccessibilityCustomAction(name: L("فتح القفل")) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.locked else { return false }
+                if self.lockMode == .code { self.showPad(.unlock) } else { self.setLockMode(.open); self.showBar() }
+                return true
+            }
+        }] : nil
         showsPlaybackControls = !on
         blocker.isHidden = !on
         sleepButton.isHidden = on
@@ -649,6 +700,8 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         // أثناء القفل: لا نافذة عائمة (كانت تظهر بسحبة واحدة وفيها كل أزرار التحكم)، وسحبات الحواف تحتاج سحبة ثانية
         allowsPictureInPicturePlayback = !on
         canStartPictureInPictureAutomaticallyFromInline = !on
+        // لا إغلاق بالسحب للأسفل أثناء القفل
+        isModalInPresentation = on
         setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
         // قارئ الشاشة لا يصل لما تحت طبقة القفل
@@ -667,7 +720,8 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         p.seek(to: CMTime(seconds: t, preferredTimescale: 600)) { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateNowPlaying() } }
         }
-        flash.frame.size.width = 110
+        flash.numberOfLines = 1
+        flash.frame.size = CGSize(width: 110, height: 60)
         flash.text = (forward ? "+" : "−") + "\(FilePrefs.skip)"
         flash.center = CGPoint(x: forward ? view.bounds.width * 0.78 : view.bounds.width * 0.22, y: view.bounds.midY)
         UIView.animate(withDuration: 0.15, animations: { self.flash.alpha = 1 }) { _ in
@@ -689,6 +743,9 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
             player?.pause()
             if Self.active === self { Self.active = nil }
             clearNowPlaying()
+            // أُغلق نهائيًا: لا يبقى مراقب نهاية المقطع ولا حالة القفل
+            if let endObs { NotificationCenter.default.removeObserver(endObs); self.endObs = nil }
+            if locked { PlayerLockState.active = false }
         }
     }
 

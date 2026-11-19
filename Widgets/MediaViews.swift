@@ -127,6 +127,18 @@ struct MBtn: View {
                                            startPoint: .top, endPoint: .bottom), lineWidth: 0.8))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    /// اسم الزر لقارئ الشاشة
+    private var label: String {
+        switch action {
+        case "next": return L("التالي")
+        case "prev": return L("السابق")
+        case "repeat": return L("التكرار")
+        case "shuffle": return L("تشغيل عشوائي")
+        default: return L(icon.contains("pause") || icon.contains("stop") ? "إيقاف" : "تشغيل")
+        }
     }
 }
 

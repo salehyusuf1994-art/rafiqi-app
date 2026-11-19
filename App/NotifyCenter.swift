@@ -281,7 +281,9 @@ struct NotifyCenterView: View {
             HStack(spacing: 6) {
                 Image(systemName: on ? "bell.fill" : "bell.slash")
                     .font(Theme.f(.caption)).foregroundStyle(on ? Theme.gold : Theme.sub)
-                Text(L(on ? (pre ? "مفعّل، وقبله بـ٥ دقائق" : "مفعّل") : (pre ? "قبله بـ٥ دقائق فقط" : "متوقّف")))
+                // الأرقام تتبع إعداد «الأرقام الإنجليزية»
+                Text(verbatim: on ? (pre ? LF("مفعّل، وقبله بـ%@ دقائق", ar(Notify.preMinutes)) : L("مفعّل"))
+                                  : (pre ? LF("قبله بـ%@ دقائق فقط", ar(Notify.preMinutes)) : L("متوقّف")))
                     .font(Theme.f(.caption)).foregroundStyle(on || pre ? .white.opacity(0.85) : Theme.sub)
                 Spacer(minLength: 0)
                 if let t = it.time(on: Date()) {

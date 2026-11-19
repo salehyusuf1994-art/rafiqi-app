@@ -4,6 +4,19 @@ import CryptoKit
 import LocalAuthentication
 import Security
 
+/// نوع البصمة في الجوال: الوجه (Face ID) أو الإصبع (Touch ID في iPhone SE) — للأيقونة والنص الصحيحين
+enum Biometry {
+    static let isTouch: Bool = {
+        let c = LAContext()
+        var e: NSError?
+        _ = c.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e)
+        return c.biometryType == .touchID
+    }()
+    static var icon: String { isTouch ? "touchid" : "faceid" }
+    /// النص المناسب للجوال (مترجم)
+    static func text(face: String, touch: String) -> String { L(isTouch ? touch : face) }
+}
+
 // MARK: - قفل المشغّل
 // قفل يمنع اللمس أثناء المشاهدة (للأطفال أو الجيب)، بطريقتين:
 // • بلا رمز: يُفتح بضغطة مطوّلة على القفل (حلقة ذهبية تمتلئ أثناء الضغط)
@@ -246,13 +259,13 @@ struct PasscodePad: View {
                 // صاحب الجوال: بصمة الوجه بدل الرمز (لا تظهر عند اختيار رمز جديد)
                 if !creating && PlayerLockCode.ownerAuthAvailable {
                     Button { Task { await faceID() } } label: {
-                        Image(systemName: "faceid").font(.system(size: size * 0.36, weight: .regular))
+                        Image(systemName: Biometry.icon).font(.system(size: size * 0.36, weight: .regular))
                             .foregroundStyle(.white.opacity(0.85)).frame(width: size, height: size)
                     }
                     .buttonStyle(.plain)
                     // تبقى متاحة أثناء مهلة الأخطاء: محاولات طفل لا تمنع صاحب الجوال (النظام يحدّ البصمة بنفسه)
                     .disabled(success || checking)
-                    .accessibilityLabel(L("فتح ببصمة الوجه"))
+                    .accessibilityLabel(Biometry.text(face: "فتح ببصمة الوجه", touch: "فتح ببصمة الإصبع"))
                 } else {
                     Color.clear.frame(width: size, height: size)
                 }

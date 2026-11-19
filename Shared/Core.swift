@@ -338,16 +338,19 @@ enum Prayer {
                  at(method.isha ?? 18, t[5], false)]
             t = h.map { $0 / 24 }
         }
-        // العروض العالية: إن لم تبلغ الشمس زاوية الفجر أو العشاء، أو طال الوقت عن الحد،
-        // يُؤخذ جزء من الليل (النصف، وفوق ٤٨° السُّبع) — لا يؤثر في المملكة ولا ما يشابهها
-        let night = 24 - (h[4] - h[1])
-        let portion = night * (abs(lat) > 48 ? 1.0 / 7.0 : 0.5)
-        if !reaches(method.fajr, t[0]) || h[1] - h[0] > portion { h[0] = h[1] - portion }
+        // العروض العالية: إن لم تبلغ الشمس زاوية الفجر أو العشاء، أو طال الوقت عن الحد، يُؤخذ جزء من الليل:
+        // فوق ٤٨° سُبع الليل (المعمول به هناك)، وتحتها قاعدة الزاوية (الزاوية ÷ ٦٠ من الليل) — كانت «نصف الليل»
+        // فيقع العشاء بعد منتصف الليل في مدن مثل زيورخ صيفًا. لا يؤثر شيء من هذا في المملكة وما يشابهها
+        let night = max(0, 24 - (h[4] - h[1]))
+        let high = abs(lat) > 48
+        let fajrPortion = night * (high ? 1.0 / 7.0 : method.fajr / 60)
+        if !reaches(method.fajr, t[0]) || h[1] - h[0] > fajrPortion { h[0] = h[1] - fajrPortion }
         if let mins = method.ishaMinutes {
             let ramadan = method.ramadanMinutes != nil && Cal.hijri(noon).m == 9
             h[5] = h[4] + (ramadan ? method.ramadanMinutes! : mins) / 60
-        } else if !reaches(method.isha ?? 18, t[5]) || h[5] - h[4] > portion {
-            h[5] = h[4] + portion
+        } else {
+            let ishaPortion = night * (high ? 1.0 / 7.0 : (method.isha ?? 18) / 60)
+            if !reaches(method.isha ?? 18, t[5]) || h[5] - h[4] > ishaPortion { h[5] = h[4] + ishaPortion }
         }
         // منتصف الليل بفارق الظهر نفسه (tz): يوم تغيّر التوقيت الصيفي يكون اليوم ٢٣ أو ٢٥ ساعة،
         // فبداية اليوم الفعلية + ساعات بفارق آخر تزيح الأوقات ساعة — نطرح ١٢ ساعة من الظهر بدلها

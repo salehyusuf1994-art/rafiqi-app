@@ -121,9 +121,9 @@ struct MonthlyTimetableView: View {
         let (first, _) = month
         let mid = first.addingTimeInterval(14 * 86400)
         let c = hijri ? UQ.hijri : UQ.greg
-        let base = hijri ? mid.addingTimeInterval(UQ.off) : mid
+        let base = hijri ? UQ.shift(mid, Settings.hijriOffset) : mid
         let moved = c.date(byAdding: .month, value: n, to: base) ?? base
-        withAnimation(.snappy) { anchor = hijri ? moved.addingTimeInterval(-UQ.off) : moved }
+        withAnimation(.snappy) { anchor = hijri ? UQ.shift(moved, -Settings.hijriOffset) : moved }
     }
 
     /// رمضان القادم (أو الحالي)
@@ -131,7 +131,7 @@ struct MonthlyTimetableView: View {
         hijri = true
         let h = UQ.h(Date())
         let y = (h.month ?? 1) <= 9 ? (h.year ?? 1448) : (h.year ?? 1448) + 1
-        if let d = UQ.hijri.date(from: DateComponents(year: y, month: 9, day: 10)) { anchor = d.addingTimeInterval(-UQ.off) }
+        if let d = UQ.hijri.date(from: DateComponents(year: y, month: 9, day: 10)) { anchor = UQ.shift(d, -Settings.hijriOffset) }
     }
 
     /// ملف PDF بمقاس A4 للطباعة أو المشاركة

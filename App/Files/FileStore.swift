@@ -250,12 +250,14 @@ final class FileStore: ObservableObject {
     func displayName(_ dir: URL) -> String {
         if dir.standardizedFileURL == root.standardizedFileURL { return L("ملفاتي") }
         if dir.standardizedFileURL == trash.standardizedFileURL { return L("سلة المحذوفات") }
+        if Self.same(dir, vaultTrash) { return L("محذوفات المجلدات المقفلة") }
         return Self.plainName(dir)
     }
 
     // MARK: القراءة
 
-    func item(_ url: URL) -> FileItem? {
+    func item(_ url: URL) -> FileItem? { Self.itemSync(url) }
+    nonisolated static func itemSync(_ url: URL) -> FileItem? {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey, .creationDateKey, .totalFileAllocatedSizeKey]
         guard let v = try? url.resourceValues(forKeys: keys) else { return nil }
         let dir = v.isDirectory ?? false
@@ -272,13 +274,23 @@ final class FileStore: ObservableObject {
         var out = names.filter { !$0.hasPrefix(".") || $0.hasPrefix(Self.lockPrefix) }
             .compactMap { item(dir.appendingPathComponent($0)) }
         if let twin = vaultTwin(of: dir) {
-            let all = Self.same(twin, vaultTrash)
-            let extra = ((try? fm.contentsOfDirectory(atPath: twin.path)) ?? [])
-                .filter { $0.hasPrefix(Self.lockPrefix) || (all && !$0.hasPrefix(".")) }
+            let extra = ((try? fm.contentsOfDirectory(atPath: twin.path)) ?? []).filter { $0.hasPrefix(Self.lockPrefix) }
             out += extra.compactMap { item(twin.appendingPathComponent($0)) }
+            // ما حُذف من داخل مجلد مقفل لا يظهر مع المحذوفات العادية: يُجمع في مجلد واحد مقفل يحتاج تحققًا
+            if Self.same(twin, vaultTrash), vaultTrashLooseCount > 0, let v = item(vaultTrash) {
+                out.append(FileItem(url: vaultTrash, name: L("محذوفات المجلدات المقفلة"), isDir: true, size: v.size,
+                                    modified: v.modified, created: v.created, kind: .folder))
+            }
         }
         return out
     }
+
+    /// عدد ما حُذف من داخل المجلدات المقفلة (ملفات ومجلدات عادية الاسم في سلة الخزنة)
+    private var vaultTrashLooseCount: Int {
+        ((try? fm.contentsOfDirectory(atPath: vaultTrash.path)) ?? []).filter { !$0.hasPrefix(".") }.count
+    }
+    /// مجلد سلة الخزنة نفسه: لا يُنقل ولا يُسمّى ولا يُسترجع ولا يُنسخ
+    func isVaultTrashRoot(_ u: URL) -> Bool { Self.same(u, vaultTrash) }
 
     /// توأم المجلد في الخزنة (لمجلدات «ملفاتي» فقط)
     private func vaultTwin(of dir: URL) -> URL? {
@@ -292,6 +304,10 @@ final class FileStore: ObservableObject {
     // MARK: القفل الحقيقي للمجلدات
     /// المجلد المقفل يُعاد تسميته باسم مخفي (يبدأ بنقطة)؛ فلا يظهر في تطبيق «الملفات» ولا Finder ولا الواي فاي ولا البحث
     nonisolated static let lockPrefix = ".rafiqi-locked-"
+    /// ملف داخل الخزنة أو داخل مجلد مقفل (لا يُعرض اسمه خارج التطبيق: شاشة القفل، الإشعارات…)
+    nonisolated static func isProtectedPath(_ u: URL) -> Bool {
+        u.standardizedFileURL.path.contains("/LockedVault/") || u.pathComponents.contains { $0.hasPrefix(lockPrefix) }
+    }
     nonisolated static func plainName(_ u: URL) -> String {
         let n = u.lastPathComponent
         return n.hasPrefix(lockPrefix) ? String(n.dropFirst(lockPrefix.count)) : n
@@ -300,6 +316,7 @@ final class FileStore: ObservableObject {
     /// ينقل مفاتيح البيانات الإضافية للمجلد وكل ما تحته
     private func moveMetaTree(from a: URL, to b: URL) {
         let ka = key(a), kb = key(b)
+        if ka != kb { Task.detached(priority: .utility) { ScanProjects.remap(from: ka, to: kb) } }
         func map(_ k: String) -> String? {
             if k == ka { return kb }
             if k.hasPrefix(ka + "/") { return kb + k.dropFirst(ka.count) }
@@ -398,10 +415,13 @@ final class FileStore: ObservableObject {
     }
 
     /// كل الملفات داخل مجلد وما تحته (للبحث والتصنيفات)
-    func deepList(_ dir: URL) -> [FileItem] {
-        guard let e = fm.enumerator(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return [] }
+    func deepList(_ dir: URL) -> [FileItem] { Self.deepListSync(dir) }
+    /// نسخة تعمل خارج الخيط الرئيسي (البحث في كل المجلدات لا يجمّد الواجهة)
+    nonisolated static func deepListSync(_ dir: URL) -> [FileItem] {
+        guard let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey],
+                                                     options: [.skipsHiddenFiles]) else { return [] }
         var out: [FileItem] = []
-        for case let u as URL in e { if let i = item(u) { out.append(i) } }
+        for case let u as URL in e { if let i = itemSync(u) { out.append(i) } }
         return out
     }
 
@@ -446,8 +466,8 @@ final class FileStore: ObservableObject {
     func count(_ dir: URL) -> Int {
         var n = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") || $0.hasPrefix(Self.lockPrefix) }.count
         if let twin = vaultTwin(of: dir) {
-            let all = Self.same(twin, vaultTrash)
-            n += ((try? fm.contentsOfDirectory(atPath: twin.path)) ?? []).filter { $0.hasPrefix(Self.lockPrefix) || (all && !$0.hasPrefix(".")) }.count
+            n += ((try? fm.contentsOfDirectory(atPath: twin.path)) ?? []).filter { $0.hasPrefix(Self.lockPrefix) }.count
+            if Self.same(twin, vaultTrash), vaultTrashLooseCount > 0 { n += 1 }
         }
         return n
     }
@@ -495,7 +515,7 @@ final class FileStore: ObservableObject {
     @discardableResult
     func rename(_ url: URL, to newName: String) -> URL? {
         var n = sanitize(newName)
-        guard !n.isEmpty else { return nil }
+        guard !n.isEmpty, !isVaultTrashRoot(url) else { return nil }
         let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         if !isDir, (n as NSString).pathExtension.isEmpty, !url.pathExtension.isEmpty { n += "." + url.pathExtension }
         if url.lastPathComponent.hasPrefix(Self.lockPrefix) { n = Self.lockPrefix + n }
@@ -513,7 +533,7 @@ final class FileStore: ObservableObject {
     /// نقل إلى مجلد (يتجاهل نقل المجلد داخل نفسه)
     func move(_ urls: [URL], to dir: URL) -> Int {
         var n = 0
-        for u in urls {
+        for u in urls where !isVaultTrashRoot(u) {
             // المقارنة بالمفتاح المنطقي (المجلد وتوأمه في الخزنة مكان واحد)
             let ku = key(u), kd = key(dir)
             if kd == ku || kd.hasPrefix(ku + "/") { continue }
@@ -537,7 +557,7 @@ final class FileStore: ObservableObject {
     @discardableResult
     func copy(_ urls: [URL], to dir: URL? = nil) -> [URL] {
         var out: [URL] = []
-        for u in urls {
+        for u in urls where !isVaultTrashRoot(u) {
             let d = dir.map { physicalDir(forName: u.lastPathComponent, in: $0) } ?? u.deletingLastPathComponent()
             let base = (u.lastPathComponent as NSString).deletingPathExtension, ext = u.pathExtension
             let name = dir == nil ? (ext.isEmpty ? LF("%@ - نسخة", base) : LF("%@ - نسخة", base) + "." + ext) : u.lastPathComponent
@@ -659,7 +679,7 @@ final class FileStore: ObservableObject {
     }
 
     func restore(_ urls: [URL]) {
-        for u in urls {
+        for u in urls where !isVaultTrashRoot(u) {
             let name = u.lastPathComponent
             let top = isTopOfTrash(u)
             let logical = (top ? meta.trashOrigin[name].map { url(forKey: $0) } : nil) ?? root
@@ -689,6 +709,15 @@ final class FileStore: ObservableObject {
     }
 
     func deleteForever(_ urls: [URL]) {
+        var urls = urls
+        // مجلد «محذوفات المجلدات المقفلة»: يُفرغ محتواه فقط (يبقى المجلد)، ولا يُمس قبل التحقق
+        if let i = urls.firstIndex(where: isVaultTrashRoot) {
+            urls.remove(at: i)
+            if !needsUnlock(vaultTrash) {
+                urls += ((try? fm.contentsOfDirectory(at: vaultTrash, includingPropertiesForKeys: nil)) ?? [])
+                    .filter { !$0.lastPathComponent.hasPrefix(".") }
+            }
+        }
         for u in urls {
             let top = isTopOfTrash(u)
             try? fm.removeItem(at: u)
@@ -733,11 +762,12 @@ final class FileStore: ObservableObject {
         saveMeta()
     }
 
-    func isLocked(_ u: URL) -> Bool { u.lastPathComponent.hasPrefix(Self.lockPrefix) || meta.locked.contains(key(u)) }
+    func isLocked(_ u: URL) -> Bool { u.lastPathComponent.hasPrefix(Self.lockPrefix) || meta.locked.contains(key(u)) || isVaultTrashRoot(u) }
     func needsUnlock(_ u: URL) -> Bool { isLocked(u) && !unlocked.contains(key(u)) }
     /// قفل/فتح المجلد: يُخفى فعليًا باسم مخفي، ويرجع رابطه الجديد
     @discardableResult
     func setLocked(_ u: URL, _ on: Bool) -> URL {
+        if isVaultTrashRoot(u) { return u }
         let parent = u.deletingLastPathComponent()
         let plain = Self.plainName(u)
         // القفل: من «ملفاتي» إلى توأم المجلد في الخزنة. الفتح: يرجع لـ«ملفاتي» إن لم يكن داخل مجلد مقفل آخر
@@ -771,7 +801,8 @@ final class FileStore: ObservableObject {
     static func authenticate(_ reason: String) async -> Bool {
         let ctx = LAContext()
         var err: NSError?
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else { return true }
+        // بدون رمز قفل للجوال لا يمكن التحقق: يبقى المقفل مقفلًا (لا يُفتح لأي أحد) حتى يُضبط الرمز
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else { return false }
         return (try? await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
     }
 
@@ -827,7 +858,8 @@ final class FileStore: ObservableObject {
                             }
                         }
                     } else {
-                        try archive.addEntry(with: u.lastPathComponent, relativeTo: dir, compressionMethod: .deflate)
+                        // كل ملف من مجلده هو (التحديد قد يجمع ملفات من مجلدات مختلفة عبر البحث)
+                        try archive.addEntry(with: u.lastPathComponent, relativeTo: u.deletingLastPathComponent(), compressionMethod: .deflate)
                     }
                 }
                 return true

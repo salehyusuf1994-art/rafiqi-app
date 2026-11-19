@@ -68,7 +68,7 @@ enum NotifyKinds {
     static let snooze = "SNOOZE"
 
     static var categories: Set<UNNotificationCategory> {
-        let snooze = UNNotificationAction(identifier: Self.snooze, title: L("ذكّرني بعد ١٠ دقائق"), options: [],
+        let snooze = UNNotificationAction(identifier: Self.snooze, title: LF("ذكّرني بعد %@ دقائق", ar(10)), options: [],
                                           icon: UNNotificationActionIcon(systemImageName: "clock.arrow.circlepath"))
         return [
             UNNotificationCategory(identifier: prayer, actions: [], intentIdentifiers: [], options: []),

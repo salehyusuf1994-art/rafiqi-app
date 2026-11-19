@@ -36,7 +36,7 @@ jobs:
           xcrun simctl spawn $UDID defaults write -g AppleLocale ar_SA
           xcodebuild test -project Hilal.xcodeproj -scheme Hilal -destination "id=$UDID" \
             -derivedDataPath uibuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
-            -only-testing:HilalUITests/TVTapTests > ui.log 2>&1 || true
+            -only-testing:HilalUITests/TVTapTests > ui.log 2>&1 && echo 0 > ui.rc || echo $? > ui.rc
           grep -E "TVTEST|error:|Test Case|passed|failed" ui.log | head -80
           xcrun simctl spawn $UDID log show --last 70m --style compact --predicate 'eventMessage CONTAINS "TVDBG" OR eventMessage CONTAINS "RFDBG" OR eventMessage CONTAINS "SEPTEST" OR eventMessage CONTAINS[c] "attempt to present" OR eventMessage CONTAINS[c] "presentation"' > applog.txt 2>&1 || true
           grep -E "TVDBG|RFDBG|SEPTEST|present" applog.txt | head -80
@@ -53,4 +53,7 @@ jobs:
         run: |
           grep -q "Executed" ui.log || { echo "::error::UI tests did not run (build failed)"; grep -E "error:" ui.log | head; exit 1; }
           if grep -qE "Test Case .* failed" ui.log; then echo "::error::UI test failures"; grep -E "Test Case .* failed" ui.log; exit 1; fi
+          # رمز خروج xcodebuild نفسه: أي فشل لم يظهر في الأسطر أعلاه (انهيار، مهلة) يوقف الحكم
+          test "$(cat ui.rc 2>/dev/null)" = "0" || { echo "::error::xcodebuild test exited with $(cat ui.rc 2>/dev/null)"; tail -30 ui.log; exit 1; }
+          grep -q "\*\* TEST SUCCEEDED \*\*" ui.log || { echo "::error::no TEST SUCCEEDED"; exit 1; }
           echo "all UI tests passed"

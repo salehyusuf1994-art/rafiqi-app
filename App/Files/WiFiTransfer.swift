@@ -42,7 +42,11 @@ final class WiFiServer: ObservableObject {
             let params = NWParameters(tls: tlsOpts, tcp: NWProtocolTCP.Options())
             params.allowLocalEndpointReuse = true
             let l = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
-            l.newConnectionHandler = { conn in HTTPConn(conn: conn).start() }
+            // الشبكة المحلية فقط: اتصال من عنوان عام (إنترنت عبر بيانات الجوال) يُرفض قبل أي شيء
+            l.newConnectionHandler = { conn in
+                guard WiFiServer.isLocal(conn.endpoint) else { conn.cancel(); return }
+                HTTPConn(conn: conn).start()
+            }
             l.stateUpdateHandler = { st in
                 Task { @MainActor in
                     switch st {
@@ -74,6 +78,30 @@ final class WiFiServer: ObservableObject {
             }
         } catch {
             lastEvent = L("تعذّر تشغيل النقل. تأكّد من الاتصال بشبكة واي فاي.")
+        }
+    }
+
+    /// عنوان من الشبكة المحلية (واي فاي، نقطة اتصال شخصية، أو الجهاز نفسه)
+    nonisolated static func isLocal(_ e: NWEndpoint) -> Bool {
+        guard case .hostPort(let host, _) = e else { return false }
+        switch host {
+        case .ipv4(let a):
+            let b = [UInt8](a.rawValue)
+            guard b.count == 4 else { return false }
+            return b[0] == 10 || b[0] == 127 || (b[0] == 172 && (16...31).contains(b[1])) || (b[0] == 192 && b[1] == 168)
+                || (b[0] == 169 && b[1] == 254)
+        case .ipv6(let a):
+            let b = [UInt8](a.rawValue)
+            guard b.count == 16 else { return false }
+            if b[0] == 0xfe && (b[1] & 0xc0) == 0x80 { return true }        // fe80::/10
+            if (b[0] & 0xfe) == 0xfc { return true }                        // fc00::/7
+            if b[0..<15].allSatisfy({ $0 == 0 }) && b[15] == 1 { return true } // ::1
+            // IPv4 داخل IPv6 (::ffff:a.b.c.d)
+            if b[0..<10].allSatisfy({ $0 == 0 }) && b[10] == 0xff && b[11] == 0xff,
+               let v4 = IPv4Address(Data(b[12..<16])) { return isLocal(.hostPort(host: .ipv4(v4), port: 0)) }
+            return false
+        default:
+            return false
         }
     }
 
@@ -407,7 +435,7 @@ final class HTTPConn {
             "root": t("ملفاتي", "My Files"), "empty": t("المجلد فارغ", "This folder is empty"),
             "uploading": t("يرفع", "Uploading"), "failed": t("تعذّر رفع", "Couldn't upload"),
             "done": t("اكتمل الرفع ✓", "Upload complete ✓"),
-            "someFailed": t("انتهى الرفع، وتعذّر رفع %d ملف (قد تكون المساحة ممتلئة)", "Finished, but %d file(s) couldn't be uploaded (storage may be full)"),
+            "someFailed": t("انتهى الرفع، لكن تعذّر رفع بعض الملفات (عددها: %d)، وقد تكون المساحة ممتلئة", "Finished, but %d file(s) couldn't be uploaded (storage may be full)"),
             "folderName": t("اسم المجلد", "Folder name"),
         ]
         let json = (try? JSONSerialization.data(withJSONObject: strings)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"

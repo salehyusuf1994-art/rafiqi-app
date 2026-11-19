@@ -219,7 +219,7 @@ struct RadioPlayerCard: View {
             }
 
             HStack(spacing: 22) {
-                round("backward.fill") { AudioPlayer.shared.previous() }
+                round("backward.fill") { AudioPlayer.shared.previous() }.accessibilityLabel(L("السابق"))
                 Button { AudioPlayer.shared.toggle() } label: {
                     Image(systemName: on ? "stop.fill" : "play.fill")
                         .font(.system(size: 24, weight: .bold)).foregroundStyle(.black)
@@ -228,7 +228,8 @@ struct RadioPlayerCard: View {
                         .shadow(color: Theme.gold.opacity(0.35), radius: 12)
                 }
                 .buttonStyle(.plain)
-                round("forward.fill") { AudioPlayer.shared.next() }
+                .accessibilityLabel(on ? L("إيقاف") : L("تشغيل"))
+                round("forward.fill") { AudioPlayer.shared.next() }.accessibilityLabel(L("التالي"))
             }
             .environment(\.layoutDirection, .leftToRight)
 

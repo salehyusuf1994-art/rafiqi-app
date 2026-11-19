@@ -142,7 +142,7 @@ T.update({
 "حذف الملفات المؤقتة": "Delete temporary files",
 "لا تتأثر ملفاتك ولا تنزيلاتك": "Your files and downloads are not affected",
 "حُذفت الملفات المؤقتة.": "Temporary files deleted.",
-"ملفاتك محفوظة داخل جوالك فقط. تجدها أيضًا في تطبيق «الملفات» ← «على الـiPhone» ← «رفيقي»، ومنه تقدر تنقلها إلى iCloud Drive. ولإرسال ملف إلى رفيقي من أي تطبيق: «مشاركة» ← «رفيقي».": "Your files are stored only on your iPhone. You'll also find them in the Files app → On My iPhone → Rafiqi, from where you can move them to iCloud Drive. To send a file to Rafiqi from any app: Share → Rafiqi.",
+"ملفاتك محفوظة داخل جوالك فقط. تجدها أيضًا في تطبيق «الملفات» ← «على الـiPhone» ← «رفيقي»، ومنه يمكنك نقلها إلى iCloud Drive. ولإرسال ملف إلى رفيقي من أي تطبيق: «مشاركة» ← «رفيقي».": "Your files are stored only on your iPhone. You'll also find them in the Files app → On My iPhone → Rafiqi, from where you can move them to iCloud Drive. To send a file to Rafiqi from any app: Share → Rafiqi.",
 "إعدادات الملفات": "File settings",
 "تفعيل قفل إدارة الملفات": "Turn on File Manager lock",
 "إلغاء قفل إدارة الملفات": "Turn off File Manager lock",

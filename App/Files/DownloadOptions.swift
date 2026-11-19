@@ -109,6 +109,22 @@ enum LinkInspector {
         return .other
     }
 
+    /// يقرأ أول «limit» بايت فقط من الرد ثم يقطع الاتصال
+    static func fetchPrefix(_ req: URLRequest, limit: Int) async throws -> (Data, URLResponse) {
+        let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+        defer { bytes.task.cancel() }
+        var d = Data()
+        d.reserveCapacity(min(limit, 1 << 20))
+        var buf = [UInt8](); buf.reserveCapacity(16384)
+        for try await b in bytes {
+            buf.append(b)
+            if buf.count == 16384 { d.append(contentsOf: buf); buf.removeAll(keepingCapacity: true) }
+            if d.count + buf.count >= limit { break }
+        }
+        d.append(contentsOf: buf)
+        return (d.prefix(limit), resp)
+    }
+
     static func probe(_ url: URL, referer: String? = nil) async throws -> LinkProbe {
         // منشور x.com: مقطع المنشور نفسه من بيانات التضمين (لا كل مقاطع الصفحة)
         if XExtractor.statusID(url) != nil, let x = await XExtractor.probe(url) { return x }
@@ -117,7 +133,8 @@ enum LinkInspector {
         if let referer { req.setValue(referer, forHTTPHeaderField: "Referer") }
         req.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
         req.timeoutInterval = 20
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        // بعض الخوادم تتجاهل «Range» وترسل الملف كله: نقرأ أول ٦٤ ك.ب فقط ثم نقطع (لا يُحمَّل ملف ضخم في الذاكرة)
+        let (data, resp) = try await fetchPrefix(req, limit: 65536)
         guard let http = resp as? HTTPURLResponse else { throw ToolError.failed(L("تعذّر الوصول إلى الرابط.")) }
         if http.statusCode >= 400 { throw ToolError.failed(LF("رفض الخادم الطلب (%@).", ar(http.statusCode))) }
         let final = http.url ?? url
@@ -134,13 +151,13 @@ enum LinkInspector {
         if head.hasPrefix("#EXTM3U") { p.kind = .hls }
         if p.kind == .hls {
             let text = String(decoding: data, as: UTF8.self).count > 20 ? String(decoding: data, as: UTF8.self)
-                : ((try? await URLSession.shared.data(from: final).0).map { String(decoding: $0, as: UTF8.self) } ?? "")
+                : ((try? await fetchPrefix(URLRequest(url: final), limit: 2 << 20).0).map { String(decoding: $0, as: UTF8.self) } ?? "")
             p.variants = parseHLS(text, base: final)
             p.name = (final.deletingPathExtension().lastPathComponent.isEmpty ? (final.host ?? "video") : final.deletingPathExtension().lastPathComponent) + ".mp4"
         } else if p.kind == .page || head.lowercased().contains("<html") {
             p.kind = .page
             var full = data
-            if data.count >= 65536, let more = try? await URLSession.shared.data(from: final).0 { full = more }
+            if data.count >= 65536, let more = try? await fetchPrefix(URLRequest(url: final), limit: 4 << 20).0 { full = more }
             let html = String(decoding: full, as: UTF8.self)
             p.found = scanPage(html, base: final)
             (p.thumb, p.title) = meta(html, base: final)
@@ -162,7 +179,7 @@ enum LinkInspector {
                     req.timeoutInterval = 10
                     let ext = u.pathExtension.lowercased()
                     var mime: String?, size: Int64?
-                    if let (_, resp) = try? await URLSession.shared.data(for: req), let h = resp as? HTTPURLResponse {
+                    if let (_, resp) = try? await fetchPrefix(req, limit: 1), let h = resp as? HTTPURLResponse {
                         if h.statusCode >= 400 { return nil }   // رابط لا يعمل: لا يُعرض
                         mime = h.mimeType
                         if let cr = h.value(forHTTPHeaderField: "Content-Range"), let t = cr.split(separator: "/").last { size = Int64(t) }
@@ -589,11 +606,25 @@ final class HLSDownloader: NSObject, AVAssetDownloadDelegate {
     static let shared = HLSDownloader()
     private var session: AVAssetDownloadURLSession!
     private var map: [Int: UUID] = [:]
+    private var tasks: [UUID: AVAssetDownloadTask] = [:]
 
     private override init() {
         super.init()
         let cfg = URLSessionConfiguration.background(withIdentifier: "app.hilal.widgets.hls")
         session = AVAssetDownloadURLSession(configuration: cfg, assetDownloadDelegate: self, delegateQueue: .main)
+        // مهام بقيت من تشغيل سابق لا يعرفها التطبيق الآن (تظهر «فشل» ويمكن إعادتها): تُلغى فلا تستهلك المساحة والبيانات
+        session.getAllTasks { all in Task { @MainActor in HLSDownloader.shared.cancelOrphans(all) } }
+    }
+
+    private func cancelOrphans(_ all: [URLSessionTask]) {
+        for t in all where map[t.taskIdentifier] == nil { t.cancel() }
+    }
+
+    /// إيقاف تنزيل بث وحذف ما نُزّل منه
+    func cancel(_ id: UUID) {
+        guard let t = tasks.removeValue(forKey: id) else { return }
+        map[t.taskIdentifier] = nil
+        t.cancel()
     }
 
     func start(_ url: URL, name: String, post: PostProcess, referer: String? = nil) {
@@ -606,6 +637,7 @@ final class HLSDownloader: NSObject, AVAssetDownloadDelegate {
             return
         }
         map[t.taskIdentifier] = id
+        tasks[id] = t
         t.resume()
     }
 
@@ -622,22 +654,26 @@ final class HLSDownloader: NSObject, AVAssetDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, assetDownloadTask: AVAssetDownloadTask, didFinishDownloadingTo location: URL) {
         let tid = assetDownloadTask.taskIdentifier
         MainActor.assumeIsolated {
-            guard let id = map[tid] else { return }
+            // تنزيل أُلغي أو لا يُعرف صاحبه: تُحذف حزمته فلا تبقى تشغل المساحة
+            guard let id = map[tid] else { try? FileManager.default.removeItem(at: location); return }
             Task { await self.finish(id, package: location) }
         }
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error else { return }
         let tid = task.taskIdentifier
         MainActor.assumeIsolated {
-            if let id = map.removeValue(forKey: tid) { DownloadManager.shared.externalFailed(id, error.localizedDescription) }
+            guard let error else { if let id = map.removeValue(forKey: tid) { tasks[id] = nil }; return }
+            if let id = map.removeValue(forKey: tid) {
+                tasks[id] = nil
+                if (error as? URLError)?.code != .cancelled { DownloadManager.shared.externalFailed(id, error.localizedDescription) }
+            }
         }
     }
 
     private func finish(_ id: UUID, package: URL) async {
         let dm = DownloadManager.shared
-        guard let it = dm.items.first(where: { $0.id == id }) else { return }
+        guard let it = dm.items.first(where: { $0.id == id }) else { try? FileManager.default.removeItem(at: package); return }
         dm.externalStatus(id, L("جارٍ التحويل إلى MP4…"))
         let store = FileStore.shared
         let downloads = store.root.appendingPathComponent(L("التنزيلات"), isDirectory: true)
@@ -687,7 +723,7 @@ enum RemoteImageLoader {
             req.setValue("image/avif,image/webp,image/png,image/jpeg,*/*", forHTTPHeaderField: "Accept")
             if let ref { req.setValue(ref, forHTTPHeaderField: "Referer") }
             req.timeoutInterval = 12
-            if let (data, resp) = try? await URLSession.shared.data(for: req),
+            if let (data, resp) = try? await LinkInspector.fetchPrefix(req, limit: 8 << 20),
                ((resp as? HTTPURLResponse)?.statusCode ?? 200) < 400,
                let img = UIImage(data: data) {
                 cache.setObject(img, forKey: url as NSURL)

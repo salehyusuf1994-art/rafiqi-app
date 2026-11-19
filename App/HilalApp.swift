@@ -163,6 +163,8 @@ struct ContentView: View {
 
     /// فتح صفحة من ويدجت أو زر: miqat://open/<الهدف> أو من «open_target»
     private func route(_ t: String) {
+        // مشغّل مقفل (قفل الأطفال): لا يغلقه زر ويدجت ولا مركز التحكم
+        guard !PlayerLockState.active else { return }
         Self.dismissPresented()
         func scanner(_ m: ScanMode?) {
             tab = 5; filesRouter.path = []; filesRouter.page = .files
@@ -185,6 +187,17 @@ struct ContentView: View {
                 tab = 5; filesRouter.path = []; filesRouter.page = .files; filesRouter.openFile = u
             }
         }
+    }
+
+    /// يحفظ ملفًا مُرسلًا من تطبيق آخر في «الواردة» ويرجع المجلد
+    @MainActor @discardableResult
+    static func saveIncoming(_ url: URL) -> URL {
+        let inbox = FileStore.shared.root.appendingPathComponent(L("الواردة"), isDirectory: true)
+        try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        let saved = FileStore.shared.importFiles([url], to: inbox)
+        // نسخة النظام في Inbox لم تعد لازمة — تُحذف فقط بعد نجاح الحفظ (وإلا تبقى ولا يضيع الملف)
+        if !saved.isEmpty, url.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: url) }
+        return inbox
     }
 
     /// يغلق ما فوق الشاشة الرئيسية (sheet أو شاشة كاملة) قبل التنقل من رابط أو ويدجت
@@ -253,15 +266,16 @@ struct ContentView: View {
         }
         .tint(Theme.gold)
         .onOpenURL { url in
+            // مشغّل مقفل: الملف المُرسل يُحفظ بصمت، وأي رابط آخر لا يغلق المشغّل
+            if PlayerLockState.active {
+                if url.isFileURL { Self.saveIncoming(url) }
+                return
+            }
             // أي نافذة مفتوحة (صفحة ويدجت، إعدادات…) تُغلق أولًا: الوجهة لا تُفتح مخفية تحتها
             Self.dismissPresented()
             // ملف مُرسل من تطبيق آخر («مشاركة» ← رفيقي أو «فتح باستخدام»): يُحفظ في «الواردة»
             if url.isFileURL {
-                let inbox = FileStore.shared.root.appendingPathComponent(L("الواردة"), isDirectory: true)
-                try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
-                let saved = FileStore.shared.importFiles([url], to: inbox)
-                // نسخة النظام في Inbox لم تعد لازمة — تُحذف فقط بعد نجاح الحفظ (وإلا تبقى ولا يضيع الملف)
-                if !saved.isEmpty, url.path.contains("/Inbox/") { try? FileManager.default.removeItem(at: url) }
+                let inbox = Self.saveIncoming(url)
                 FilesRouter.shared.page = .files
                 FilesRouter.shared.path = [inbox]
                 tab = 5
@@ -354,6 +368,8 @@ struct ContentView: View {
             Backdrop.ensureCrops()
             // إذن الإشعارات: يُطلب عند أول تشغيل (التنبيهات مفعّلة افتراضيًا فلم يكن يُطلب أبدًا)
             if SHOT.isEmpty, Notify.enabled { await Notify.askIfNeeded() }
+            // أصوات التنبيهات في مجلد مشترك: حين تُعيد الويدجت الجدولة (التطبيق مغلق) يبقى صوت المؤذن لا النغمة العادية
+            await Task.detached(priority: .utility) { Notify.shareSounds() }.value
             await Notify.reschedule()
             guard !SHOT.isEmpty else { return }
             Backdrop.screenPt = CGSize(width: 440, height: 956)
@@ -544,7 +560,8 @@ struct SettingsView: View {
     var dateSection: some View {
         Section {
             Toggle(isOn: Binding(get: { use24 }, set: { use24 = $0; Settings.use24h = $0; reloadWidgets() })) {
-                TileRow(title: "نظام ٢٤ ساعة", icon: "clock.fill", color: .indigo, subtitle: use24 ? "مثال: ١٧:٣٠" : "مثال: ٥:٣٠")
+                TileRow(title: "نظام ٢٤ ساعة", icon: "clock.fill", color: .indigo,
+                        subtitle: LF("مثال: %@", use24 ? ar("17:30") : ar("5:30") + (Lang.isEN ? " PM" : " م")))
             }
             .tint(Theme.gold)
             Stepper(value: Binding(get: { offset }, set: { v in
@@ -668,9 +685,9 @@ struct SettingsView: View {
         } header: {
             Text("الموقع").id("loc")
         } footer: {
-            Text(mode == "auto"
-                 ? "تُحسب أوقات الصلاة والطقس من موقعك الفعلي، وتُحدَّث عند انتقالك إلى مدينة أخرى. يتطلّب ذلك السماح بالموقع «أثناء استخدام التطبيق أو الأدوات»."
-                 : "٤٥٨١ مدينة وقرية في جميع مناطق المملكة، ويمكنك البحث عن أي مدينة في العالم. تُعرض الأوقات بتوقيت جوالك.")
+            Text(verbatim: mode == "auto"
+                 ? L("تُحسب أوقات الصلاة والطقس من موقعك الفعلي، وتُحدَّث عند انتقالك إلى مدينة أخرى. يتطلّب ذلك السماح بالموقع «أثناء استخدام التطبيق أو الأدوات».")
+                 : LF("%@ مدينة وقرية في جميع مناطق المملكة، ويمكنك البحث عن أي مدينة في العالم. تُعرض الأوقات بتوقيت جوالك.", ar(4581)))
         }
     }
 }

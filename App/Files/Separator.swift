@@ -152,10 +152,10 @@ enum Separator {
         r.startReading()
         var lch: [Float] = [], rch: [Float] = []
         while let sb = o.copyNextSampleBuffer(), let bb = CMSampleBufferGetDataBuffer(sb) {
-            let len = CMBlockBufferGetDataLength(bb)
+            let len = CMBlockBufferGetDataLength(bb) / 8 * 8   // عيّنات كاملة لقناتين فقط
+            guard len > 0 else { continue }
             var data = [Float](repeating: 0, count: len / 4)
-            data.withUnsafeMutableBytes { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: len, destination: $0.baseAddress!) }
-            lch.reserveCapacity(lch.count + data.count / 2); rch.reserveCapacity(rch.count + data.count / 2)
+            data.withUnsafeMutableBytes { if let p = $0.baseAddress { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: len, destination: p) } }
             var i = 0
             while i + 1 < data.count { lch.append(data[i]); rch.append(data[i + 1]); i += 2 }
         }

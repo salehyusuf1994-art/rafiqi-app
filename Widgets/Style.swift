@@ -300,6 +300,7 @@ enum Words {
 enum AltWord {
     private static var cache: [String: UIImage] = [:]
     private static let lock = NSLock()
+    private static var bytes = 0
 
     /// يزيل التشكيل (يناسب الخطوط الحديثة أكثر)
     static func plain(_ s: String) -> String {
@@ -323,7 +324,13 @@ enum AltWord {
         // بلاكا ما فيه حرف المدّ «ـ»
         if font == .blaka { t = t.replacingOccurrences(of: "\u{0640}", with: "") }
         let img = render(text: t, font: font, name: name, box: base.size)
-        if let img { lock.lock(); if cache.count >= (isWidgetProcess ? 120 : 3000) { cache.removeAll() }; cache[key] = img; lock.unlock() }
+        if let img {
+            let cost = imageCost(img)
+            lock.lock()
+            if cache.count >= (isWidgetProcess ? 120 : 3000) || (isWidgetProcess && bytes + cost > 8 << 20) { cache.removeAll(); bytes = 0 }
+            cache[key] = img; bytes += cost
+            lock.unlock()
+        }
         return img
     }
 

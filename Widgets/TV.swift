@@ -266,7 +266,10 @@ enum TVChannels {
             for await r in g { for (k, v) in r { found[k, default: []] += v } }
         }
         guard !found.isEmpty else { return }
-        d.set(found, forKey: "tv_urls")
+        // دولة تعذّر تحميل قائمتها اليوم تبقى روابطها السابقة (لا نمسح الصالح بنتيجة ناقصة)
+        var merged = (d.dictionary(forKey: "tv_urls") as? [String: [String]]) ?? [:]
+        for (k, v) in found { merged[k] = v }
+        d.set(merged, forKey: "tv_urls")
         d.set(Date().timeIntervalSince1970, forKey: "tv_urls_at")
     }
 

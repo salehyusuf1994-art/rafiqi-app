@@ -141,7 +141,7 @@ struct StorageView: View {
                 for f in g {
                     guard let h = try? FileHandle(forReadingFrom: f.url) else { continue }
                     var hasher = SHA256()
-                    while let d = try? h.read(upToCount: 1 << 20), !d.isEmpty { hasher.update(data: d) }
+                    while let d = autoreleasepool(invoking: { try? h.read(upToCount: 1 << 20) }), !d.isEmpty { hasher.update(data: d) }
                     try? h.close()
                     let key = hasher.finalize().map { String(format: "%02x", $0) }.joined()
                     byHash[key, default: []].append(f)

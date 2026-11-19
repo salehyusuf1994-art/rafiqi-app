@@ -388,7 +388,9 @@ enum MediaTools {
         writer.add(wi)
         writer.startWriting()
         writer.startSession(atSourceTime: .zero)
-        let chunk = 1.0
+        // كل الإطارات المقروءة في الذاكرة معًا: المقطع أقصر كلما كبرت الدقة (4K يبقى في حدود معقولة)
+        let px = max(1, abs(n.width * n.height))
+        let chunk = min(1.0, max(0.2, Double(1920 * 1080) / Double(px)))
         var segStart = max(0, d - chunk)
         var outTime = 0.0
         var segEnd = d

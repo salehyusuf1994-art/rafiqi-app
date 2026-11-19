@@ -48,6 +48,9 @@ final class BrowserModel: NSObject, ObservableObject {
     }
     func clearHistory() { history = []; persist() }
 
+    /// المتصفح العادي واحد طوال عمل التطبيق
+    static let normal = BrowserModel(privateMode: false)
+
     init(privateMode: Bool = false) {
         isPrivate = privateMode
         let cfg = WKWebViewConfiguration()
@@ -61,13 +64,14 @@ final class BrowserModel: NSObject, ObservableObject {
         web.allowsBackForwardNavigationGestures = true
         web.isOpaque = false
         web.backgroundColor = .clear
+        // مراجع ضعيفة: الصفحة لا تُبقي المتصفح حيًّا بعد إغلاقه (كان يتسرّب WKWebView كامل مع كل زيارة)
         obs = [
-            web.observe(\.canGoBack) { w, _ in Task { @MainActor in self.canBack = w.canGoBack } },
-            web.observe(\.canGoForward) { w, _ in Task { @MainActor in self.canForward = w.canGoForward } },
-            web.observe(\.isLoading) { w, _ in Task { @MainActor in self.loading = w.isLoading } },
-            web.observe(\.estimatedProgress) { w, _ in Task { @MainActor in self.progress = w.estimatedProgress } },
-            web.observe(\.url) { w, _ in Task { @MainActor in self.address = w.url?.absoluteString ?? self.address } },
-            web.observe(\.title) { w, _ in Task { @MainActor in self.title = w.title ?? "" } },
+            web.observe(\.canGoBack) { [weak self] w, _ in Task { @MainActor in self?.canBack = w.canGoBack } },
+            web.observe(\.canGoForward) { [weak self] w, _ in Task { @MainActor in self?.canForward = w.canGoForward } },
+            web.observe(\.isLoading) { [weak self] w, _ in Task { @MainActor in self?.loading = w.isLoading } },
+            web.observe(\.estimatedProgress) { [weak self] w, _ in Task { @MainActor in self?.progress = w.estimatedProgress } },
+            web.observe(\.url) { [weak self] w, _ in Task { @MainActor in guard let self else { return }; self.address = w.url?.absoluteString ?? self.address } },
+            web.observe(\.title) { [weak self] w, _ in Task { @MainActor in self?.title = w.title ?? "" } },
         ]
     }
 
@@ -215,7 +219,8 @@ struct BrowserInner: View {
     @StateObject private var m: BrowserModel
     init(privateMode: Binding<Bool>) {
         _privateMode = privateMode
-        _m = StateObject(wrappedValue: BrowserModel(privateMode: privateMode.wrappedValue))
+        // المتصفح العادي يبقى كما تركته عند التنقل بين «ملفاتي» و«التنزيلات»؛ والتصفح الخاص يُنشأ جديدًا ويُمسح عند الخروج منه
+        _m = StateObject(wrappedValue: privateMode.wrappedValue ? BrowserModel(privateMode: true) : BrowserModel.normal)
     }
     @State private var editing = ""
     @State private var showFound = false
@@ -289,7 +294,12 @@ struct BrowserInner: View {
             Spacer()
             navButton(privateMode ? "eyeglasses" : "eye.slash", true) { privateMode.toggle() }
             Spacer()
-            navButton("house", !m.address.isEmpty) { m.web.stopLoading(); m.address = ""; editing = "" }
+            navButton("house", !m.address.isEmpty) {
+                // الصفحة الرئيسية: يتوقف أي صوت أو فيديو في الصفحة السابقة
+                m.web.stopLoading()
+                m.web.pauseAllMediaPlayback(completionHandler: {})
+                m.address = ""; editing = ""
+            }
             Spacer()
             navButton("arrow.down.doc", !m.address.isEmpty) { Task { await m.scan(); showFound = true } }
         }

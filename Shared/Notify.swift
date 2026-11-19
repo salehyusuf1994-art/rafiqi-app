@@ -67,7 +67,7 @@ enum Notify {
             switch self {
             case .voice: return L("«حان وقت صلاة…» بصوت رفيقي")
             case .tone: return L("نغمة الإشعارات العادية")
-            case .part: return L("أول ٢٨ ثانية من الأذان مع الإشعار")
+            case .part: return LF("أول %@ ثانية من الأذان مع الإشعار", ar(28))
             case .full: return L("كمنبّه يعمل حتى والجوال صامت، ويتكرر حتى تضغط «إيقاف»")
             }
         }
@@ -134,6 +134,12 @@ enum Notify {
         get { Date(timeIntervalSince1970: d.double(forKey: "alarm_until")) }
         set { d.set(newValue.timeIntervalSince1970, forKey: "alarm_until") }
     }
+    /// أوقات منبّهات الأذان المجدولة فعلًا: الويدجت لا تحذف تنبيه وقتٍ إلا إن كان له منبّه في الوقت نفسه
+    /// (بعد السفر تتغير الأوقات، والمنبّهات القديمة لا تغطي الأوقات الجديدة)
+    static var alarmTimes: [Double] {
+        get { d.array(forKey: "alarm_times") as? [Double] ?? [] }
+        set { d.set(newValue, forKey: "alarm_times") }
+    }
 
     /// هل فيه أي تنبيه مفعّل
     static var enabled: Bool { !atKeys.isEmpty || !preKeys.isEmpty || !extraOn.isEmpty }
@@ -149,6 +155,26 @@ enum Notify {
 
     /// يطلب إذن الإشعارات أول مرة فقط (لو ما سبق سؤال المستخدم) — بدونه ما يظهر «الإشعارات» في إعدادات الآيفون أصلًا
     @discardableResult
+    /// ينسخ أصوات التنبيهات (صوت التنبيه وجزء الأذان) إلى «Library/Sounds» في المجلد المشترك:
+    /// النظام يبحث عن الصوت في حزمة العملية التي جدولت الإشعار، والويدجت لا تحمل الأصوات
+    static func shareSounds() {
+        let fm = FileManager.default
+        guard let group = AppGroup.container,
+              let files = try? fm.contentsOfDirectory(at: Bundle.main.bundleURL, includingPropertiesForKeys: [.fileSizeKey]) else { return }
+        let dir = group.appendingPathComponent("Library/Sounds", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        for f in files where f.pathExtension == "caf" {
+            let n = f.lastPathComponent
+            guard n.hasPrefix("miqat_") || n.hasSuffix("_part.caf") else { continue }
+            let dest = dir.appendingPathComponent(n)
+            let a = (try? f.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            let b = (try? dest.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+            if a != nil, a == b { continue }
+            try? fm.removeItem(at: dest)
+            try? fm.copyItem(at: f, to: dest)
+        }
+    }
+
     static func askIfNeeded() async -> Bool {
         let s = await UNUserNotificationCenter.current().notificationSettings()
         if s.authorizationStatus == .notDetermined { return await requestPermission() }
@@ -250,7 +276,7 @@ enum Notify {
         lastRun = Date()
         // كل التنبيهات متوقفة: نلغي منبّهات الأذان أيضًا
         guard enabled else {
-            if let bridge = alarmBridge { _ = await bridge([]); alarmsUntil = .distantPast }
+            if let bridge = alarmBridge { _ = await bridge([]); alarmsUntil = .distantPast; alarmTimes = [] }
             return
         }
         // منبّهات الأذان لها إذنها الخاص، فتُجدول حتى لو مُنعت الإشعارات
@@ -303,12 +329,14 @@ enum Notify {
             if await bridge(items) {
                 covered = Set(soon.map { $0.fire })
                 alarmsUntil = soon.last?.fire ?? now
+                alarmTimes = soon.map { $0.fire.timeIntervalSince1970 }
             } else {
                 alarmsUntil = .distantPast
+                alarmTimes = []
             }
         } else {
-            let until = alarmsUntil
-            covered = Set(fulls.filter { $0.fire <= until }.map { $0.fire })
+            let times = alarmTimes
+            covered = Set(fulls.filter { f in times.contains { abs($0 - f.fire.timeIntervalSince1970) <= 60 } }.map { $0.fire })
         }
         plan.removeAll { !$0.pre && covered.contains($0.fire) && adhanCapable($0.key) }
         guard canNotify else { return }
@@ -316,7 +344,11 @@ enum Notify {
         var art: [String: Data] = [:]
         var ids = Set<String>()
         // الخطة أطول من حد النظام: آخر خانة تذكير بفتح التطبيق، حتى لا تتوقف التنبيهات بصمت
-        let limit = plan.count > 60 ? 59 : 60
+        // تذكيرات الملفات وتأجيل التنبيه تشارك حد النظام (٦٤): نترك لها مكانها
+        let others = await c.pendingNotificationRequests().filter { !$0.identifier.hasPrefix("miqat.") }.count
+        let cap = min(60, max(20, 63 - others))
+        let limit = plan.count > cap ? cap - 1 : cap
+        let renew = plan.count > cap
         for p in plan.prefix(limit) {
             let content = UNMutableNotificationContent()
             content.title = title(p.key, pre: p.pre)
@@ -338,7 +370,7 @@ enum Notify {
             ids.insert(id)
             try? await c.add(r)
         }
-        if limit == 59, let last = plan.prefix(limit).last {
+        if renew, let last = plan.prefix(limit).last {
             let content = UNMutableNotificationContent()
             content.title = L("رفيقي")
             content.body = L("افتح رفيقي لتجديد تنبيهات الصلاة للأيام القادمة.")

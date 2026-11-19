@@ -43,6 +43,11 @@ final class TVRouter: ObservableObject {
         guard let top = Self.topController() else {
             // ورقة تُغلق الآن (مثل «القنوات المضافة» ← مشاهدة): ننتظر قليلًا ثم نعرض
             if tries < 30 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.presentIfNeeded(tries: tries + 1) } }
+            else {
+                // تعذّر العرض: نُنهي طلب الرجوع من النافذة العائمة بدل تركه معلّقًا
+                let s = onShown; onShown = nil; reuse = nil; open = nil
+                s?()
+            }
             return
         }
         let existing = reuse?.channel.id == c.id ? reuse : nil
@@ -72,7 +77,7 @@ final class TVRouter: ObservableObject {
     }
 
     func show(id: String) {
-        guard let c = TVChannels.channel(id) else { return }
+        guard !PlayerLockState.active, let c = TVChannels.channel(id) else { return }
         open = c
     }
 
@@ -132,17 +137,32 @@ final class TVPlayback: ObservableObject {
     static weak var current: TVPlayback?
 
     private var rateObs: NSKeyValueObservation?
+    /// المستخدم يريد التشغيل (لا يُستأنف البث تلقائيًا بعد إيقافه يدويًا أو من مشغّل آخر)
+    private(set) var wantsPlay = false
+    /// يزيد مع كل إيقاف: تأجيلٌ قديم لا يعيد التشغيل بعده
+    private(set) var pauseGen = 0
 
     init(_ c: TVChannel) {
         channel = c
         // توقف/تشغيل من خارج التطبيق (مكالمة، فصل السماعة): شاشة القفل تعرض الحال الصحيحة
-        rateObs = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+        rateObs = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
+            let playing = p.timeControlStatus == .playing
             Task { @MainActor in
-                guard let self, TVPlayback.current === self else { return }
+                guard let self else { return }
+                // تشغيل من أزرار المشغّل نفسه (أو النافذة العائمة): يأخذ التشغيل ويوقف القرآن أو الإذاعة
+                if playing, PlaybackGate.owner != .tv || TVPlayback.current !== self || AudioPlayer.shared.state.playing {
+                    self.wantsPlay = true
+                    PlaybackGate.claim(.tv, tv: self)
+                    TVPlayback.current = self
+                }
+                guard TVPlayback.current === self else { return }
                 self.updateNowPlaying()
             }
         }
     }
+
+    /// هذه القناة هي المالكة للتشغيل الآن
+    private var owns: Bool { PlaybackGate.owner == .tv && TVPlayback.current === self }
 
     func start() {
         // نوقف القرآن أو الإذاعة أو الفيديو قبل البث، ونغلق أي قناة أخرى في النافذة العائمة
@@ -152,6 +172,7 @@ final class TVPlayback: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(true)
         TVChannels.last = channel.id
         TVChannels.watched(channel.id)
+        wantsPlay = true
         index = 0
         failed = false
         tryCurrent()
@@ -168,6 +189,8 @@ final class TVPlayback: ObservableObject {
     /// تحديث البث: يعيد تحميل الرابط الحالي فيرجع للحظة البث الآن (إذا تأخّر أو علق)
     func refresh() {
         PlaybackGate.claim(.tv, tv: self)
+        TVPlayback.current = self
+        wantsPlay = true
         failed = false
         tryCurrent()
     }
@@ -176,11 +199,13 @@ final class TVPlayback: ObservableObject {
     var isPlaying: Bool { player.rate > 0 }
     func play() {
         PlaybackGate.claim(.tv, tv: self)
+        TVPlayback.current = self
+        wantsPlay = true
         try? AVAudioSession.sharedInstance().setActive(true)
         if player.currentItem == nil { start() } else { player.play() }
         updateNowPlaying()
     }
-    func pause() { player.pause(); updateNowPlaying() }
+    func pause() { wantsPlay = false; pauseGen += 1; player.pause(); updateNowPlaying() }
     func toggle() { isPlaying ? pause() : play() }
     /// القناة التالية/السابقة في القسم نفسه
     func zap(_ d: Int) {
@@ -192,6 +217,8 @@ final class TVPlayback: ObservableObject {
 
     /// اسم القناة وشعارها في شاشة القفل ومركز التحكم
     func updateNowPlaying() {
+        // لا تكتب فوق بطاقة القرآن أو الإذاعة أو الفيديو إن كانت هي العاملة الآن
+        guard owns else { return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: channel.name,
             MPMediaItemPropertyArtist: channel.cat.title + " · " + L("بث مباشر"),
@@ -212,6 +239,8 @@ final class TVPlayback: ObservableObject {
     }
 
     func stop() {
+        wantsPlay = false
+        pauseGen += 1
         if TVPlayback.current === self {
             TVPlayback.current = nil
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -244,7 +273,8 @@ final class TVPlayback: ObservableObject {
             }
         }
         player.replaceCurrentItem(with: item)
-        player.play()
+        // الرابط التالي بعد فشل أو مهلة: يعمل فقط إن بقيت القناة هي المالكة ولم يوقفها أحد
+        if wantsPlay && owns { player.play() }
         // رابط لا يستجيب خلال ١٥ ثانية: ننتقل للرابط التالي
         let expected = index
         timeout = Task { @MainActor [weak self] in
@@ -275,6 +305,7 @@ struct TVVideo: UIViewControllerRepresentable {
         let player: AVPlayer
         let tv: TVPlayback
         private var wasPlaying = false
+        private var gen = 0
         private nonisolated(unsafe) var observers: [Any] = []
         init(tv: TVPlayback) {
             self.tv = tv
@@ -285,6 +316,7 @@ struct TVVideo: UIViewControllerRepresentable {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.wasPlaying = self.player.rate > 0
+                    self.gen = self.tv.pauseGen
                 }
             })
             observers.append(nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -294,7 +326,9 @@ struct TVVideo: UIViewControllerRepresentable {
                         MainActor.assumeIsolated {
                             guard let self, !TVPiP.active, UIApplication.shared.applicationState == .background else { return }
                             self.vc?.player = nil
-                            if self.wasPlaying { self.player.play() }
+                            // يكمل فقط إن كانت القناة ما زالت المالكة ولم تُوقف منذ الخروج (من مركز التحكم أو شاشة القفل)
+                            if self.wasPlaying, self.tv.pauseGen == self.gen, self.tv.wantsPlay,
+                               PlaybackGate.owner == .tv, TVPlayback.current === self.tv { self.player.play() }
                         }
                     }
                 }
@@ -311,7 +345,6 @@ struct TVVideo: UIViewControllerRepresentable {
         // ── النافذة العائمة ──
         private var playingAtPiP = false
         func playerViewControllerWillStartPictureInPicture(_ pvc: AVPlayerViewController) {
-            NSLog("RFDBG tv pip start")
             playingAtPiP = player.rate > 0 || player.timeControlStatus != .paused
             TVPiP.active = true
             TVPiP.restored = false
@@ -428,8 +461,10 @@ struct TVPlayerScreen: View {
             }
             OrientationLock.allowLandscape(true)
         }
+        .onChange(of: lockMode) { _, m in PlayerLockState.active = m != .open }
         .onDisappear {
             OrientationLock.allowLandscape(false)
+            if lockMode != .open { PlayerLockState.active = false }
             // انتقلت للنافذة العائمة: تبقى تعمل حتى تُغلق
             if TVPiP.active && TVPiP.tv === tv { return }
             tv.stop()
@@ -467,6 +502,7 @@ struct TVPlayerScreen: View {
                 .frame(width: 38, height: 38).background(Circle().fill(.ultraThinMaterial))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(L("إغلاق"))
     }
 
     /// تحديث البث إذا تأخّر أو علق
@@ -502,6 +538,7 @@ struct TVPlayerScreen: View {
                     .foregroundStyle(Theme.gold).frame(width: 38, height: 38)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(fav ? L("إزالة من قنواتي") : L("إضافة إلى قنواتي"))
         }
         .environment(\.layoutDirection, .leftToRight)
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -513,8 +550,8 @@ struct TVPlayerScreen: View {
         let i = list.firstIndex { $0.id == tv.channel.id } ?? 0
         return VStack(spacing: 14) {
             HStack(spacing: 12) {
-                zapButton("القناة السابقة", "chevron.right") { if !list.isEmpty { tv.switchTo(list[(i - 1 + list.count) % list.count]) } }
-                zapButton("القناة التالية", "chevron.left") { if !list.isEmpty { tv.switchTo(list[(i + 1) % list.count]) } }
+                zapButton("القناة السابقة", "chevron.backward") { if !list.isEmpty { tv.switchTo(list[(i - 1 + list.count) % list.count]) } }
+                zapButton("القناة التالية", "chevron.forward") { if !list.isEmpty { tv.switchTo(list[(i + 1) % list.count]) } }
             }
             .padding(.horizontal, 16)
             ScrollViewReader { proxy in

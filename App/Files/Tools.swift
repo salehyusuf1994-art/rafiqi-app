@@ -154,6 +154,7 @@ enum ToolRunner {
                     .environment(\.layoutDirection, Lang.dir).digitsLocale())
                 host.overrideUserInterfaceStyle = .dark
                 host.modalPresentationStyle = .fullScreen
+                FileOpener.mark(host, [url])
                 FileOpener.top()?.present(host, animated: true)
                 return
             }
@@ -161,6 +162,7 @@ enum ToolRunner {
                 .environment(\.layoutDirection, Lang.dir).digitsLocale())
             host.overrideUserInterfaceStyle = .dark
             if let s = host.sheetPresentationController { s.detents = [.large()]; s.prefersGrabberVisible = true }
+            FileOpener.mark(host, [url])
             FileOpener.top()?.present(host, animated: true)
         }
     }
@@ -324,6 +326,8 @@ struct ToolHost: View {
                     Text("العربية").tag("ar-SA"); Text("English").tag("en-US")
                 }
                 .pickerStyle(.segmented)
+                // الترجمة دائمًا إلى اللغة الأخرى (الترجمة إلى لغة الكلام نفسها تفشل برسالة مضلِّلة)
+                .onChange(of: lang) { _, l in target = l.hasPrefix("en") ? "ar" : "en" }
                 if tool == .translate {
                     Text("الترجمة إلى").font(Theme.f(.headline)).foregroundStyle(.white).padding(.top, 6)
                     Picker("", selection: $target) {
@@ -624,11 +628,14 @@ struct ToolHost: View {
             case .ocr, .pdfText:
                 let t = try await MediaTools.recognizeText(url)
                 text = t
-            case .barcode: codes = try MediaTools.barcodes(url)
-            case .compressImage: result = try MediaTools.compressImage(url, quality: imgQuality, maxSide: maxSide)
-            case .convertImage: result = try MediaTools.convertImage(url, to: format)
-            case .rotateImage: result = try MediaTools.rotateImage(url)
-            case .toPDF: result = try MediaTools.imagesToPDF([url])
+            // أدوات الصور تعمل في الخلفية: الصور الكبيرة لا تجمّد الواجهة
+            case .barcode: let u = url; codes = try await Task.detached(priority: .userInitiated) { try MediaTools.barcodes(u) }.value
+            case .compressImage:
+                let u = url, q = imgQuality, m = maxSide
+                result = try await Task.detached(priority: .userInitiated) { try MediaTools.compressImage(u, quality: q, maxSide: m) }.value
+            case .convertImage: let u = url, f = format; result = try await Task.detached(priority: .userInitiated) { try MediaTools.convertImage(u, to: f) }.value
+            case .rotateImage: let u = url; result = try await Task.detached(priority: .userInitiated) { try MediaTools.rotateImage(u) }.value
+            case .toPDF: let u = url; result = try await Task.detached(priority: .userInitiated) { try MediaTools.imagesToPDF([u]) }.value
             case .metadata:
                 result = try await MediaTools.writeMetadata(url, title: metaTitle, artist: metaArtist, album: metaAlbum, art: cover, progress: p)
             case .burnSubs:
@@ -744,10 +751,15 @@ struct PDFPagesEditor: View {
     @State private var thumbs: [UIImage] = []
     @State private var selected: Set<Int> = []
     @State private var saved = false
+    @State private var failed = false
+    @State private var saveFailed = false
 
     var body: some View {
         VStack(spacing: 12) {
-            if let doc {
+            if failed {
+                // ملف تالف أو محمي بكلمة مرور: رسالة واضحة بدل انتظار بلا نهاية
+                Text("تعذّر فتح ملف PDF (قد يكون تالفًا أو محميًا بكلمة مرور).").font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
+            } else if let doc {
                 Text(verbatim: pagesText(doc.pageCount) + " · " + L("اضغط لتحديد صفحة أو أكثر")).font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 12)], spacing: 12) {
                     ForEach(Array(thumbs.enumerated()), id: \.offset) { i, img in
@@ -773,7 +785,7 @@ struct PDFPagesEditor: View {
                 .disabled(selected.isEmpty)
                 .opacity(selected.isEmpty ? 0.45 : 1)
                 Button {
-                    if doc.write(to: url) { saved = true; FileStore.shared.touch(); done() }
+                    if doc.write(to: url) { saved = true; FileStore.shared.touch(); done() } else { saveFailed = true }
                 } label: {
                     Text("حفظ التعديلات").font(Theme.f(.headline)).foregroundStyle(.black)
                         .frame(maxWidth: .infinity).padding(.vertical, 14)
@@ -787,8 +799,10 @@ struct PDFPagesEditor: View {
         }
         .task {
             doc = PDFDocument(url: url)
+            if doc == nil || doc?.isLocked == true { doc = nil; failed = true }
             refresh()
         }
+        .alert(L("تعذّر حفظ التعديلات"), isPresented: $saveFailed) { Button(L("حسنًا"), role: .cancel) {} }
     }
 
     private func tool(_ icon: String, _ t: String, _ run: @escaping () -> Void) -> some View {

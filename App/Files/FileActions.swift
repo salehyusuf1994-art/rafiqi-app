@@ -115,7 +115,7 @@ struct FileActionsSheet: View {
                 }
                 .padding(12)
                 Divider().overlay(Theme.stroke)
-                row(store.isLocked(item.url) ? "lock.open" : "lock", store.isLocked(item.url) ? L("إلغاء قفل المجلد") : L("قفل المجلد ببصمة الوجه")) {
+                row(store.isLocked(item.url) ? "lock.open" : "lock", store.isLocked(item.url) ? L("إلغاء قفل المجلد") : L("قفل المجلد")) {
                     run(.lock(!store.isLocked(item.url)))
                 }
             }
@@ -155,6 +155,15 @@ struct FileActionsSheet: View {
 struct FileInfoView: View {
     let item: FileItem
     @State private var extra: [(String, String)] = []
+
+    /// المكان بأسماء المجلدات كما تظهر للمستخدم (بلا أسماء داخلية للمجلدات المقفلة أو السلة)
+    private var placeText: String {
+        let store = FileStore.shared
+        let parent = item.url.deletingLastPathComponent()
+        if store.isTrash(parent) { return L("سلة المحذوفات") }
+        let parts = store.key(parent).split(separator: "/").map { FileStore.plainName(URL(fileURLWithPath: String($0))) }
+        return ([L("ملفاتي")] + parts).joined(separator: Lang.isEN ? " → " : " ← ")
+    }
     @State private var size: Int64 = 0
 
     var body: some View {
@@ -168,7 +177,7 @@ struct FileInfoView: View {
                     line(L("تاريخ الإنشاء"), item.created.formatted(date: .long, time: .shortened))
                     line(L("آخر تعديل"), item.modified.formatted(date: .long, time: .shortened))
                     ForEach(extra, id: \.0) { line($0.0, $0.1) }
-                    line(L("المكان"), FileStore.shared.key(item.url.deletingLastPathComponent()).isEmpty ? L("ملفاتي") : L("ملفاتي") + FileStore.shared.key(item.url.deletingLastPathComponent()))
+                    line(L("المكان"), placeText)
                 }
                 .listRowBackground(Theme.card)
             }

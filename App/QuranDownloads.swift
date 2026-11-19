@@ -56,13 +56,16 @@ final class QuranDownloads: ObservableObject {
 
     /// عدد السور المنزّلة وحجمها لهذا القارئ
     func stats(_ r: Reciter) -> (count: Int, bytes: Int64) {
-        _ = version
+        // محفوظة حتى يتغير شيء (الواجهة تُرسم كثيرًا أثناء التنزيل: لا نقرأ المجلد مع كل رسم)
+        if let c = statsCache[r.id], c.version == version { return c.value }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(at: Self.folder(r), includingPropertiesForKeys: [.fileSizeKey]) else { return (0, 0) }
         let mp3 = files.filter { $0.pathExtension == "mp3" }
         let bytes = mp3.reduce(Int64(0)) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        statsCache[r.id] = (version, (mp3.count, bytes))
         return (mp3.count, bytes)
     }
+    private var statsCache: [Int: (version: Int, value: (count: Int, bytes: Int64))] = [:]
 
     /// السور المتوفرة عند القارئ
     func available(_ r: Reciter) -> [Int] { (1...114).filter { r.has($0) } }
@@ -78,8 +81,8 @@ final class QuranDownloads: ObservableObject {
     }
 
     func cancel(_ r: Reciter, _ s: Int) {
-        // إيقاف سورة أثناء تنزيل المصحف كاملًا = إيقاف التنزيل الكامل
-        if fullFor == r.id { cancelAll(); return }
+        // إيقاف سورة أثناء تنزيل المصحف كاملًا = إيقاف التنزيل الكامل لهذا القارئ فقط (لا يمس تنزيلات قارئ آخر)
+        if fullFor == r.id { cancelFull(r.id); return }
         let k = key(r, s)
         QuranBG.shared.cancel(key: k)
         progress[k] = nil
@@ -94,7 +97,11 @@ final class QuranDownloads: ObservableObject {
 
     // ── أحداث الجلسة الخلفية ──
     func bgProgress(_ k: String, _ v: Double) {
-        if progress[k] != nil || v < 1 { progress[k] = v }
+        // تحديث الواجهة عند كل ٢٪ فقط (توفير للبطارية: كل تحديث يعيد رسم الصفحة)
+        let old = progress[k]
+        guard old != nil || v < 1 else { return }
+        if let old, v < 1, v - old < 0.02 { return }
+        progress[k] = v
     }
 
     func bgFinished(_ k: String, ok: Bool, url: URL?) {
@@ -125,10 +132,11 @@ final class QuranDownloads: ObservableObject {
     /// المهام الجارية بعد إعادة فتح التطبيق
     func reattached(_ keys: [String]) {
         for k in keys where progress[k] == nil { progress[k] = 0 }
-        if let f = fullFor, !keys.contains(where: { $0.hasPrefix("\(f)/") }) {
+        if let f = fullFor {
+            // التقدّم الحقيقي من الملفات الموجودة (لا يبدأ من الصفر بعد إعادة فتح التطبيق)
+            if let r = Reciters.cached.first(where: { $0.id == f }) { fullDone = max(0, fullTotal - available(r).filter { Self.local(r, $0) == nil }.count) }
             // كل سور المصحف انتهت أثناء إغلاق التطبيق
-            if let r = Reciters.cached.first(where: { $0.id == f }) { fullDone = fullTotal - available(r).filter { Self.local(r, $0) == nil }.count }
-            endFull()
+            if !keys.contains(where: { $0.hasPrefix("\(f)/") }) { endFull() }
         }
         version += 1
     }
@@ -138,7 +146,7 @@ final class QuranDownloads: ObservableObject {
         fullFor = nil
         UserDefaults.standard.removeObject(forKey: "quran.full.for")
         if fullFailed > 0 {
-            lastError = Lang.isEN ? "Some surahs failed. Tap download again to retry." : "تعذّر تنزيل بعض السور. اضغط تنزيل مرة أخرى لإكمالها."
+            lastError = Lang.isEN ? "Some surahs failed. Tap download again to retry." : "تعذّر تنزيل بعض السور. اضغط «تنزيل» مرة أخرى لإكمالها."
         }
         fullFailed = 0
     }
@@ -154,11 +162,22 @@ final class QuranDownloads: ObservableObject {
         lastError = nil
         prepareFolder(r.id)
         for s in todo {
-            guard let url = r.url(s) else { continue }
             let k = key(r, s)
+            // سورة يجري تنزيلها مسبقًا لا تُطلب مرتين
+            guard progress[k] == nil, let url = r.url(s) else { continue }
             progress[k] = 0
             QuranBG.shared.start(url, key: k)
         }
+    }
+
+    /// يوقف تنزيل المصحف الكامل لقارئ واحد
+    func cancelFull(_ rid: Int) {
+        for k in progress.keys where k.hasPrefix("\(rid)/") {
+            QuranBG.shared.cancel(key: k)
+            progress[k] = nil; retries[k] = nil
+        }
+        fullFor = nil; fullFailed = 0
+        UserDefaults.standard.removeObject(forKey: "quran.full.for")
     }
 
     func cancelAll() {
@@ -305,7 +324,7 @@ struct SurahsView: View {
                             Text(verbatim: LF("جارٍ تنزيل المصحف: %@ من %@", ar(dl.fullDone), ar(dl.fullTotal)))
                                 .font(Theme.f(.caption)).foregroundStyle(.white.opacity(0.85))
                             Spacer()
-                            Button("إيقاف") { dl.cancelAll() }.font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
+                            Button("إيقاف") { dl.cancelFull(reciter.id) }.font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
                         }
                     } else if st.count < avail.count {
                         Button { dl.downloadAll(reciter) } label: {
@@ -349,7 +368,7 @@ struct SurahsView: View {
                             ForEach(items, id: \.self) { n in row(n) }
                         } header: {
                             let st = Surahs.juzStart[j - 1]
-                            Text(verbatim: LF("الجزء %@", ar(j)) + " · " + LF("يبدأ من %@ آية %@", Surahs.name(st.0), ar(st.1)))
+                            Text(verbatim: LF("الجزء %@", ar(j)) + " · " + LF("يبدأ من سورة %@، الآية %@", Surahs.name(st.0), ar(st.1)))
                         }
                     }
                 }

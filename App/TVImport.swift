@@ -223,7 +223,8 @@ final class StreamTester: ObservableObject {
         }
         player.replaceCurrentItem(with: item)
         // التجربة تأخذ الصوت مثل أي مشغّل: يتوقف القرآن أو الإذاعة فلا يُسمع صوتان معًا
-        PlaybackGate.claim(.tv)
+        PlaybackGate.claim(.tv, fromTester: true)
+        PlaybackGate.tester = player
         player.play()
         timeout = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 15_000_000_000)

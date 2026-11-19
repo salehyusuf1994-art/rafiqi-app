@@ -42,7 +42,7 @@ struct FilesSettingsView: View {
                 }
 
                 Section {
-                    Toggle(isOn: $lockTab) { TileRow(title: "قفل إدارة الملفات", icon: "faceid", subtitle: "يطلب بصمة الوجه أو رمز الجوال عند فتحها") }
+                    Toggle(isOn: $lockTab) { TileRow(title: "قفل إدارة الملفات", icon: Biometry.icon, subtitle: Biometry.isTouch ? "يطلب بصمة الإصبع أو رمز الجوال عند فتحها" : "يطلب بصمة الوجه أو رمز الجوال عند فتحها") }
                 } header: { Text("الحماية") } footer: {
                     Text("يمكنك أيضًا قفل مجلد بعينه من قائمة «…» الخاصة به.")
                 }
@@ -62,7 +62,7 @@ struct FilesSettingsView: View {
                 }
 
                 Section {
-                    Text("ملفاتك محفوظة داخل جوالك فقط. تجدها أيضًا في تطبيق «الملفات» ← «على الـiPhone» ← «رفيقي»، ومنه تقدر تنقلها إلى iCloud Drive. ولإرسال ملف إلى رفيقي من أي تطبيق: «مشاركة» ← «رفيقي».")
+                    Text("ملفاتك محفوظة داخل جوالك فقط. تجدها أيضًا في تطبيق «الملفات» ← «على الـiPhone» ← «رفيقي»، ومنه يمكنك نقلها إلى iCloud Drive. ولإرسال ملف إلى رفيقي من أي تطبيق: «مشاركة» ← «رفيقي».")
                         .font(Theme.f(.footnote)).foregroundStyle(Theme.sub)
                 }
             }
@@ -75,7 +75,7 @@ struct FilesSettingsView: View {
             .alert("القفل يحتاج رمز قفل للجوال", isPresented: $noPasscode) {
                 Button("حسنًا", role: .cancel) {}
             } message: {
-                Text("فعّل رمز الدخول من إعدادات الجوال ← بصمة الوجه ورمز الدخول، ثم ارجع وفعّل القفل.")
+                Text(verbatim: Biometry.text(face: "فعّل رمز الدخول من إعدادات الجوال ← بصمة الوجه ورمز الدخول، ثم ارجع وفعّل القفل.", touch: "فعّل رمز الدخول من إعدادات الجوال ← بصمة الإصبع ورمز الدخول، ثم ارجع وفعّل القفل."))
             }
             .onChange(of: autoPhotos) { _, v in FilePrefs.autoPhotos = v }
             .onChange(of: folderMode) { _, v in FilePrefs.folderMode = v }

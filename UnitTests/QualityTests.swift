@@ -35,7 +35,12 @@ final class QualityTests: XCTestCase {
         let id = UUID()
         Keychain.set("p@ss-\(id.uuidString.prefix(4))", for: id)
         let got = Keychain.get(id)
+        // على المحاكي يجب أن تعمل سلسلة المفاتيح: الفشل خطأ حقيقي لا يُتجاوز
+        #if targetEnvironment(simulator)
+        XCTAssertFalse(got.isEmpty, "حفظ كلمة سر الخادم في سلسلة المفاتيح فشل")
+        #else
         if got.isEmpty { throw XCTSkip("سلسلة المفاتيح غير متاحة في بيئة الاختبار هذه") }
+        #endif
         XCTAssertEqual(got, "p@ss-\(id.uuidString.prefix(4))")
         Keychain.delete(id)
         XCTAssertEqual(Keychain.get(id), "")

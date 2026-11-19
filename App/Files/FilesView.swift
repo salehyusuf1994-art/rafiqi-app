@@ -48,13 +48,18 @@ struct FilesTab: View {
     @State private var showStorage = SHOT == "filesstore"
 
     var body: some View {
-        NavigationStack(path: $router.path) {
-            Group {
-                if locked { lockScreen } else { home }
+        Group {
+            // القفل فوق كل شيء: لا تُبنى صفحات المجلدات أصلًا قبل التحقق، مهما كان طريق الوصول (مشاركة ملف، رابط، ويدجت)
+            if locked {
+                lockScreen.background(AppBackground())
+            } else {
+                NavigationStack(path: $router.path) {
+                    home
+                        .background(AppBackground())
+                        .hiddenNavBar()
+                        .navigationDestination(for: URL.self) { dir in FolderScreen(dir: dir) }
+                }
             }
-            .background(AppBackground())
-            .hiddenNavBar()
-            .navigationDestination(for: URL.self) { dir in FolderScreen(dir: dir) }
         }
         .sheet(isPresented: $showSettings) { FilesSettingsView() }
         .sheet(isPresented: $showWiFi) { WiFiTransferView() }
@@ -64,11 +69,17 @@ struct FilesTab: View {
         .onChange(of: locked) { _, _ in runPending() }
         .onChange(of: phase) { _, p in
             if p == .background {
+                let hadUnlocked = !store.unlocked.isEmpty
                 store.relockAll()
                 if FilePrefs.lockTab { locked = true }
                 // المجلدات المفتوحة فوق الجذر تُغلق أيضًا: لا يبقى محتوى مقفل ظاهرًا عند الرجوع للتطبيق
                 if FilePrefs.lockTab || router.path.contains(where: { store.inVault($0) || store.insideLocked($0) }) {
                     router.path = []
+                }
+                // وما كان معروضًا فوق التبويب (معاينة ملف، أداة، تحليل المساحة…) يُغلق كذلك
+                if FilePrefs.lockTab || hadUnlocked {
+                    showSettings = false; showWiFi = false; showStorage = false
+                    FileOpener.closeForLock(all: FilePrefs.lockTab)
                 }
             }
         }
@@ -148,10 +159,11 @@ struct FilesTab: View {
             Spacer()
             Badge(name: "lock.fill", size: 72, active: true)
             Text("إدارة الملفات مقفلة").font(Theme.f(.title3, .bold)).foregroundStyle(.white)
+            if !FileStore.canProtect { noPasscodeNote }
             Button {
                 Task { if await FileStore.authenticate(L("افتح إدارة الملفات")) { locked = false } }
             } label: {
-                Label("فتح", systemImage: "faceid").font(Theme.f(.headline))
+                Label("فتح", systemImage: Biometry.icon).font(Theme.f(.headline))
                     .foregroundStyle(.black).padding(.horizontal, 28).padding(.vertical, 12)
                     .background(Capsule().fill(Theme.gold))
             }
@@ -179,10 +191,11 @@ struct FolderScreen: View {
                     VStack(spacing: 14) {
                         Badge(name: "lock.fill", size: 64, active: true)
                         Text("المجلد مقفل").font(Theme.f(.headline)).foregroundStyle(.white)
+                        if !FileStore.canProtect { noPasscodeNote }
                         Button {
                             Task { _ = await store.unlock(l) }
                         } label: {
-                            Label("فتح", systemImage: "faceid").font(Theme.f(.headline))
+                            Label("فتح", systemImage: Biometry.icon).font(Theme.f(.headline))
                                 .foregroundStyle(.black).padding(.horizontal, 28).padding(.vertical, 12)
                                 .background(Capsule().fill(Theme.gold))
                         }
@@ -202,6 +215,12 @@ struct FolderScreen: View {
         .background(AppBackground())
         .hiddenNavBar()
     }
+}
+
+/// يظهر إن أُزيل رمز قفل الجوال بعد قفل المحتوى: لا يُفتح المقفل إلا بالتحقق
+var noPasscodeNote: some View {
+    Text("لفتح المحتوى المقفل اضبط رمز قفل للجوال من الإعدادات أولًا.")
+        .font(Theme.f(.footnote)).foregroundStyle(Theme.sub).multilineTextAlignment(.center).padding(.horizontal, 30)
 }
 
 // MARK: - محتوى المجلد
@@ -239,14 +258,17 @@ struct FolderContent: View {
     @State private var reordering = false
 
     private var isTrash: Bool { store.isTrash(dir) }
+    /// كل ملفات «ملفاتي» للبحث والتصنيفات (من الخلفية)
+    @State private var deepCache: [FileItem]? = nil
+    private var needsDeep: Bool { isRoot && (!query.trimmingCharacters(in: .whitespaces).isEmpty || (filter != nil && filter != .folder)) }
 
     private var items: [FileItem] {
         _ = store.rev
         var a: [FileItem]
         let q = query.trimmingCharacters(in: .whitespaces)
         if !q.isEmpty || (filter != nil && filter != .folder && isRoot) {
-            // البحث والتصنيفات في الجذر تشمل كل المجلدات
-            a = isRoot ? store.deepList(dir) : store.list(dir)
+            // البحث والتصنيفات في الجذر تشمل كل المجلدات (تُقرأ في الخلفية مرة لكل تغيير، لا مع كل حرف)
+            a = isRoot ? (deepCache ?? []) : store.list(dir)
             a = a.filter { !store.isTrash($0.url) }
         } else {
             a = store.list(dir)
@@ -296,6 +318,11 @@ struct FolderContent: View {
         }
         .overlay(alignment: .bottom) { if selecting { selectionBar.offset(y: 0) } }
         .overlay(alignment: .top) { toastView }
+        .task(id: needsDeep ? store.rev : -1) {
+            guard needsDeep else { deepCache = nil; return }
+            let d = dir
+            deepCache = await Task.detached(priority: .userInitiated) { FileStore.deepListSync(d) }.value
+        }
         .task {
             // لقطات المراجعة: قائمة إجراءات ملف صوتي، وأدوات ملف فيديو/صوت
             guard isRoot, SHOT == "filesact" || SHOT == "filestools" else { return }
@@ -317,7 +344,7 @@ struct FolderContent: View {
         .sheet(isPresented: Binding(get: { copying != nil }, set: { if !$0 { copying = nil } })) {
             FolderPicker(title: L("نسخ إلى")) { dest in
                 let n = store.copy(copying ?? [], to: dest).count
-                show(LF("نُسخ %@", itemsText(n)))
+                show(n > 0 ? LF("نُسخ %@", itemsText(n)) : L("لم يُنسخ شيء"))
                 copying = nil; endSelection()
             }
         }
@@ -345,7 +372,7 @@ struct FolderContent: View {
         .fileImporter(isPresented: $importingFiles, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { r in
             if case .success(let urls) = r {
                 let n = store.importFiles(urls, to: dir).count
-                show(LF("استُورد %@", itemsText(n)))
+                show(n > 0 ? LF("استُورد %@", itemsText(n)) : L("لم يُستورد شيء"))
             }
         }
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 50, matching: .any(of: [.images, .videos]))
@@ -607,10 +634,10 @@ struct FolderContent: View {
                         Button { addingToPlaylist = sortedSel(urls) } label: { Label("إضافة إلى قائمة تشغيل", systemImage: "music.note.list") }
                     }
                     if urls.count >= 2, urls.allSatisfy({ $0.pathExtension.lowercased() == "pdf" }) {
-                        Button { runMulti { try MediaTools.mergePDFs(sortedSel(urls)) } } label: { Label("دمج ملفات PDF", systemImage: "doc.on.doc") }
+                        Button { let list = sortedSel(urls); runMulti { try await Task.detached(priority: .userInitiated) { try MediaTools.mergePDFs(list) }.value } } label: { Label("دمج ملفات PDF", systemImage: "doc.on.doc") }
                     }
                     if kinds == [.image] {
-                        Button { runMulti { try MediaTools.imagesToPDF(sortedSel(urls)) } } label: { Label("تحويل الصور إلى PDF", systemImage: "doc.richtext") }
+                        Button { let list = sortedSel(urls); runMulti { try await Task.detached(priority: .userInitiated) { try MediaTools.imagesToPDF(list) }.value } } label: { Label("تحويل الصور إلى PDF", systemImage: "doc.richtext") }
                     }
                 } label: {
                     VStack(spacing: 4) {
@@ -625,7 +652,7 @@ struct FolderContent: View {
                 barButton("square.and.arrow.down", L("إلى الصور"), none) {
                     Task {
                         let n = await store.saveToPhotos(urls)
-                        show(n < 0 ? L("اسمح لرفيقي بإضافة الصور من الإعدادات") : LF("حُفظ %@ في الصور", itemsText(n)))
+                        show(n < 0 ? L("اسمح لرفيقي بإضافة الصور من الإعدادات") : (n == 0 ? L("لم يُحفظ شيء في الصور") : LF("حُفظ %@ في الصور", itemsText(n))))
                         endSelection()
                     }
                 }
@@ -698,6 +725,13 @@ struct FolderContent: View {
             return
         }
         if it.kind == .archive && it.ext == "zip" {
+            // فُكّ من قبل: يُفتح مجلده بدل نسخة جديدة مكررة مع كل ضغطة
+            let prev = it.url.deletingPathExtension()
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: prev.path, isDirectory: &isDir), isDir.boolValue {
+                router.path.append(prev)
+                return
+            }
             Task {
                 busy = true
                 let d = await store.unzip(it.url)
@@ -732,7 +766,7 @@ struct FolderContent: View {
         case .color(let c): store.setColor(it.url, c)
         case .lock(let on):
             // بلا رمز قفل للجوال لا يمكن طلب التحقق، فالقفل لن يحمي شيئًا — نخبر المستخدم بدل قفل وهمي
-            if on && !FileStore.canProtect { show(L("القفل يحتاج رمز قفل للجوال. فعّله من إعدادات الجوال ← بصمة الوجه ورمز الدخول.")); return }
+            if on && !FileStore.canProtect { show(Biometry.text(face: "القفل يحتاج رمز قفل للجوال. فعّله من إعدادات الجوال ← بصمة الوجه ورمز الدخول.", touch: "القفل يحتاج رمز قفل للجوال. فعّله من إعدادات الجوال ← بصمة الإصبع ورمز الدخول.")); return }
             Task {
                 if await FileStore.authenticate(on ? L("قفل المجلد") : L("إلغاء قفل المجلد")) {
                     store.setLocked(it.url, on)
@@ -761,7 +795,7 @@ struct FolderContent: View {
                 if store.importData(d, name: base + "." + ext, to: dir) != nil { n += 1 }
             }
         }
-        show(LF("استُورد %@", itemsText(n)))
+        show(n > 0 ? LF("استُورد %@", itemsText(n)) : L("لم يُستورد شيء"))
     }
 }
 
@@ -865,6 +899,8 @@ struct FileSubtitle: View {
         Text(verbatim: text.isEmpty ? quick : text)
             .lineLimit(1).minimumScaleFactor(0.8)
             .task(id: item.url) {
+                // المجلد المقفل: لا يُكشف عدد عناصره ولا حجمها قبل التحقق
+                if item.isDir && FileStore.shared.needsUnlock(item.url) { text = L("مقفل"); return }
                 if item.kind == .audio || item.kind == .video {
                     let d = try? await AVURLAsset(url: item.url).load(.duration)
                     if let s = d?.seconds, s.isFinite, s > 0 { text = durationText(s) }
@@ -879,6 +915,7 @@ struct FileSubtitle: View {
     }
     private var quick: String {
         guard item.isDir else { return sizeText(item.size) }
+        if FileStore.shared.needsUnlock(item.url) { return L("مقفل") }
         let n = FileStore.shared.count(item.url)
         return n == 0 ? L("فارغ") : itemsText(n)
     }
@@ -972,7 +1009,7 @@ struct FolderPicker: View {
             List {
                 Button { pick(store.root); dismiss() } label: { row(L("ملفاتي"), "house", 0) }
                 ForEach(tree(), id: \.0) { (u, depth) in
-                    Button { pick(u); dismiss() } label: { row(u.lastPathComponent, "folder", depth) }
+                    Button { pick(u); dismiss() } label: { row(FileStore.plainName(u), store.isLocked(u) ? "lock.fill" : "folder", depth) }
                         .swipeActions { Button { base = u; name = ""; askNew = true } label: { Label("مجلد داخله", systemImage: "folder.badge.plus") }.tint(Theme.goldDeep) }
                 }
                 .listRowBackground(Theme.card)
@@ -1010,7 +1047,8 @@ struct FolderPicker: View {
             guard depth < 6 else { return }
             for f in store.sorted(store.list(d).filter(\.isDir), in: d, by: .name, ascending: true) {
                 out.append((f.url, depth + 1))
-                walk(f.url, depth + 1)
+                // ما داخل مجلد مقفل لا يُكشف قبل التحقق (ولا حتى أسماء مجلداته)
+                if !store.needsUnlock(f.url) { walk(f.url, depth + 1) }
             }
         }
         walk(store.root, 0)

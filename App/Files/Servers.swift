@@ -294,6 +294,8 @@ struct RemoteBrowser: View {
     @State private var askFolder = false
     @State private var folderName = ""
     @State private var client: RemoteClient?
+    /// حذف ملف من الخادم نهائي (لا سلة هناك): يُطلب تأكيد
+    @State private var confirmDelete: RemoteItem?
 
     var body: some View {
         List {
@@ -310,13 +312,26 @@ struct RemoteBrowser: View {
                     Button { Task { await fetch(it, open: true) } } label: { row(it) }
                         .swipeActions {
                             Button(L("تنزيل")) { Task { await fetch(it, open: false) } }.tint(Theme.goldDeep)
-                            Button(L("حذف"), role: .destructive) { Task { try? await client?.delete(it.path); await load() } }
+                            Button(L("حذف"), role: .destructive) { confirmDelete = it }
                         }
                 }
             }
             .listRowBackground(Theme.card)
         }
         .overlay { if loading { ProgressView().tint(Theme.gold) } }
+        .confirmationDialog(L("حذف نهائي؟"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
+                            titleVisibility: .visible) {
+            Button(L("حذف نهائي"), role: .destructive) {
+                guard let it = confirmDelete else { return }
+                confirmDelete = nil
+                Task {
+                    do { try await client?.delete(it.path) } catch { status = L("تعذّر الحذف من الخادم.") }
+                    await load()
+                }
+            }
+        } message: {
+            Text("يُحذف الملف من الخادم نفسه ولا يمكن استرجاعه.")
+        }
         .glassList()
         .navigationTitle(path == "/" ? server.title : (path as NSString).lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)

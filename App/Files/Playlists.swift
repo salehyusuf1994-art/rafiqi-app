@@ -223,7 +223,11 @@ struct ReminderSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("حفظ") {
                         Task {
-                            _ = await Notify.askIfNeeded()
+                            // الإشعارات غير مسموحة: لا نعد بتذكير لن يصل
+                            guard await Notify.askIfNeeded() else {
+                                done(L("فعّل إشعارات رفيقي من إعدادات الجوال ليصلك التذكير."))
+                                dismiss(); return
+                            }
                             let c = UNMutableNotificationContent()
                             // ملف مقفل (أو «إدارة الملفات» مقفلة): لا يظهر اسمه ولا ملاحظته على شاشة القفل
                             let hidden = FileStore.shared.inVault(item.url) || FilePrefs.lockTab

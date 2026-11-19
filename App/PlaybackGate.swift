@@ -9,9 +9,12 @@ enum PlaybackGate {
     /// آخر مشغّل بدأ (لتوجيه أزرار شاشة القفل والسماعات إليه)
     private(set) static var owner: Owner = .audio
 
-    static func claim(_ o: Owner, tv: TVPlayback? = nil, video: VideoController? = nil) {
-        NSLog("RFDBG gate claim %@", String(describing: o))
+    /// مشغّل «تجربة الرابط» في إضافة قناة: يتوقف إذا بدأ أي مشغّل آخر
+    static weak var tester: AVPlayer?
+
+    static func claim(_ o: Owner, tv: TVPlayback? = nil, video: VideoController? = nil, fromTester: Bool = false) {
         owner = o
+        if !fromTester, let t = tester { t.pause() }
         if o != .audio {
             let a = AudioPlayer.shared
             if a.state.playing || a.loading { a.pause() }
@@ -24,6 +27,12 @@ enum PlaybackGate {
 
     /// الفيديو الذي تتجه إليه أزرار شاشة القفل الآن (إن كان هو آخر ما بدأ)
     static var activeVideo: VideoController? { owner == .video ? VideoController.active : nil }
+}
+
+/// مشغّل مقفل (قفل الأطفال) معروض الآن: لا تغلقه الروابط ولا الويدجت ولا الإشعارات ولا فتح ملف أو قناة أخرى
+@MainActor
+enum PlayerLockState {
+    static var active = false
 }
 
 /// القناة التي تعمل في النافذة العائمة: نُبقي مشغّلها حيًّا بعد إغلاق شاشة البث
@@ -39,7 +48,6 @@ enum TVPiP {
     /// يغلق النافذة العائمة ويوقف قناتها (عند بدء فيديو أو قناة أخرى)
     static func end(except keep: TVPlayback? = nil) {
         guard let t = tv, t !== keep else { return }
-        NSLog("RFDBG tv pip end")
         vc?.player = nil
         t.stop()
         clear()

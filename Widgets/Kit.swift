@@ -26,6 +26,8 @@ let isWidgetProcess = Bundle.main.bundlePath.hasSuffix(".appex")
 enum Calli {
     static let dir: URL = Bundle.main.bundleURL.appendingPathComponent("Calli")
     private static var cache: [String: UIImage] = [:]
+    /// حجم الصور المخزنة بالبايت (ذاكرة الويدجت نحو ٣٠ م.ب: نُبقي المخزن تحت ١٢ م.ب)
+    private static var bytes = 0
 
     private static let lock = NSLock()
 
@@ -43,7 +45,11 @@ enum Calli {
         guard let data = try? Data(contentsOf: dir.appendingPathComponent(n + ".png")),
               let img = UIImage(data: data, scale: 3) else { return nil }
         // حد أعلى للذاكرة (ذاكرة الويدجت محدودة): يُفرّغ المخزن إن كبر كثيرًا
-        lock.lock(); if cache.count >= (isWidgetProcess ? 160 : 4000) { cache.removeAll() }; cache[n] = img; lock.unlock()
+        let cost = imageCost(img)
+        lock.lock()
+        if cache.count >= (isWidgetProcess ? 160 : 4000) || (isWidgetProcess && bytes + cost > 12 << 20) { cache.removeAll(); bytes = 0 }
+        cache[n] = img; bytes += cost
+        lock.unlock()
         return img
     }
 
@@ -207,11 +213,17 @@ struct Digits: View {
     }
 }
 
+/// حجم الصورة في الذاكرة بعد فكّها (عرض × ارتفاع × ٤ بايت)
+func imageCost(_ img: UIImage) -> Int {
+    Int(img.size.width * img.scale) * Int(img.size.height * img.scale) * 4
+}
+
 /// بادئة العدّاد التنازلي حتى يظهر دائمًا بالساعات: «٠:» تحت الساعة، و«٠:٠» تحت عشر دقائق
 func timerPrefix(_ left: TimeInterval) -> String {
     guard left > 0 else { return "" }
-    if left < 600 { return ar("0") + ":" + ar("0") }
-    if left < 3600 { return ar("0") + ":" }
+    // «<=»: المدخلات على رأس الدقيقة تمامًا (قبل الصلاة بساعة أو عشر دقائق) تبدأ بالبادئة الصحيحة
+    if left <= 600 { return ar("0") + ":" + ar("0") }
+    if left <= 3600 { return ar("0") + ":" }
     return ""
 }
 
@@ -435,6 +447,12 @@ struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelinePr
             let w = await Weather.load()
             // كل ساعة (ضمن حصة التحديث اليومية)، ومدخلات عند تغيّر الصلاة خلالها (لويدجت الطقس التي تعرض الصلاة القادمة)
             var marks = Prayer.boundaries(from: now, hours: 1).map { $0.addingTimeInterval(1) }
+            // وقبل الصلاة بساعة وبعشر دقائق: يتغيّر شكل العدّاد (بادئة «٠:» و«٠:٠»)
+            let hourEnd = now.addingTimeInterval(3600)
+            for b in Prayer.boundaries(from: now, hours: 2) {
+                for m in [b.addingTimeInterval(-3600 + 0.5), b.addingTimeInterval(-600 + 0.5)] where m > now && m < hourEnd { marks.append(m) }
+            }
+            marks.sort()
             // منتصف الليل خلال الساعة: مدخل جديد يحدّث اسم اليوم والتاريخ في ويدجت الطقس
             let mid = Cal.nextMidnight(after: now).addingTimeInterval(5)
             if mid < now.addingTimeInterval(3600) { marks.append(mid); marks.sort() }

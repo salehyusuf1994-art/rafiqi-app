@@ -719,7 +719,12 @@ struct LiveScanner: UIViewControllerRepresentable {
                 try? dataScanner.startScanning()
             })
             if let u = URL(string: value), u.scheme?.hasPrefix("http") == true {
-                a.addAction(UIAlertAction(title: L("فتح الرابط"), style: .default) { _ in UIApplication.shared.open(u) })
+                a.addAction(UIAlertAction(title: L("فتح الرابط"), style: .default) { [weak self] _ in
+                    UIApplication.shared.open(u)
+                    // بعد الرجوع يكمل المسح (كان يبقى متوقفًا)
+                    self?.shown = false
+                    try? dataScanner.startScanning()
+                })
             }
             a.addAction(UIAlertAction(title: L("مسح آخر"), style: .cancel) { [weak self] _ in
                 self?.shown = false
@@ -957,7 +962,8 @@ struct ScanEditor: View {
         Task.detached(priority: .userInitiated) {
             for p in order {
                 let img = autoreleasepool { ScanProcessor.render(p, maxSide: 1200) }
-                await MainActor.run { preview[p.id] = img }
+                // معالجة قديمة انتهت بعد أحدث منها (تغيير سريع للفلتر): لا تكتب فوق المعاينة الأحدث
+                await MainActor.run { if rendered[p.id] == p { preview[p.id] = img } }
             }
         }
     }
@@ -1395,6 +1401,29 @@ enum ScanProjects {
                   let r = try? JSONDecoder().decode(Rec.self, from: data), let files = r.files else { continue }
             let hit = files.contains { f in keys.contains { k in f == k || f.hasPrefix(k + "/") } }
             if hit { try? fm.removeItem(at: d) }
+        }
+    }
+
+    /// نُقل ملف أو مجلد أو أُعيدت تسميته: يتبعه مشروع المسح. وإن صار داخل مجلد مقفل يُحذف المشروع
+    /// (لا تبقى نسخة صور هوية أو مستند في «آخر المسحات» بلا قفل)
+    static func remap(from a: String, to b: String) {
+        guard a != b else { return }
+        let fm = FileManager.default
+        for d in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+            let j = d.appendingPathComponent("project.json")
+            guard let data = try? Data(contentsOf: j), var r = try? JSONDecoder().decode(Rec.self, from: data), let files = r.files else { continue }
+            var changed = false
+            let mapped = files.map { f -> String in
+                if f == a { changed = true; return b }
+                if f.hasPrefix(a + "/") { changed = true; return b + f.dropFirst(a.count) }
+                return f
+            }
+            guard changed else { continue }
+            if mapped.contains(where: { $0.split(separator: "/").contains { $0.hasPrefix(FileStore.lockPrefix) } }) {
+                try? fm.removeItem(at: d); continue
+            }
+            r.files = mapped
+            try? JSONEncoder().encode(r).write(to: j, options: .atomic)
         }
     }
 
