@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read   # لا ينشر شيئًا في المستودع
 
 jobs:
   links:
@@ -45,8 +45,10 @@ jobs:
           check weather "https://api.open-meteo.com/v1/forecast?latitude=24.47&longitude=39.61&current=temperature_2m" >> out/links.txt
           grep -c "^FAIL" out/links.txt || true
           grep "^FAIL\|^[0-9]" out/links.txt | head -80
-      - name: Publish
-        run: |
-          cd out && git init -q && git checkout -q -b linksout && git add -A && \
-          git -c user.name=ci -c user.email=ci@local commit -qm links && \
-          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} linksout
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linksout
+          path: out
+          # خاص بالمطوّر: لا فروع عامة؛ يُحذف تلقائيًا بعد يوم
+          retention-days: 1

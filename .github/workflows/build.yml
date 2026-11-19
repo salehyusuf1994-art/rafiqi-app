@@ -20,7 +20,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read   # لا ينشر شيئًا في المستودع
 
 jobs:
   build:
@@ -88,10 +88,6 @@ jobs:
           zip -qry Hilal.ipa Payload
           ls -la Hilal.ipa
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Hilal-ipa
-          path: Hilal.ipa
 
       - name: Check audio streams
         if: always()
@@ -218,30 +214,24 @@ jobs:
           echo "$last"
           [ "$rc" -eq 0 ] && echo "$last" | grep -q "with 0 failures" || { echo "::error::Unit tests failed or did not run (exit $rc)"; exit 1; }
 
-      - name: Publish output branch
+      - name: Collect outputs
         if: always()
         run: |
           mkdir -p out && cd out
-          git init -q -b out
           cp ../build.log . 2>/dev/null || echo "no log" > build.log
           grep -E "error:|warning:" build.log | sort -u > problems.txt || true
-          cp ../sign.txt . 2>/dev/null || true
-          cp ../streams.txt . 2>/dev/null || true
-          cp ../radios.txt . 2>/dev/null || true
-          cp ../tv.txt . 2>/dev/null || true
-          # الـIPA لا يُنشر إلا إذا نجح كل شيء (البناء والاختبارات)
+          cp ../sign.txt ../streams.txt ../radios.txt ../tv.txt ../unit_summary.txt . 2>/dev/null || true
+          # الـIPA فقط إذا نجح كل شيء (البناء والاختبارات)
           if [ "${{ job.status }}" = "success" ]; then cp ../Hilal.ipa . 2>/dev/null || true; fi
-          cp ../unit_summary.txt . 2>/dev/null || true
           cp -R ../shots . 2>/dev/null || true
           cp -R ../matrix . 2>/dev/null || true
           grep -E "error:" ../sim.log > sim_errors.txt 2>/dev/null || true
           xcodebuild -version > xcode.txt
           echo "${{ job.status }}" > status.txt
-          git add -A
-          git -c user.name=ci -c user.email=ci@example.com commit -qm "build ${{ github.run_number }}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" out
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: build-log
-          path: build.log
+          name: out
+          path: out
+          # خاص بالمطوّر: لا فروع عامة؛ يُحذف تلقائيًا بعد يوم
+          retention-days: 1

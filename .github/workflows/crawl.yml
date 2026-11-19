@@ -15,7 +15,7 @@ on:
         default: macos-15
 
 permissions:
-  contents: write
+  contents: read   # لا ينشر شيئًا في المستودع
 
 jobs:
   crawl:
@@ -62,16 +62,4 @@ jobs:
         with:
           name: crawl-${{ matrix.tab }}
           path: out
-  publish:
-    needs: crawl
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: all
-      - run: |
-          mkdir pub && cp -R all/*/* pub/ 2>/dev/null || true
-          cd pub && git init -q && git checkout -q -b crawlout && git add -A && \
-          git -c user.name=ci -c user.email=ci@local commit -qm "crawl" && \
-          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} crawlout
+          retention-days: 1

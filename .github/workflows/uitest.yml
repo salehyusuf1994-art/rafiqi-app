@@ -9,7 +9,7 @@ on:
         default: macos-15
 
 permissions:
-  contents: write
+  contents: read   # لا ينشر شيئًا في المستودع
 
 jobs:
   uitest:
@@ -43,12 +43,13 @@ jobs:
           mkdir -p uiout && cp applog.txt uiout/ || true
           mkdir -p uiout && cp -R ~/uitest/* uiout/ 2>/dev/null || true
           cp ui.log uiout/ ; ls uiout
-      - name: Publish
-        run: |
-          mkdir -p pub && cd pub && git init -q && git checkout -q -b uiout
-          cp -R ../uiout/* . 2>/dev/null || true
-          git add -A && git -c user.name=ci -c user.email=ci@local commit -qm "ui test" && \
-          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} uiout
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: uiout
+          path: uiout
+          # خاص بالمطوّر: لا فروع عامة؛ يُحذف تلقائيًا بعد يوم
+          retention-days: 1
       - name: Verdict
         if: always()
         run: |

@@ -9,7 +9,7 @@ on:
         default: macos-15
 
 permissions:
-  contents: write
+  contents: read   # لا ينشر شيئًا في المستودع
 
 jobs:
   launch:
@@ -55,12 +55,13 @@ jobs:
           xcrun simctl spawn $UDID log show --last 15m --style compact --predicate 'process == "Hilal"' > lout/applog.txt 2>&1 || true
           grep -i -E "fatal|crash|exception|terminat|assert|abort" lout/applog.txt | head -40
           ls lout
-      - name: Publish
-        run: |
-          mkdir -p pub && cd pub && git init -q && git checkout -q -b launchout
-          cp -R ../lout/* . 2>/dev/null || true
-          git add -A && git -c user.name=ci -c user.email=ci@local commit -qm "launch test" && \
-          git push -qf https://x-access-token:${{ github.token }}@github.com/${{ github.repository }} launchout
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: launchout
+          path: lout
+          # خاص بالمطوّر: لا فروع عامة؛ يُحذف تلقائيًا بعد يوم
+          retention-days: 1
       - name: Verdict
         if: always()
         run: |
