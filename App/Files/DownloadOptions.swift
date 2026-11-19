@@ -350,6 +350,8 @@ struct DownloadOptionsPage: View {
     /// تعذّر تحميل صورة المعاينة: يُعرض الرأس المختصر بدل مربع فارغ
     @State private var thumbFailed = false
     @State private var error: String?
+    /// يزيد مع «إعادة المحاولة» فيُعاد الفحص لنفس الرابط
+    @State private var attempt = 0
     var done: (String) -> Void
     /// يغلق صفحة الخيارات كلها بعد بدء التنزيل
     var close: () -> Void
@@ -362,6 +364,9 @@ struct DownloadOptionsPage: View {
                     if let error {
                         Label(error, systemImage: "exclamationmark.triangle.fill").font(Theme.f(.subheadline)).foregroundStyle(.orange)
                             .frame(maxWidth: .infinity, alignment: .leading).glassCard(padding: 14)
+                        if LinkInspector.normalize(link) != nil {
+                            option("arrow.clockwise", L("إعادة المحاولة"), nil) { attempt += 1 }
+                        }
                         option("arrow.down", L("تنزيل الرابط كما هو"), nil) { start(link, .none, name: nil) }
                     } else if let p = probe {
                         header(p)
@@ -380,10 +385,15 @@ struct DownloadOptionsPage: View {
             .navigationTitle("خيارات التنزيل")
             .navigationBarTitleDisplayMode(.inline)
         // يُعاد الفحص كلما تغيّر الرابط (عند اختيار ملف من الصفحة أو الرجوع منها)
-        .task(id: link) {
+        .task(id: "\(attempt)|" + link) {
             probe = nil; error = nil; frame = nil; thumbFailed = false
             guard let u = LinkInspector.normalize(link) else { error = L("الرابط غير صالح."); return }
-            do { probe = try await LinkInspector.probe(u, referer: referer) } catch { self.error = error.localizedDescription }
+            do { probe = try await LinkInspector.probe(u, referer: referer) }
+            catch let e as URLError where [.timedOut, .networkConnectionLost].contains(e.code) && !Task.isCancelled {
+                // الشبكة الضعيفة تُسقط الطلب الأول أحيانًا: محاولة ثانية تلقائية قبل عرض الخطأ
+                do { probe = try await LinkInspector.probe(u, referer: referer) } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+            }
+            catch { if !Task.isCancelled { self.error = error.localizedDescription } }
             // فيديو بلا صورة معاينة: لقطة من الفيديو نفسه
             if let p = probe, p.kind == .video, inherited?.thumb == nil {
                 frame = await LinkInspector.frame(p.url, referer: referer)

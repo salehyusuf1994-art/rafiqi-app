@@ -260,8 +260,10 @@ final class TVTapTests: XCTestCase {
         if !item.waitForExistence(timeout: 45) {
             print("TVTEST page retry")
             shot(app, "13_page_retry")
+            // صفحة الخيارات مفتوحة على خطأ الشبكة: «إعادة المحاولة» منها (زر «تنزيل» تحتها غير قابل للضغط)
+            let retry = app.buttons.containing(NSPredicate(format: "label CONTAINS 'إعادة المحاولة'")).firstMatch
             let again = app.buttons["تنزيل"].firstMatch
-            if again.exists { again.tap() }
+            if retry.exists { retry.tap() } else if again.exists && again.isHittable { again.tap() }
         }
         XCTAssertTrue(item.waitForExistence(timeout: 60), "page items not listed")
         shot(app, "13_page_items")
