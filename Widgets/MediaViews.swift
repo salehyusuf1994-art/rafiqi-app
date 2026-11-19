@@ -92,6 +92,8 @@ struct MTitle: View {
             .foregroundStyle(.white)
             .lineLimit(1).minimumScaleFactor(0.5)
             .fixedSize(horizontal: false, vertical: true)
+            // سطر النستعليق أعلى بكثير من حروفه: يُحجز له ارتفاع الحروف فقط (كان يدفع القرص والأسماء إلى حافة الويدجت)
+            .frame(height: wf == .nastaliq ? size * k * 1.45 : nil)
     }
 }
 
