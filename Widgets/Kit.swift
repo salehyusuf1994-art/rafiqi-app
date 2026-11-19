@@ -31,9 +31,14 @@ enum Calli {
 
     private static let lock = NSLock()
 
+    /// اختيار الويدجت المعروضة الآن («ميلادي» أو «ميلادي شامي»)، يُقدَّم على إعداد التطبيق
+    static var shamiOverride: Bool?
+    /// الأشهر الميلادية بأسمائها الشامية؟
+    static var shami: Bool { shamiOverride ?? Settings.shamiMonths }
+
     /// الأشهر الميلادية بأسمائها الشامية (كانون الثاني، شباط…) إن اختيرت
     static func resolve(_ n: String) -> String {
-        guard Settings.shamiMonths, n.hasPrefix("gm"), n.dropFirst(2).first?.isNumber == true else { return n }
+        guard shami, n.hasPrefix("gm"), n.dropFirst(2).first?.isNumber == true else { return n }
         return "gs" + n.dropFirst(2)
     }
 
@@ -313,15 +318,31 @@ enum TintOpt: String, AppEnum {
 }
 
 enum CalOpt: String, AppEnum {
-    case hijri, gregorian
+    case hijri, gregorian, gregorianShami
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "التقويم"
-    static let caseDisplayRepresentations: [CalOpt: DisplayRepresentation] = [.hijri: "هجري", .gregorian: "ميلادي"]
+    static let caseDisplayRepresentations: [CalOpt: DisplayRepresentation] = [.hijri: "هجري", .gregorian: "ميلادي", .gregorianShami: "ميلادي شامي"]
+    var isGregorian: Bool { self != .hijri }
+    /// أسماء الأشهر لهذه الويدجت: شامية، أو عادية، أو (للهجري) حسب إعداد التطبيق
+    var shami: Bool? { self == .gregorianShami ? true : (self == .gregorian ? false : nil) }
+}
+
+/// يضبط أسماء الأشهر الميلادية للويدجت المعروضة (شامية أو عادية) قبل رسم محتواها.
+/// في عملية الويدجت تُرسم كل ويدجت وحدها، فتضبط كلٌّ منها اختيارها؛ وفي التطبيق يبقى إعداد التطبيق العام
+struct ShamiScope<C: View>: View {
+    let shami: Bool?
+    @ViewBuilder let content: () -> C
+    var body: some View {
+        if isWidgetProcess { Calli.shamiOverride = shami }
+        return content()
+    }
 }
 
 protocol Positioned {
     var place: PlaceOpt { get }
     var tint: TintOpt { get }
     var isGregorian: Bool { get }
+    /// أسماء الأشهر الميلادية لهذه الويدجت (nil = إعداد التطبيق)
+    var shamiChoice: Bool? { get }
     var bgOpt: BgOpt { get }
     var fontOpt: FontOpt { get }
     var mediaOpt: String { get }
@@ -343,6 +364,8 @@ struct HEntry: TimelineEntry {
     let size: CGSize
     var tint: Color
     let greg: Bool
+    /// أسماء الأشهر الميلادية الشامية لهذه الويدجت (nil = إعداد التطبيق)
+    var shami: Bool? = nil
     var weather: WeatherData? = nil
     var preview = false
     /// معروض داخل التطبيق (معرض الويدجتات)
@@ -381,6 +404,7 @@ struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelinePr
                        greg: c?.isGregorian ?? false, weather: w, preview: ctx.isPreview, family: ctx.family)
         e.style = st
         e.kind = kind
+        e.shami = c?.shamiChoice
         e.media = c?.mediaOpt ?? ""
         return e
     }

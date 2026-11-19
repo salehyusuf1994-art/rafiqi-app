@@ -296,7 +296,8 @@ struct RafiqiSmallIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "الخط", default: .app) var font: FontOpt
     @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
     var designID: String? { design.rawValue }
-    var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
+    var isGregorian: Bool { calendar.isGregorian && Catalog.info(design.rawValue).hasCalendar }
+    var shamiChoice: Bool? { Catalog.info(design.rawValue).hasCalendar ? calendar.shami : nil }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { source == .current ? "" : source.rawValue }
@@ -314,7 +315,8 @@ struct RafiqiMediumIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "الخط", default: .app) var font: FontOpt
     @Parameter(title: "المصدر (لويدجت الوسائط)", default: .current) var source: MediaSourceOpt
     var designID: String? { design.rawValue }
-    var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
+    var isGregorian: Bool { calendar.isGregorian && Catalog.info(design.rawValue).hasCalendar }
+    var shamiChoice: Bool? { Catalog.info(design.rawValue).hasCalendar ? calendar.shami : nil }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { source == .current ? "" : source.rawValue }
@@ -331,7 +333,8 @@ struct RafiqiLargeIntent: WidgetConfigurationIntent, Positioned {
     @Parameter(title: "الخلفية", default: .app) var bg: BgOpt
     @Parameter(title: "الخط", default: .app) var font: FontOpt
     var designID: String? { design.rawValue }
-    var isGregorian: Bool { calendar == .gregorian && Catalog.info(design.rawValue).hasCalendar }
+    var isGregorian: Bool { calendar.isGregorian && Catalog.info(design.rawValue).hasCalendar }
+    var shamiChoice: Bool? { Catalog.info(design.rawValue).hasCalendar ? calendar.shami : nil }
     var bgOpt: BgOpt { bg }
     var fontOpt: FontOpt { font }
     var mediaOpt: String { "" }
@@ -342,7 +345,7 @@ struct RafiqiSmall: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "rafiqi.small", intent: RafiqiSmallIntent.self,
                                provider: HProvider<RafiqiSmallIntent>(sched: Catalog.info("hilal.day").sched, kind: "hilal.day")) { entry in
-            Catalog.info(entry.kind).render(entry)
+            ShamiScope(shami: entry.shami) { Catalog.info(entry.kind).render(entry) }
         }
         .configurationDisplayName(L("رفيقي — صغير"))
         .description(L("اضغط مطوّلًا على الويدجت بعد إضافتها، ثم «تعديل الأداة»، واختر الويدجت التي تريدها باسمها."))
@@ -356,7 +359,7 @@ struct RafiqiMedium: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "rafiqi.medium", intent: RafiqiMediumIntent.self,
                                provider: HProvider<RafiqiMediumIntent>(sched: Catalog.info("hilal.date").sched, kind: "hilal.date")) { entry in
-            Catalog.info(entry.kind).render(entry)
+            ShamiScope(shami: entry.shami) { Catalog.info(entry.kind).render(entry) }
         }
         .configurationDisplayName(L("رفيقي — متوسط"))
         .description(L("اضغط مطوّلًا على الويدجت بعد إضافتها، ثم «تعديل الأداة»، واختر الويدجت التي تريدها باسمها."))
@@ -370,7 +373,7 @@ struct RafiqiLarge: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "rafiqi.large", intent: RafiqiLargeIntent.self,
                                provider: HProvider<RafiqiLargeIntent>(sched: Catalog.info("r2.cal").sched, kind: "r2.cal")) { entry in
-            Catalog.info(entry.kind).render(entry)
+            ShamiScope(shami: entry.shami) { Catalog.info(entry.kind).render(entry) }
         }
         .configurationDisplayName(L("رفيقي — كبير"))
         .description(L("اضغط مطوّلًا على الويدجت بعد إضافتها، ثم «تعديل الأداة»، واختر الويدجت التي تريدها باسمها."))

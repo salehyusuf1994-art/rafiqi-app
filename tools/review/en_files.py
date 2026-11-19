@@ -886,4 +886,5 @@ T.update({
  'أزرق': 'Blue',
  'فيروزي': 'Turquoise',
  'رملي': 'Sand',
+ 'ميلادي شامي': 'Gregorian (Levantine months)',
 })

@@ -241,6 +241,7 @@ enum LockInlineDesign: String, AppEnum {
 protocol LockConfig: WidgetConfigurationIntent {
     var designID: String { get }
     var isGregorian: Bool { get }
+    var shamiChoice: Bool? { get }
 }
 
 struct LockRectIntent: LockConfig {
@@ -249,7 +250,8 @@ struct LockRectIntent: LockConfig {
     @Parameter(title: "الويدجت", default: .next) var design: LockRectDesign
     @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
     var designID: String { design.rawValue }
-    var isGregorian: Bool { calendar == .gregorian }
+    var isGregorian: Bool { calendar.isGregorian }
+    var shamiChoice: Bool? { calendar.shami }
     init() {}
 }
 
@@ -259,7 +261,8 @@ struct LockCircleIntent: LockConfig {
     @Parameter(title: "الويدجت", default: .ring) var design: LockCircleDesign
     @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
     var designID: String { design.rawValue }
-    var isGregorian: Bool { calendar == .gregorian }
+    var isGregorian: Bool { calendar.isGregorian }
+    var shamiChoice: Bool? { calendar.shami }
     init() {}
 }
 
@@ -269,7 +272,8 @@ struct LockInlineIntent: LockConfig {
     @Parameter(title: "الويدجت", default: .date) var design: LockInlineDesign
     @Parameter(title: "التقويم", default: .hijri) var calendar: CalOpt
     var designID: String { design.rawValue }
-    var isGregorian: Bool { calendar == .gregorian }
+    var isGregorian: Bool { calendar.isGregorian }
+    var shamiChoice: Bool? { calendar.shami }
     init() {}
 }
 
@@ -280,6 +284,7 @@ struct R2LockProvider<I: LockConfig>: AppIntentTimelineProvider {
     private func entry(_ d: Date, _ c: I?, _ ctx: Context) -> HEntry {
         var e = HEntry(date: d, slot: .mm, size: ctx.displaySize, tint: .white, greg: c?.isGregorian ?? false, preview: ctx.isPreview)
         e.kind = c?.designID ?? fallback
+        e.shami = c?.shamiChoice
         e.family = ctx.family
         return e
     }
@@ -315,7 +320,7 @@ struct RafiqiLockRect: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "rafiqi.lock.rect", intent: LockRectIntent.self,
                                provider: R2LockProvider<LockRectIntent>(fallback: "r2.lock.next")) { e in
-            Catalog.info(e.kind).render(e)
+            ShamiScope(shami: e.shami) { Catalog.info(e.kind).render(e) }
         }
         .configurationDisplayName(L("رفيقي — مستطيل"))
         .description(L("اختر الويدجت برقمها من «تعديل الأداة»."))
@@ -327,7 +332,7 @@ struct RafiqiLockCircle: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "rafiqi.lock.circle", intent: LockCircleIntent.self,
                                provider: R2LockProvider<LockCircleIntent>(fallback: "r2.lock.ring")) { e in
-            Catalog.info(e.kind).render(e)
+            ShamiScope(shami: e.shami) { Catalog.info(e.kind).render(e) }
         }
         .configurationDisplayName(L("رفيقي — دائري"))
         .description(L("اختر الويدجت برقمها من «تعديل الأداة»."))
@@ -339,7 +344,7 @@ struct RafiqiLockInline: Widget {
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "rafiqi.lock.inline", intent: LockInlineIntent.self,
                                provider: R2LockProvider<LockInlineIntent>(fallback: "r2.lock.idate")) { e in
-            Catalog.info(e.kind).render(e)
+            ShamiScope(shami: e.shami) { Catalog.info(e.kind).render(e) }
         }
         .configurationDisplayName(L("رفيقي — سطر"))
         .description(L("اختر الويدجت برقمها من «تعديل الأداة»."))

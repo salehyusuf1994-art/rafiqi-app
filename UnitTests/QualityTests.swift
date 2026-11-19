@@ -45,4 +45,21 @@ final class QualityTests: XCTestCase {
         Keychain.delete(id)
         XCTAssertEqual(Keychain.get(id), "")
     }
+
+    /// خيار «ميلادي شامي» في الويدجت: يفرض الأسماء الشامية، و«ميلادي» يفرض العادية، و«هجري» يتبع إعداد التطبيق
+    func testShamiCalendarOption() {
+        XCTAssertEqual(CalOpt.gregorianShami.shami, true)
+        XCTAssertEqual(CalOpt.gregorian.shami, false)
+        XCTAssertNil(CalOpt.hijri.shami)
+        XCTAssertTrue(CalOpt.gregorianShami.isGregorian && CalOpt.gregorian.isGregorian && !CalOpt.hijri.isGregorian)
+        defer { Calli.shamiOverride = nil }
+        Calli.shamiOverride = true
+        XCTAssertEqual(Calli.resolve("gm3"), "gs3")
+        XCTAssertEqual(Calli.resolve("hm3"), "hm3")
+        XCTAssertNotNil(Calli.png("gm3"), "صورة آذار بالثلث موجودة")
+        XCTAssertEqual(Words.text("gm1"), Words.gs[0])
+        Calli.shamiOverride = false
+        XCTAssertEqual(Calli.resolve("gm3"), "gm3")
+        XCTAssertEqual(Words.text("gm1"), Words.gm[0])
+    }
 }

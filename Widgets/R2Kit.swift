@@ -30,7 +30,7 @@ enum R2 {
     static func month(_ m: Int, greg: Bool) -> String {
         let i = max(0, min(11, m - 1))
         if Lang.isEN { return greg ? Words.gmEN[i] : Words.hmEN[i] }
-        return greg ? (Settings.shamiMonths ? Words.gs[i] : Words.gm[i]) : Words.hm[i]
+        return greg ? (Calli.shami ? Words.gs[i] : Words.gm[i]) : Words.hm[i]
     }
     static func prayer(_ k: PKey) -> String {
         Lang.isEN ? (Words.prEN[k.rawValue] ?? "") : (PR_NAMES[k] ?? "")

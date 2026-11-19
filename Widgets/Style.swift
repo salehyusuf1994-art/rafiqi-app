@@ -272,7 +272,7 @@ enum Words {
     private static func num(_ s: Substring) -> Int? { Int(s) }
 
     /// النص المقابل لاسم الصورة (بدون لاحقة ‎_t)
-    static func text(_ name: String, shami: Bool = Settings.shamiMonths) -> String? {
+    static func text(_ name: String, shami: Bool = Calli.shami) -> String? {
         let n = name.hasSuffix("_t") ? String(name.dropLast(2)) : name
         if let s = labels[n] { return s }
         if n.hasPrefix("pr_") { return pr[String(n.dropFirst(3))] }
@@ -312,7 +312,7 @@ enum AltWord {
     static func image(_ name: String, font: WFont) -> UIImage? {
         guard let base = Calli.png(name), let text = Lang.isEN ? Words.en(name) : Words.text(name) else { return nil }
         var key = font.rawValue + "|" + name
-        if Settings.shamiMonths { key += "|s" }
+        if Calli.shami { key += "|s" }
         if Settings.westernDigits { key += "|w" }
         if Lang.isEN { key += "|en" }
         lock.lock(); let hit = cache[key]; lock.unlock()
