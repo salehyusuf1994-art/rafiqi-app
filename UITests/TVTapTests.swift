@@ -198,6 +198,12 @@ final class TVTapTests: XCTestCase {
         row.tap()
         sleep(2)
         let mwl = app.buttons.containing(NSPredicate(format: "label BEGINSWITH 'رابطة العالم الإسلامي'")).firstMatch
+        // تنبيه إذن متأخر (الموقع/الإشعارات) قد يظهر بعد الضغط فيمنع فتح الصفحة: نغلقه ونعيد المحاولة
+        if !mwl.waitForExistence(timeout: 8) {
+            for _ in 0..<2 { let a = sb.alerts.firstMatch; if a.waitForExistence(timeout: 2) { a.buttons.element(boundBy: a.buttons.count > 1 ? 1 : 0).tap() } }
+            if row.exists { row.tap() }
+            XCTAssertTrue(mwl.waitForExistence(timeout: 10), "method list missing")
+        }
         mwl.tap()
         sleep(1)
         print("TVTEST method selected:", mwl.isSelected)
