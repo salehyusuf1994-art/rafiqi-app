@@ -297,4 +297,53 @@ final class TVTapTests: XCTestCase {
         XCTAssertTrue(ok, "x post qualities missing")
         XCTAssertTrue(title, "x post title missing")
     }
+
+    /// قفل مشغّل الفيديو فعليًا: يُقفل ثم يُفتح بالضغط المطوّل، ثم برمز سري (كان القفل لا يُلغى)
+    func testVideoPlayerLockUnlocks() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-shot", "files", "-seedVideo"]
+        app.launch()
+        sleep(4)
+        // الفيديو يُكتب في الخلفية: ننتظر ظهوره
+        let tile = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'فيديو'")).firstMatch
+        var tries = 0
+        while !tile.exists && tries < 10 { sleep(2); app.swipeDown(); tries += 1 }
+        XCTAssertTrue(tile.waitForExistence(timeout: 10), "demo video missing")
+        tile.tap()
+        sleep(3)
+        let open = app.buttons["قفل المشغّل"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10), "lock button missing")
+
+        // ١) بلا رمز: قفل ثم ضغط مطوّل
+        open.tap()
+        let holdItem = app.buttons["قفل الشاشة"].firstMatch
+        XCTAssertTrue(holdItem.waitForExistence(timeout: 5), "lock menu missing")
+        holdItem.tap()
+        let locked = app.buttons["المشغّل مقفل"].firstMatch
+        XCTAssertTrue(locked.waitForExistence(timeout: 5), "player did not lock")
+        shot(app, "20_video_locked")
+        locked.press(forDuration: 1.8)
+        sleep(1)
+        XCTAssertTrue(app.buttons["قفل المشغّل"].firstMatch.waitForExistence(timeout: 5), "hold did not unlock")
+        shot(app, "21_video_unlocked")
+
+        // ٢) برمز سري: اختيار الرمز (مرتين) يقفل، والرمز يفتح
+        func type(_ code: String) { for c in code { app.buttons[String(c)].firstMatch.tap(); usleep(150_000) }; sleep(1) }
+        app.buttons["قفل المشغّل"].firstMatch.tap()
+        let codeItem = app.buttons["قفل برمز سري"].firstMatch
+        XCTAssertTrue(codeItem.waitForExistence(timeout: 5), "code item missing")
+        codeItem.tap()
+        sleep(1)
+        type("2580"); type("2580")
+        XCTAssertTrue(app.buttons["المشغّل مقفل"].firstMatch.waitForExistence(timeout: 5), "code lock not set")
+        app.buttons["المشغّل مقفل"].firstMatch.press(forDuration: 1.8)
+        sleep(1)
+        type("2580")
+        XCTAssertTrue(app.buttons["قفل المشغّل"].firstMatch.waitForExistence(timeout: 5), "code did not unlock")
+
+        // تنظيف: حذف الرمز
+        app.buttons["قفل المشغّل"].firstMatch.tap()
+        let remove = app.buttons["حذف الرمز السري"].firstMatch
+        if remove.waitForExistence(timeout: 5) { remove.tap(); sleep(1); type("2580") }
+    }
 }

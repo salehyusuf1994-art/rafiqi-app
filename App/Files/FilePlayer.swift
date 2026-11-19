@@ -264,9 +264,10 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         let lp = UILongPressGestureRecognizer(target: self, action: #selector(unlockHold(_:)))
         lp.minimumPressDuration = 1.2
         lockButton.addGestureRecognizer(lp)
-        lockButton.menu = UIMenu(title: L("قفل المشغّل"), children: [UIDeferredMenuElement.uncached { [weak self] done in
+        openMenu = UIMenu(title: L("قفل المشغّل"), children: [UIDeferredMenuElement.uncached { [weak self] done in
             MainActor.assumeIsolated { done(self?.lockMenu() ?? []) }
         }])
+        lockButton.menu = openMenu
         lockButton.showsMenuAsPrimaryAction = true
         // حلقة ذهبية تمتلئ حول القفل أثناء الضغط المطوّل
         ring.fillColor = UIColor.clear.cgColor
@@ -562,6 +563,9 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
     private var locked: Bool { lockMode != .open }
     private let ring = CAShapeLayer()
     private let pad = PasscodeHost()
+    /// قائمة القفل (والمشغّل مفتوح). أثناء القفل تُزال من الزر: زرٌّ له قائمة يفتحها بالضغط المطوّل،
+    /// فكانت القائمة تبتلع الضغطة المطوّلة ولا يُفتح القفل أبدًا
+    private var openMenu: UIMenu?
 
     /// قائمة القفل (والمشغّل مفتوح): بلا رمز، برمز سري، وإدارة الرمز
     private func lockMenu() -> [UIMenuElement] {
@@ -626,6 +630,7 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         lockMode = m
         let on = m != .open
         lockButton.showsMenuAsPrimaryAction = !on
+        lockButton.menu = on ? nil : openMenu
         lockButton.accessibilityLabel = on ? L("المشغّل مقفل") : L("قفل المشغّل")
         lockButton.accessibilityHint = on ? PlayerLockFlow.hint(m) : nil
         showsPlaybackControls = !on
