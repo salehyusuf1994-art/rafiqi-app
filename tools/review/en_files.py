@@ -363,7 +363,7 @@ T.update({
 # المساحة
 "جارٍ التحليل…": "Analyzing…",
 "المجموع: %@": "Total: %@",
-"%@ متطابقة · %@": "%@ identical · %@",
+"نسخ متطابقة: %@ · %@": "Identical copies: %@ · %@",
 "حذف كل النسخ المكررة (تبقى نسخة واحدة)": "Delete all duplicates (keep one copy)",
 "الملفات المكررة": "Duplicate files",
 "تُنقل النسخ المحذوفة إلى السلة، ويمكنك استرجاعها خلال ٣٠ يومًا.": "Deleted copies go to the Trash, and you can restore them within 30 days.",
