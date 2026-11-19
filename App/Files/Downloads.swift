@@ -40,6 +40,9 @@ final class DownloadManager: NSObject, ObservableObject {
 
     private var session: URLSession!
     private var tasks: [UUID: URLSessionDownloadTask] = [:]
+    /// ترويسات حساسة (كوكيز الجلسة والتفويض): في الذاكرة فقط، لا تُكتب في ملف التنزيلات أبدًا
+    private var secretHeaders: [UUID: [String: String]] = [:]
+    private static let secretKeys: Set<String> = ["cookie", "authorization"]
     private var lastTick: [UUID: (Date, Int64)] = [:]
     private let maxActive = 3
     private let storeURL: URL
@@ -51,7 +54,11 @@ final class DownloadManager: NSObject, ObservableObject {
         resumeDir = support.appendingPathComponent("resume", isDirectory: true)
         try? FileManager.default.createDirectory(at: resumeDir, withIntermediateDirectories: true)
         super.init()
-        if let d = try? Data(contentsOf: storeURL), let a = try? JSONDecoder().decode([DLItem].self, from: d) { items = a }
+        if let d = try? Data(contentsOf: storeURL), let a = try? JSONDecoder().decode([DLItem].self, from: d) {
+            // نسخ قديمة كانت تحفظ الكوكيز في الملف: تُمسح منه
+            items = a.map { var x = $0; x.headers = x.headers.filter { !Self.secretKeys.contains($0.key.lowercased()) }; return x }
+            if items.map(\.headers) != a.map(\.headers) { save() }
+        }
         let cfg = URLSessionConfiguration.background(withIdentifier: Self.sessionID)
         cfg.sessionSendsLaunchEvents = true
         cfg.isDiscretionary = false
@@ -68,8 +75,17 @@ final class DownloadManager: NSObject, ObservableObject {
                 }
                 // المهام التي كانت «جارية» ولم تعد موجودة: نكملها من جديد
                 for i in mgr.items.indices where mgr.items[i].state == .running && mgr.tasks[mgr.items[i].id] == nil {
-                    mgr.items[i].state = .queued
+                    if mgr.items[i].file != nil {
+                        // اكتمل التنزيل وانقطع التحويل بعده: الملف موجود، فلا يُنزَّل مرة ثانية
+                        mgr.items[i].state = .done; mgr.items[i].note = nil
+                    } else if mgr.items[i].external == true {
+                        // تنزيل بث (HLS) لا يُستأنف بعد إغلاق التطبيق: نوضح ذلك بدل دوران لا ينتهي
+                        mgr.items[i].state = .failed; mgr.items[i].error = L("انقطع التنزيل بإغلاق التطبيق. أعد المحاولة.")
+                    } else {
+                        mgr.items[i].state = .queued
+                    }
                 }
+                mgr.save()
                 mgr.pump()
             }
         }
@@ -100,7 +116,11 @@ final class DownloadManager: NSObject, ObservableObject {
         guard let u = URL(string: raw) ?? URL(string: raw.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""),
               u.host != nil else { return false }
         let guess = name ?? Self.guessName(u)
-        items.insert(DLItem(url: u.absoluteString, name: guess, headers: hdrs, post: post == .none ? nil : post), at: 0)
+        let secret = hdrs.filter { Self.secretKeys.contains($0.key.lowercased()) }
+        hdrs = hdrs.filter { !Self.secretKeys.contains($0.key.lowercased()) }
+        let item = DLItem(url: u.absoluteString, name: guess, headers: hdrs, post: post == .none ? nil : post)
+        if !secret.isEmpty { secretHeaders[item.id] = secret }
+        items.insert(item, at: 0)
         save()
         pump()
         return true
@@ -134,7 +154,7 @@ final class DownloadManager: NSObject, ObservableObject {
         } else if let u = URL(string: it.url) {
             var req = URLRequest(url: u)
             req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-            for (k, v) in it.headers { req.setValue(v, forHTTPHeaderField: k) }
+            for (k, v) in it.headers.merging(secretHeaders[it.id] ?? [:], uniquingKeysWith: { _, b in b }) { req.setValue(v, forHTTPHeaderField: k) }
             task = session.downloadTask(with: req)
         } else {
             items[i].state = .failed; items[i].error = L("الرابط غير صالح."); save(); return
@@ -279,10 +299,14 @@ final class DownloadManager: NSObject, ObservableObject {
             // الناتج يأخذ اسم الملف الأصلي بامتداده الجديد، ويُحذف الأصل
             if out != file {
                 let store = FileStore.shared
-                try? FileManager.default.removeItem(at: file)
-                let final = store.unique(file.deletingPathExtension().lastPathComponent + "." + out.pathExtension, in: file.deletingLastPathComponent())
-                try? FileManager.default.moveItem(at: out, to: final)
-                let result = FileManager.default.fileExists(atPath: final.path) ? final : out
+                // الناتج يُثبَّت أولًا، ثم يُحذف الأصل (لا يضيع الملفان إن فشل النقل)
+                let sameName = out.pathExtension.lowercased() == file.pathExtension.lowercased()
+                let final = sameName ? file : store.unique(file.deletingPathExtension().lastPathComponent + "." + out.pathExtension, in: file.deletingLastPathComponent())
+                let moved: Bool
+                if sameName { moved = (try? FileManager.default.replaceItemAt(file, withItemAt: out)) != nil }
+                else { moved = (try? FileManager.default.moveItem(at: out, to: final)) != nil }
+                if moved && !sameName { try? FileManager.default.removeItem(at: file) }
+                let result = moved ? final : (FileManager.default.fileExists(atPath: out.path) ? out : file)
                 if let i = index(id) {
                     items[i].file = store.key(result)
                     items[i].name = result.lastPathComponent

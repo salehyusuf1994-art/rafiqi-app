@@ -222,6 +222,8 @@ final class StreamTester: ObservableObject {
             }
         }
         player.replaceCurrentItem(with: item)
+        // التجربة تأخذ الصوت مثل أي مشغّل: يتوقف القرآن أو الإذاعة فلا يُسمع صوتان معًا
+        PlaybackGate.claim(.tv)
         player.play()
         timeout = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 15_000_000_000)
@@ -405,6 +407,7 @@ struct AddTVSheet: View {
                     }
                     if !agent.isEmpty { Divider(); Button("مسح", role: .destructive) { agent = "" } }
                 } label: { Image(systemName: "list.bullet.circle").font(Theme.f(.title3)) }
+                .accessibilityLabel(L("اختيار المتصفح"))
             }
             TextField("Authorization: Bearer …\nCookie: …", text: $extra, axis: .vertical)
                 .lineLimit(2...6)
@@ -499,11 +502,13 @@ struct AddTVSheet: View {
                 .disabled(StreamLink.valid(listURL.trimmingCharacters(in: .whitespacesAndNewlines)) == nil || loadingList)
                 Spacer()
                 Button { importing = true } label: { Image(systemName: "doc.badge.plus") }
+                    .accessibilityLabel(L("اختيار ملف قائمة"))
                 Button {
                     if let t = UIPasteboard.general.string {
                         if M3UParser.isPlaylist(t) { load(t); sourceName = L("قائمة ملصقة") } else { listURL = t.trimmingCharacters(in: .whitespacesAndNewlines) }
                     }
                 } label: { Image(systemName: "doc.on.clipboard") }
+                    .accessibilityLabel(L("لصق"))
             }
             .buttonStyle(.borderless)
             if let e = listError {

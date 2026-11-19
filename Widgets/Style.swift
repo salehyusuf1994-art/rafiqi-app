@@ -317,11 +317,13 @@ enum AltWord {
         lock.lock(); let hit = cache[key]; lock.unlock()
         if let hit { return hit }
         guard UIFont(name: font.ps, size: 20) != nil else { return nil }
+        // حروف أيام الأسبوع المفردة (ح ن ث ر…) في «بلاكا» لا تُقرأ (أشكالها المنفصلة مزخرفة جدًا): تُرسم بخط واضح عريض
+        if font == .blaka, name.hasPrefix("wl"), text.count == 1 { return image(name, font: .readex) }
         var t = font == .thuluth || Lang.isEN ? text : plain(text)
         // بلاكا ما فيه حرف المدّ «ـ»
         if font == .blaka { t = t.replacingOccurrences(of: "\u{0640}", with: "") }
         let img = render(text: t, font: font, name: name, box: base.size)
-        if let img { lock.lock(); cache[key] = img; lock.unlock() }
+        if let img { lock.lock(); if cache.count >= (isWidgetProcess ? 120 : 3000) { cache.removeAll() }; cache[key] = img; lock.unlock() }
         return img
     }
 

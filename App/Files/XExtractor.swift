@@ -9,8 +9,9 @@ enum XExtractor {
               ["x.com", "twitter.com"].contains(where: { host == $0 || host.hasSuffix("." + $0) }) else { return nil }
         let parts = url.pathComponents
         guard let i = parts.firstIndex(where: { $0 == "status" || $0 == "statuses" }), i + 1 < parts.count else { return nil }
-        let id = parts[i + 1].prefix { $0.isNumber }
-        return id.count >= 5 ? String(id) : nil
+        // رقم المنشور أرقام لاتينية فقط وطوله لا يتجاوز ١٩ (يتسع في UInt64) — رابط مشوّه لا يُسقط التطبيق
+        let id = parts[i + 1].prefix { $0.isASCII && $0.isNumber }
+        return (5...19).contains(id.count) ? String(id) : nil
     }
 
     static func probe(_ url: URL) async -> LinkProbe? {
@@ -104,6 +105,7 @@ enum XExtractor {
                 }
             } while fraction >= delta
         }
+        guard integer.isFinite, integer >= 0, integer < 1.8e19 else { return "0" }
         var n = UInt64(integer)
         var s = n == 0 ? "0" : ""
         while n > 0 { s = String(chars[Int(n % 36)]) + s; n /= 36 }

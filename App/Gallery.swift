@@ -481,6 +481,7 @@ struct WidgetDetail: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button { dismiss() } label: { Image(systemName: "xmark") }
+                        .accessibilityLabel(L("إغلاق"))
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
@@ -489,6 +490,8 @@ struct WidgetDetail: View {
                     } label: {
                         Image(systemName: fav ? "heart.fill" : "heart").foregroundStyle(fav ? Color.red : Color.white)
                     }
+                    .accessibilityLabel(L("المفضّلة"))
+                    .accessibilityAddTraits(fav ? .isSelected : [])
                 }
             }
         }

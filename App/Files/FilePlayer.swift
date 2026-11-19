@@ -640,7 +640,17 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         lockButton.tintColor = on ? UIColor(Theme.gold) : .white
         lockButton.layer.borderWidth = on ? 1 : 0
         lockButton.layer.borderColor = UIColor(Theme.gold).withAlphaComponent(0.4).cgColor
+        // أثناء القفل: لا نافذة عائمة (كانت تظهر بسحبة واحدة وفيها كل أزرار التحكم)، وسحبات الحواف تحتاج سحبة ثانية
+        allowsPictureInPicturePlayback = !on
+        canStartPictureInPictureAutomaticallyFromInline = !on
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+        // قارئ الشاشة لا يصل لما تحت طبقة القفل
+        for v in view.subviews where v !== blocker && v !== lockButton { v.accessibilityElementsHidden = on }
     }
+
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { locked ? .all : [] }
+    override var prefersHomeIndicatorAutoHidden: Bool { locked }
 
     @objc private func doubleTap(_ g: UITapGestureRecognizer) {
         guard !locked, let p = player else { return }
@@ -659,8 +669,15 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         }
     }
 
+    /// الفيديو يدور مع الجوال (بقية التطبيق عمودي فقط)
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        OrientationLock.allowLandscape(true)
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        if isBeingDismissed || presentingViewController == nil { OrientationLock.allowLandscape(false) }
         // الإغلاق يوقف الفيديو، إلا إذا انتقل إلى النافذة العائمة
         if !inPiP && Self.floating !== self && (isBeingDismissed || presentingViewController == nil) {
             player?.pause()

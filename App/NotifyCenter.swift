@@ -156,6 +156,7 @@ extension Notify.Item {
 /// ذلك كان يمنع فتح صفحات الصلوات والمؤذن عند الضغط)
 struct NotifyCenterView: View {
     @StateObject private var store = NotifyStore()
+    @State private var lastOpenID: String?
     @State private var openID: String? = SHOT == "notifyd" ? "dhuhr" : nil
     @State private var picker: Int? = nil   // ٠ المؤذن، ١ أذان الفجر
     private let cols = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
@@ -206,8 +207,10 @@ struct NotifyCenterView: View {
             .background(AppBackground())
             .hiddenNavBar()
             .navigationDestination(isPresented: Binding(get: { openID != nil }, set: { if !$0 { openID = nil } })) {
-                if let id = openID, let it = Notify.item(id) { NotifyDetail(item: it, store: store) }
+                // آخر صفحة مفتوحة تبقى أثناء حركة الرجوع (كانت تختفي فورًا فتظهر صفحة فارغة)
+                if let id = openID ?? lastOpenID, let it = Notify.item(id) { NotifyDetail(item: it, store: store) }
             }
+            .onChange(of: openID) { _, v in if let v { lastOpenID = v } }
             .navigationDestination(isPresented: Binding(get: { picker != nil }, set: { if !$0 { picker = nil } })) {
                 MuezzinPicker(store: store, fajr: picker == 1)
             }

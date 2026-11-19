@@ -31,6 +31,9 @@ final class SecurityTests: XCTestCase {
     }
 
     func testTLSIdentityIsCreated() throws {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("على الجوال الحقيقي يستبدل شهادة النقل الفعلية: المحاكي فقط")
+        #endif
         guard let id = WiFiTLS.identity(ip: "192.168.1.20") else {
             throw XCTSkip("سلسلة المفاتيح غير متاحة في بيئة الاختبار هذه")
         }
@@ -72,6 +75,24 @@ final class SecurityTests: XCTestCase {
         try XCTUnwrap(Data(base64Encoded: b64)).write(to: zip)
         _ = await FileStore.shared.unzip(zip)
         return base
+    }
+
+    /// الضغط والفك يعملان فعلًا (اختبارا الحماية أدناه لا معنى لهما لو كان الفك معطّلًا كليًا)
+    func testZipRoundTripWorks() async throws {
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("SecZipOK-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: base) }
+        let src = base.appendingPathComponent("src", isDirectory: true)
+        try fm.createDirectory(at: src, withIntermediateDirectories: true)
+        try "hello".write(to: src.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        let z = await FileStore.shared.zip([src])
+        let zip = try XCTUnwrap(z, "تعذّر الضغط")
+        try fm.removeItem(at: src)
+        let o = await FileStore.shared.unzip(zip)
+        let out = try XCTUnwrap(o, "تعذّر الفك")
+        let found = (fm.enumerator(at: out, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []).first { $0.lastPathComponent == "a.txt" }
+        let file = try XCTUnwrap(found, "الملف لم يُستخرج")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "hello")
     }
 
     func testZipSlipIsBlocked() async throws {

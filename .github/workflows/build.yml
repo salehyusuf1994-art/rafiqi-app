@@ -54,7 +54,10 @@ jobs:
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tee build.log | grep -E "error:|warning: .*(deprecated|unused)|BUILD (SUCCEEDED|FAILED)" || true
+            build > build.log 2>&1 && rc=0 || rc=$?
+          grep -E "error:|warning: .*(deprecated|unused)|BUILD (SUCCEEDED|FAILED)" build.log || true
+          # الحكم على نتيجة xcodebuild نفسها: فشل نسخ الموارد بعد الربط كان يمر لأن الملف التنفيذي موجود
+          [ "$rc" -eq 0 ] && grep -q "BUILD SUCCEEDED" build.log || { echo "::error::xcodebuild failed (exit $rc)"; exit 1; }
           test -f build/Build/Products/Release-iphoneos/Hilal.app/Hilal && test -f build/Build/Products/Release-iphoneos/Hilal.app/PlugIns/HilalWidgets.appex/HilalWidgets
 
       - name: Show errors
@@ -163,7 +166,7 @@ jobs:
           L gallery 8 -filter "الصلاة"; S 3_gallery_prayer
           L gallery 8 -filter "الساعة"; S 4_gallery_clock
           L gallery 8 -filter "شاشة القفل"; S 4b_gallery_lock
-          L gallery 8 -filter "القرآن"; S 4c_gallery_quran
+          L gallery 8 -filter "القرآن والأذكار"; S 4c_gallery_quran
           L detail 9 -wid hilal.prevnext; S 5_detail_prevnext
           L detail 9 -wid hilal.both; S 6_detail_both
           L detail 9 -wid hilal.prings; S 6b_detail_rings
@@ -200,31 +203,6 @@ jobs:
           L lockpad2 6; S 9k_player_lock_create
           ls -la shots
 
-      - name: Publish output branch
-        if: always()
-        run: |
-          mkdir -p out && cd out
-          git init -q -b out
-          cp ../build.log . 2>/dev/null || echo "no log" > build.log
-          grep -E "error:|warning:" build.log | sort -u > problems.txt || true
-          cp ../sign.txt . 2>/dev/null || true
-          cp ../streams.txt . 2>/dev/null || true
-          cp ../radios.txt . 2>/dev/null || true
-          cp ../tv.txt . 2>/dev/null || true
-          cp ../Hilal.ipa . 2>/dev/null || true
-          cp -R ../shots . 2>/dev/null || true
-          cp -R ../matrix . 2>/dev/null || true
-          grep -E "error:" ../sim.log > sim_errors.txt 2>/dev/null || true
-          xcodebuild -version > xcode.txt
-          echo "${{ job.status }}" > status.txt
-          git add -A
-          git -c user.name=ci -c user.email=ci@example.com commit -qm "build ${{ github.run_number }}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" out
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-log
-          path: build.log
       - name: Unit tests (prayer times, Hijri, Qibla — independent reference data)
         timeout-minutes: 30
         run: |
@@ -239,3 +217,31 @@ jobs:
           last=$(grep -E "Executed [0-9]+ test" unit.log | tail -1)
           echo "$last"
           [ "$rc" -eq 0 ] && echo "$last" | grep -q "with 0 failures" || { echo "::error::Unit tests failed or did not run (exit $rc)"; exit 1; }
+
+      - name: Publish output branch
+        if: always()
+        run: |
+          mkdir -p out && cd out
+          git init -q -b out
+          cp ../build.log . 2>/dev/null || echo "no log" > build.log
+          grep -E "error:|warning:" build.log | sort -u > problems.txt || true
+          cp ../sign.txt . 2>/dev/null || true
+          cp ../streams.txt . 2>/dev/null || true
+          cp ../radios.txt . 2>/dev/null || true
+          cp ../tv.txt . 2>/dev/null || true
+          # الـIPA لا يُنشر إلا إذا نجح كل شيء (البناء والاختبارات)
+          if [ "${{ job.status }}" = "success" ]; then cp ../Hilal.ipa . 2>/dev/null || true; fi
+          cp ../unit_summary.txt . 2>/dev/null || true
+          cp -R ../shots . 2>/dev/null || true
+          cp -R ../matrix . 2>/dev/null || true
+          grep -E "error:" ../sim.log > sim_errors.txt 2>/dev/null || true
+          xcodebuild -version > xcode.txt
+          echo "${{ job.status }}" > status.txt
+          git add -A
+          git -c user.name=ci -c user.email=ci@example.com commit -qm "build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log

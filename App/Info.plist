@@ -42,10 +42,6 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
-		<key>NSAllowsArbitraryLoadsForMedia</key>
-		<true/>
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
-		<true/>
 	</dict>
 	<key>UIFileSharingEnabled</key>
 	<true/>
@@ -75,7 +71,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>لحفظ الصور ومقاطع الفيديو من «إدارة الملفات» في تطبيق «الصور».</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>لقفل «إدارة الملفات» والمجلدات الخاصة ببصمة الوجه.</string>
+	<string>لقفل «إدارة الملفات» والمجلدات الخاصة وفتح قفل المشغّل ببصمة الوجه.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>لنقل الملفات بين الجوال والكمبيوتر عبر شبكة الواي فاي نفسها.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

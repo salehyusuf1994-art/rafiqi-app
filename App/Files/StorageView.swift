@@ -40,7 +40,7 @@ struct StorageView: View {
                         Section {
                             ForEach(dups, id: \.first!.url) { group in
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text(LF("%@ نسخ متطابقة · %@", ar(group.count), sizeText(group[0].size))).font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
+                                    Text(LF("%@ متطابقة · %@", copiesText(group.count), sizeText(group[0].size))).font(Theme.f(.caption, .bold)).foregroundStyle(Theme.gold)
                                     ForEach(group) { f in
                                         HStack {
                                             VStack(alignment: .leading, spacing: 1) {

@@ -256,7 +256,7 @@ struct LockInlineDate: View {
             } else if greg {
                 Text(entry.date, format: .dateTime.month(.wide).year())
             } else {
-                Text(verbatim: Lang.isEN ? "\(Words.hmEN[max(0, min(11, t.m - 1))]) \(t.y) AH" : "\(HM_NAMES[max(0, min(11, t.m - 1))]) \(ar(t.y))هـ")
+                Text(verbatim: Lang.isEN ? "\(Words.hmEN[max(0, min(11, t.m - 1))]) \(t.y) AH" : "\(HM_NAMES[max(0, min(11, t.m - 1))]) \(ar(t.y)) هـ")
             }
         }
         .containerBackground(for: .widget) { Color.clear }

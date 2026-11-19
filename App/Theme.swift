@@ -21,8 +21,28 @@ enum Theme {
     /// خط التطبيق الموحّد: تجوّل بأوزانه الثلاثة (عادي/متوسط/عريض)
     static func font(_ size: CGFloat, _ weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> Font {
         let size = max(12, size)
-        if Lang.isEN { return .system(size: size, weight: weight == .regular ? .regular : weight, design: .rounded) }
+        if Lang.isEN {
+            // بالإنجليزية أيضًا يكبر الخط مع «حجم النص» في إعدادات الجوال (كان ثابتًا)
+            let scaled = UIFontMetrics(forTextStyle: uiStyle(style)).scaledValue(for: size)
+            return .system(size: scaled, weight: weight == .regular ? .regular : weight, design: .rounded)
+        }
         return .custom(tajawal(weight), size: size, relativeTo: style)
+    }
+
+    private static func uiStyle(_ s: Font.TextStyle) -> UIFont.TextStyle {
+        switch s {
+        case .largeTitle: return .largeTitle
+        case .title: return .title1
+        case .title2: return .title2
+        case .title3: return .title3
+        case .headline: return .headline
+        case .subheadline: return .subheadline
+        case .callout: return .callout
+        case .footnote: return .footnote
+        case .caption: return .caption1
+        case .caption2: return .caption2
+        default: return .body
+        }
     }
 
     static func tajawal(_ w: Font.Weight) -> String {

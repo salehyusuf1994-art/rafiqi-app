@@ -28,7 +28,11 @@ func prayerListDay(_ now: Date) -> Date {
 func prayerWindows(_ now: Date) -> [(key: PKey, time: Date, p: Double)] {
     let g = Cal.gregCal
     let today = Prayer.dayTimes(now)
-    let day = now < today[0].time ? (g.date(byAdding: .day, value: -1, to: now) ?? now) : now
+    // قبل الفجر: نوافذ الأمس حتى منتصف الليل الشرعي فقط (العشاء ما زال وقتها)،
+    // وبعده نوافذ اليوم — فلا تظهر أوقات الأمس بجانب «الفجر» القادم بوقت اليوم
+    let yesterday = g.date(byAdding: .day, value: -1, to: now) ?? now
+    let yMid = Prayer.midnight(after: yesterday)?.time ?? today[0].time
+    let day = now < today[0].time && now < yMid ? yesterday : now
     let t = Prayer.dayTimes(day)
     let mid = Prayer.midnight(after: day)?.time ?? t[5].time.addingTimeInterval(4 * 3600)
     let spans: [(PTime, Date)] = [(t[0], t[1].time), (t[2], t[3].time), (t[3], t[4].time), (t[4], t[5].time), (t[5], mid)]
@@ -487,7 +491,8 @@ struct HijriMonthsView: View {
         let h = Cal.dmy(entry.date, greg: false)
         let mi = Cal.monthInfo(entry.date, greg: false)
         // مقياس واحد لكل الأشهر (أصغر مقياس يتسع له أطولها) بدل أن يكبر الاسم القصير ويصغر الطويل
-        let ms = (1...12).map { fitS("hm\($0)_t", 84, 34) }.min() ?? 0.2
+        // (داخل خانة عرضها ٨٠ مع هامش، فلا يلامس الاسم الطويل جاره ولا يخرج عن كبسولة الشهر الحالي)
+        let ms = (1...12).map { fitS("hm\($0)_t", 72, 30) }.min() ?? 0.2
         Root(entry: entry) {
             VStack(spacing: 6) {
                 HStack(spacing: 8) {

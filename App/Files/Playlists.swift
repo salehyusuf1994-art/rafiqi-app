@@ -38,6 +38,13 @@ final class FilePlaylists: ObservableObject {
     func move(_ id: UUID, from: IndexSet, to: Int) { if let i = all.firstIndex(where: { $0.id == id }) { all[i].items.move(fromOffsets: from, toOffset: to); save() } }
     func remove(_ id: UUID, at: IndexSet) { if let i = all.firstIndex(where: { $0.id == id }) { all[i].items.remove(atOffsets: at); save() } }
 
+    /// يزيل من القائمة ما لم يعد موجودًا (فتطابق أرقام الصفوف عناصر القائمة عند الحذف والترتيب)
+    func prune(_ id: UUID) {
+        guard let i = all.firstIndex(where: { $0.id == id }) else { return }
+        let keep = all[i].items.filter { FileManager.default.fileExists(atPath: FileStore.shared.url(forKey: $0).path) }
+        if keep != all[i].items { all[i].items = keep; save() }
+    }
+
     /// الملفات الموجودة فعلًا (المحذوفة أو المنقولة تُتجاهل)
     func urls(_ p: FilePlaylist) -> [URL] {
         p.items.map { FileStore.shared.url(forKey: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -121,6 +128,22 @@ struct PlaylistDetail: View {
     let id: UUID
     @ObservedObject private var lists = FilePlaylists.shared
 
+    /// ملف داخل مجلد مقفل لم يُفتح بعد
+    private func isLocked(_ u: URL) -> Bool { FileStore.shared.lockedAncestor(u.deletingLastPathComponent()) != nil }
+
+    /// التشغيل: إن كان في القائمة ملفات من مجلدات مقفلة يُطلب التحقق مرة واحدة أولًا
+    private func play(_ list: [URL], start: Int) {
+        guard list.contains(where: isLocked) else { return AudioPlayer.shared.playFiles(list, start: start) }
+        Task {
+            guard await FileStore.authenticate(L("افتح المجلد المقفل")) else { return }
+            let store = FileStore.shared
+            for u in list {
+                while let l = store.lockedAncestor(u.deletingLastPathComponent()) { store.unlocked.insert(store.key(l)) }
+            }
+            AudioPlayer.shared.playFiles(list, start: start)
+        }
+    }
+
     var body: some View {
         let p = lists.all.first { $0.id == id }
         let urls = p.map { lists.urls($0) } ?? []
@@ -128,12 +151,12 @@ struct PlaylistDetail: View {
             if !urls.isEmpty {
                 Section {
                     HStack(spacing: 10) {
-                        Button { AudioPlayer.shared.playFiles(urls, start: 0) } label: {
+                        Button { play(urls, start: 0) } label: {
                             Label("تشغيل", systemImage: "play.fill").font(Theme.f(.headline)).foregroundStyle(.black)
                                 .frame(maxWidth: .infinity).padding(.vertical, 10).background(Capsule().fill(Theme.gold))
                         }
                         Button {
-                            AudioPlayer.shared.playFiles(urls.shuffled(), start: 0)
+                            play(urls.shuffled(), start: 0)
                         } label: {
                             Label("عشوائي", systemImage: "shuffle").font(Theme.f(.headline)).foregroundStyle(.white)
                                 .frame(maxWidth: .infinity).padding(.vertical, 10).background(Capsule().fill(Color.white.opacity(0.12)))
@@ -145,10 +168,15 @@ struct PlaylistDetail: View {
             }
             Section {
                 ForEach(Array(urls.enumerated()), id: \.offset) { i, u in
-                    Button { AudioPlayer.shared.playFiles(urls, start: i) } label: {
+                    Button { play(urls, start: i) } label: {
                         HStack(spacing: 10) {
                             Text(verbatim: ar(i + 1)).font(Theme.f(.caption, .bold)).foregroundStyle(Theme.sub).frame(width: 24)
-                            Text(verbatim: u.deletingPathExtension().lastPathComponent).foregroundStyle(.white).lineLimit(1)
+                            // اسم ملف المجلد المقفل لا يظهر قبل التحقق
+                            if isLocked(u) {
+                                Label("ملف في مجلد مقفل", systemImage: "lock.fill").foregroundStyle(Theme.sub).lineLimit(1)
+                            } else {
+                                Text(verbatim: u.deletingPathExtension().lastPathComponent).foregroundStyle(.white).lineLimit(1)
+                            }
                         }
                     }
                 }
@@ -164,6 +192,7 @@ struct PlaylistDetail: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .toolbar { EditButton().tint(Theme.gold) }
+        .onAppear { lists.prune(id) }
     }
 }
 

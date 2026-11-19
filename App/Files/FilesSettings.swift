@@ -8,6 +8,7 @@ struct FilesSettingsView: View {
     @State private var autoPhotos = FilePrefs.autoPhotos
     @State private var folderMode = FilePrefs.folderMode
     @State private var lockTab = FilePrefs.lockTab
+    @State private var noPasscode = false
     @State private var skip = FilePrefs.skip
     @State private var autoNext = FilePrefs.autoNext
     @State private var usage: (files: Int64, trash: Int64, temp: Int64, free: Int64) = (0, 0, 0, 0)
@@ -71,11 +72,18 @@ struct FilesSettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { dismiss() } } }
             .onAppear(perform: refresh)
+            .alert("القفل يحتاج رمز قفل للجوال", isPresented: $noPasscode) {
+                Button("حسنًا", role: .cancel) {}
+            } message: {
+                Text("فعّل رمز الدخول من إعدادات الجوال ← بصمة الوجه ورمز الدخول، ثم ارجع وفعّل القفل.")
+            }
             .onChange(of: autoPhotos) { _, v in FilePrefs.autoPhotos = v }
             .onChange(of: folderMode) { _, v in FilePrefs.folderMode = v }
             .onChange(of: skip) { _, v in FilePrefs.skip = v }
             .onChange(of: autoNext) { _, v in FilePrefs.autoNext = v }
             .onChange(of: lockTab) { _, v in
+                guard v != FilePrefs.lockTab else { return }
+                if v && !FileStore.canProtect { lockTab = false; noPasscode = true; return }
                 Task {
                     if await FileStore.authenticate(v ? L("تفعيل قفل إدارة الملفات") : L("إلغاء قفل إدارة الملفات")) { FilePrefs.lockTab = v }
                     else { lockTab = FilePrefs.lockTab }

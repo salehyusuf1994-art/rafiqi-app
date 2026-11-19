@@ -1,8 +1,8 @@
 import sys,os,re,glob,collections
 sys.path.insert(0,os.path.dirname(__file__))
 from lex import strip
-R='/home/claude/rafiqi-app'
-files=sorted(glob.glob(R+'/App/*.swift')+glob.glob(R+'/Shared/*.swift')+glob.glob(R+'/Widgets/*.swift'))
+R=os.path.abspath(os.path.join(os.path.dirname(__file__),'..','..'))
+files=sorted(glob.glob(R+'/App/*.swift')+glob.glob(R+'/App/Files/*.swift')+glob.glob(R+'/Shared/*.swift')+glob.glob(R+'/Widgets/*.swift'))
 code={};strs={}
 for f in files:
     s=open(f).read(); c,st=strip(s); code[f]=c; strs[f]=st

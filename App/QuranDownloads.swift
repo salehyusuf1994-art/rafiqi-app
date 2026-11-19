@@ -226,7 +226,13 @@ final class QuranBG: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         guard let p = parse(downloadTask) else { return }
-        let ok = ((downloadTask.response as? HTTPURLResponse)?.statusCode ?? 200) < 400
+        let resp = downloadTask.response as? HTTPURLResponse
+        let size = (try? location.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        let mime = resp?.mimeType?.lowercased() ?? ""
+        // صفحة دخول شبكة فندق/مسجد (HTML) لا تُحفظ كأنها سورة: نوع صوتي، وحجم معقول، ومطابق للمعلن إن وُجد
+        let expected = resp?.expectedContentLength ?? -1
+        let ok = (resp?.statusCode ?? 200) < 400 && !mime.hasPrefix("text/") && !mime.contains("html")
+            && size > 16_000 && (expected <= 0 || Int64(size) == expected)
         var moved = false
         if ok {
             // يجب نقل الملف قبل الخروج من هذه الدالة

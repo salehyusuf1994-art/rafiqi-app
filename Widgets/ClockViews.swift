@@ -1,43 +1,6 @@
 import SwiftUI
 import WidgetKit
 
-// MARK: - عقارب الساعة المتحركة
-// مقتبس من ClockHandKit (رخصة MIT) — https://github.com/giljihun/ClockHandKit
-// يستخدم تأثير WidgetKit الداخلي اللي يحرّك العقارب بدون تحديث الويدجت.
-
-enum HandPeriod { case hour, minute, second }
-
-private struct ClockHandData: Encodable {
-    let period: [String: EmptyPayload]
-    let timeZone: TZ
-    let anchor: Anchor
-    struct EmptyPayload: Encodable {}
-    struct TZ: Encodable { let identifier: String }
-    struct Anchor: Encodable { let x: Double; let y: Double }
-}
-
-private func applyModifier<V: View, M: ViewModifier>(_ view: V, _ m: M) -> some View { view.modifier(m) }
-
-extension View {
-    func clockHand(_ period: HandPeriod) -> AnyView {
-        guard let type = _typeByName("9WidgetKit24_ClockHandRotationEffectV"),
-              let decodable = type as? any Decodable.Type else { return AnyView(self) }
-        let key: String
-        switch period {
-        case .hour: key = "hourHand"
-        case .minute: key = "minuteHand"
-        case .second: key = "secondHand"
-        }
-        let payload = ClockHandData(period: [key: .init()], timeZone: .init(identifier: TimeZone.current.identifier),
-                                    anchor: .init(x: 0.5, y: 0.5))
-        guard let data = try? JSONEncoder().encode(payload),
-              let decoded = try? JSONDecoder().decode(decodable, from: data),
-              let modifier = decoded as? any ViewModifier else { return AnyView(self) }
-        return AnyView(applyModifier(self, modifier))
-    }
-}
-
-
 struct ClockFace: View {
     let size: CGFloat
     let numerals: Bool

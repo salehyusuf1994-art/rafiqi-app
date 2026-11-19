@@ -364,8 +364,11 @@ enum ScanExporter {
                 let s = p.source.size; let r = ((p.rotation % 180) + 180) % 180 == 90
                 return r ? CGSize(width: s.height, height: s.width) : s
             }
-            let w = min(side, sizes.map(\.width).max() ?? 1000)
-            let h = sizes.reduce(0) { $0 + $1.height * w / max(1, $1.width) }
+            var w = min(side, sizes.map(\.width).max() ?? 1000)
+            var h = sizes.reduce(0) { $0 + $1.height * w / max(1, $1.width) }
+            // حدود الصورة الواحدة: JPEG لا يتجاوز ٦٥٥٣٥ بكسل، وصورة ضخمة تستهلك ذاكرة الجوال (حد ١٦٠٠٠ و٨٠ مليون بكسل)
+            let k = min(1, 16_000 / max(1, h), sqrt(80_000_000 / max(1, w * h)))
+            if k < 1 { w = (w * k).rounded(.down); h = (h * k).rounded(.down) }
             let long = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { _ in
                 var y: CGFloat = 0
                 for i in pages.indices {
@@ -377,7 +380,8 @@ enum ScanExporter {
                 }
             }
             let u = await unique("\(base).jpg")
-            try long.jpegData(compressionQuality: quality)?.write(to: u)
+            guard let data = long.jpegData(compressionQuality: quality) else { throw ToolError.failed(L("تعذّر إنشاء الصورة الطويلة.")) }
+            try data.write(to: u)
             return [u]
         case .txt:
             var parts: [String] = []
@@ -1159,10 +1163,15 @@ struct ExportSheet: View {
                                     }.value
                                     result = out
                                     FileStore.shared.touch()
-                                    // يُحفظ المسح كمشروع لفتحه وتعديله أو إضافة صفحات لاحقًا
+                                    // يُحفظ المسح كمشروع لفتحه وتعديله أو إضافة صفحات لاحقًا —
+                                    // إلا الملف المحمي بكلمة مرور: لا تبقى صوره مكشوفة في «آخر المسوحات»
                                     let title = (name.isEmpty ? ScanExporter.defaultName() : name)
                                     let keys = out.map { FileStore.shared.key($0) }
-                                    Task.detached(priority: .utility) { ScanProjects.save(pages, title: title, project: projectID, files: keys) }
+                                    if password.isEmpty {
+                                        Task.detached(priority: .utility) { ScanProjects.save(pages, title: title, project: projectID, files: keys) }
+                                    } else if let projectID {
+                                        Task.detached(priority: .utility) { ScanProjects.delete(projectID) }
+                                    }
                                 } catch { self.error = error.localizedDescription }
                                 working = false
                             }

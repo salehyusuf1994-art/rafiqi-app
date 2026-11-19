@@ -5,7 +5,8 @@ import AppIntents
 
 // MARK: - عدّاد الصلاة القادمة في الجزيرة الديناميكية وشاشة القفل (Live Activity)
 // يبدأ من زر في مركز التحكم أو من الإشعارات/الرئيسية، ويتحدّث كلما فُتح التطبيق.
-// (بدون خادم إشعارات، لا يستطيع النظام تحديثه للصلاة التالية والتطبيق مغلق — فينتهي بعد دخول الوقت بربع ساعة)
+// (بدون خادم إشعارات لا يمكن تحديثه للصلاة التالية والتطبيق مغلق: عند دخول الوقت يعرض «حان وقت …»
+//  بدل عدّاد واقف على الصفر، ويتجدد للصلاة التالية عند فتح التطبيق)
 
 struct PrayerActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
@@ -34,7 +35,8 @@ enum PrayerActivity {
     static func start() async -> Bool {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return false }
         let s = state()
-        let content = ActivityContent(state: s, staleDate: s.time.addingTimeInterval(15 * 60))
+        // يصير «قديمًا» لحظة دخول الوقت، فيعرض الشكلُ «حان وقت …» بدل ٠:٠٠
+        let content = ActivityContent(state: s, staleDate: s.time)
         let running = Activity<PrayerActivityAttributes>.activities
         if let first = running.first {
             await first.update(content)
@@ -77,7 +79,7 @@ struct StartPrayerActivityIntent: LiveActivityIntent {
 struct PrayerActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PrayerActivityAttributes.self) { ctx in
-            PrayerActivityLockView(s: ctx.state)
+            PrayerActivityLockView(s: ctx.state, stale: ctx.isStale)
                 .activityBackgroundTint(Color.black.opacity(0.55))
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { ctx in
@@ -88,11 +90,15 @@ struct PrayerActivityWidget: Widget {
                         .padding(.leading, 6)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: Date()...max(Date(), s.time), countsDown: true)
-                        .font(.system(size: 26, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(GOLD_LA)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 120)
+                    if ctx.isStale {
+                        Text(Lang.isEN ? "Now" : "حان الوقت").font(.system(size: 18, weight: .bold)).foregroundStyle(GOLD_LA)
+                    } else {
+                        Text(timerInterval: Date()...max(Date(), s.time), countsDown: true)
+                            .font(.system(size: 26, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(GOLD_LA)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 120)
+                    }
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 2) {
@@ -108,10 +114,14 @@ struct PrayerActivityWidget: Widget {
             } compactLeading: {
                 Text(verbatim: s.name).font(.system(size: 13, weight: .bold)).foregroundStyle(GOLD_LA)
             } compactTrailing: {
-                Text(timerInterval: Date()...max(Date(), s.time), countsDown: true)
-                    .font(.system(size: 13, weight: .bold).monospacedDigit())
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: 54)
+                if ctx.isStale {
+                    Image(systemName: "bell.fill").foregroundStyle(.white)
+                } else {
+                    Text(timerInterval: Date()...max(Date(), s.time), countsDown: true)
+                        .font(.system(size: 13, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: 54)
+                }
             } minimal: {
                 Image(systemName: "moon.stars.fill").foregroundStyle(GOLD_LA)
             }
@@ -124,10 +134,12 @@ let GOLD_LA = Color(red: 0.89, green: 0.76, blue: 0.50)
 
 struct PrayerActivityLockView: View {
     let s: PrayerActivityAttributes.ContentState
+    var stale = false
     var body: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(Lang.isEN ? "Next" : "الوقت القادم").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                Text(stale ? (Lang.isEN ? "It's time" : "حان الوقت") : (Lang.isEN ? "Next" : "الوقت القادم"))
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                 Text(verbatim: s.name).font(.system(size: 24, weight: .bold)).foregroundStyle(.white)
                 HStack(spacing: 6) {
                     Text(s.time, style: .time)
@@ -137,10 +149,17 @@ struct PrayerActivityLockView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 8) {
-                Text(timerInterval: Date()...max(Date(), s.time), countsDown: true)
-                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(GOLD_LA)
-                    .multilineTextAlignment(.trailing)
+                if stale {
+                    // دخل الوقت: لا عدّاد واقف على الصفر
+                    Text(Lang.isEN ? "Open Rafiqi to refresh" : "افتح رفيقي للتحديث")
+                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(GOLD_LA)
+                        .multilineTextAlignment(.trailing)
+                } else {
+                    Text(timerInterval: Date()...max(Date(), s.time), countsDown: true)
+                        .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(GOLD_LA)
+                        .multilineTextAlignment(.trailing)
+                }
                 ProgressView(timerInterval: s.prev...max(s.prev.addingTimeInterval(1), s.time), countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
                     .tint(GOLD_LA)
                     .frame(width: 130)

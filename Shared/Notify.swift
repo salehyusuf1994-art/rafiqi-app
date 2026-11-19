@@ -180,7 +180,8 @@ enum Notify {
     private static func body(_ key: String, time: Date, pre: Bool, extra: Date?) -> String {
         // اسم المدينة صار في العنوان الفرعي للإشعار
         let place = ""
-        let at = hm12(time)
+        // مع «ص/م» (أو AM/PM) في نظام ١٢ ساعة: «٥:١٢» وحدها قد تكون فجرًا أو عصرًا
+        let at = clock(time)
         // العدد مع التمييز الصحيح: «١٥ دقيقة» لا «١٥ دقائق»
         if key == "duha" { return LF("بقي على أذان الظهر %@، فاغتنم صلاة الضحى.", minutesText(duhaBeforeDhuhr)) }
         if key == "jhour" { return LF("بقي على أذان المغرب %@، فأكثر من الدعاء في آخر ساعة من الجمعة.", minutesText(jhourBeforeMaghrib)) }
@@ -203,7 +204,12 @@ enum Notify {
         let nx = Prayer.prevNext(at: time.addingTimeInterval(60)).next
         let name = nx.key == .jumuah ? L("الجمعة") : L(item(nx.key.rawValue)?.name ?? "")
         guard !name.isEmpty, nx.key != .midnight else { return "" }
-        return "\n" + LF("التالي: %@ الساعة %@", name, hm12(nx.time))
+        return "\n" + LF("التالي: %@ الساعة %@", name, clock(nx.time))
+    }
+
+    private static func clock(_ d: Date) -> String {
+        let a = ampmText(d)
+        return hm12(d) + (a.isEmpty ? "" : " " + a)
     }
 
     private static func sound(_ key: String, pre: Bool) -> UNNotificationSound {
@@ -220,8 +226,24 @@ enum Notify {
     }
 
     // ── الجدولة ──
-    /// يمسح التنبيهات السابقة ويجدول القادمة (حتى ٦٠ تنبيهًا)
+    /// يمسح التنبيهات السابقة ويجدول القادمة (حتى ٦٠ تنبيهًا) — بالدور: طلبان متتاليان لا يتداخلان
+    /// (كان الأول يكمل إضافة تنبيه أطفأه المستخدم بعده بلحظة)
     static func reschedule() async {
+        await serial.run { await rescheduleNow() }
+    }
+
+    private actor Serial {
+        private var last: Task<Void, Never>?
+        func run(_ work: @escaping @Sendable () async -> Void) async {
+            let previous = last
+            let task = Task { _ = await previous?.value; await work() }
+            last = task
+            await task.value
+        }
+    }
+    private static let serial = Serial()
+
+    private static func rescheduleNow() async {
         let c = UNUserNotificationCenter.current()
         let old = await c.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix("miqat.") }
         c.removePendingNotificationRequests(withIdentifiers: old)
@@ -292,7 +314,10 @@ enum Notify {
         guard canNotify else { return }
         // صورة الإشعار تُرسم مرة لكل وقت، وتُرفق فقط بالتنبيهات اللي فعلًا تُجدول
         var art: [String: Data] = [:]
-        for p in plan.prefix(60) {
+        var ids = Set<String>()
+        // الخطة أطول من حد النظام: آخر خانة تذكير بفتح التطبيق، حتى لا تتوقف التنبيهات بصمت
+        let limit = plan.count > 60 ? 59 : 60
+        for p in plan.prefix(limit) {
             let content = UNMutableNotificationContent()
             content.title = title(p.key, pre: p.pre)
             content.body = body(p.key, time: p.time, pre: p.pre, extra: nil)
@@ -310,8 +335,25 @@ enum Notify {
             let id = "miqat.\(p.pre ? "pre." : "")\(p.key).\(Int(p.time.timeIntervalSince1970))"
             let r = UNNotificationRequest(identifier: id, content: content,
                                           trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false))
+            ids.insert(id)
             try? await c.add(r)
         }
+        if limit == 59, let last = plan.prefix(limit).last {
+            let content = UNMutableNotificationContent()
+            content.title = L("رفيقي")
+            content.body = L("افتح رفيقي لتجديد تنبيهات الصلاة للأيام القادمة.")
+            content.sound = .default
+            content.threadIdentifier = "miqat.prayer"
+            let fire = last.fire.addingTimeInterval(60)
+            let comps = cal.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: fire)
+            let id = "miqat.renew"
+            ids.insert(id)
+            try? await c.add(UNNotificationRequest(identifier: id, content: content,
+                                                   trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
+        }
+        // تقارب: أي تنبيه «miqat.» ليس في هذه الخطة (من تشغيل سابق في التطبيق أو الويدجت) يُحذف
+        let stray = await c.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix("miqat.") && !ids.contains($0) }
+        if !stray.isEmpty { c.removePendingNotificationRequests(withIdentifiers: stray) }
     }
 
     /// للويدجت: يجدّد الجدولة مرة كل ١٢ ساعة على الأكثر (حتى لو ما انفتح التطبيق)

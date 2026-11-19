@@ -135,6 +135,7 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var phase
     /// رابط تنزيل وصل من خارج التطبيق وينتظر موافقة المستخدم
     @State private var pendingLink: String?
+    @State private var linkError = false
     var body: some View {
         if SHOT.hasPrefix("notify") {
             NavigationStack { NotifyCenterView() }
@@ -160,6 +161,7 @@ struct ContentView: View {
 
     /// فتح صفحة من ويدجت أو زر: miqat://open/<الهدف> أو من «open_target»
     private func route(_ t: String) {
+        Self.dismissPresented()
         func scanner(_ m: ScanMode?) {
             tab = 5; filesRouter.path = []; filesRouter.page = .files
             filesRouter.scanMode = m; filesRouter.openScanner = true
@@ -181,6 +183,13 @@ struct ContentView: View {
                 tab = 5; filesRouter.path = []; filesRouter.page = .files; filesRouter.openFile = u
             }
         }
+    }
+
+    /// يغلق ما فوق الشاشة الرئيسية (sheet أو شاشة كاملة) قبل التنقل من رابط أو ويدجت
+    @MainActor static func dismissPresented() {
+        let root = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.rootViewController
+        guard let root, root.presentedViewController != nil else { return }
+        root.dismiss(animated: false)
     }
 
     static var statusBarHeight: CGFloat {
@@ -224,7 +233,8 @@ struct ContentView: View {
             // ارتفاع شريط الحالة من النافذة نفسها: داخل منطقة تتجاهل الحواف الآمنة يكون صفرًا،
             // فكان التظليل ١٨ نقطة فقط ويظهر المحتوى المُمرَّر خلف الساعة
             // تظليل متدرّج على طريقة النظام: تمويه + لون داكن ثابت حتى أسفل الساعة، ثم يتلاشى
-            let h = Self.statusBarHeight, total = h + 34, solid = h / total
+            // ينتهي التظليل بعد حافة شريط الحالة بقليل: عنوان الصفحة في وضعه الطبيعي يبقى ساطعًا (كان يبهت تحته)
+            let h = Self.statusBarHeight, total = h + 10, solid = max(0, h - 10) / total
             ZStack {
                 Rectangle().fill(.ultraThinMaterial)
                     .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: solid),
@@ -241,6 +251,8 @@ struct ContentView: View {
         }
         .tint(Theme.gold)
         .onOpenURL { url in
+            // أي نافذة مفتوحة (صفحة ويدجت، إعدادات…) تُغلق أولًا: الوجهة لا تُفتح مخفية تحتها
+            Self.dismissPresented()
             // ملف مُرسل من تطبيق آخر («مشاركة» ← رفيقي أو «فتح باستخدام»): يُحفظ في «الواردة»
             if url.isFileURL {
                 let inbox = FileStore.shared.root.appendingPathComponent(L("الواردة"), isDirectory: true)
@@ -281,15 +293,20 @@ struct ContentView: View {
         .onChange(of: filesRouter.openTab) { _, on in if on { tab = 5; filesRouter.openTab = false } }
         .alert(L("تنزيل من رابط خارجي؟"), isPresented: Binding(get: { pendingLink != nil }, set: { if !$0 { pendingLink = nil } })) {
             Button(L("تنزيل")) {
-                if let link = pendingLink { DownloadManager.shared.add(link) }
+                let ok = pendingLink.map { DownloadManager.shared.add($0) } ?? false
                 pendingLink = nil
-                FilesRouter.shared.page = .downloads
-                tab = 5
+                if ok {
+                    FilesRouter.shared.page = .downloads
+                    tab = 5
+                } else {
+                    linkError = true
+                }
             }
             Button(L("إلغاء"), role: .cancel) { pendingLink = nil }
         } message: {
             Text(verbatim: (URL(string: pendingLink ?? "")?.host).map { LF("طلب تطبيق أو موقع تنزيل ملف من %@", $0) } ?? (pendingLink ?? ""))
         }
+        .alert(L("الرابط غير صالح للتنزيل."), isPresented: $linkError) { Button(L("حسنًا"), role: .cancel) {} }
         // تغيّر توقيت الجوال (سفر) أو تعديل الوقت: الويدجت تُعاد حسابها فورًا بدل انتظار تحديثها التالي
         .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in
             // النظام يخزّن منطقته الزمنية؛ نمسحها حتى يقرأ التطبيق المنطقة الجديدة فورًا
@@ -330,6 +347,8 @@ struct ContentView: View {
                 }
             }
             tvRouter.checkPending()
+            // تشغيل بارد من زر مركز التحكم (القبلة/الماسح): قد لا يمر التطبيق بتغيّر إلى «نشط»
+            openPendingTarget()
             Backdrop.ensureCrops()
             // إذن الإشعارات: يُطلب عند أول تشغيل (التنبيهات مفعّلة افتراضيًا فلم يكن يُطلب أبدًا)
             if SHOT.isEmpty, Notify.enabled { await Notify.askIfNeeded() }
@@ -475,7 +494,7 @@ struct SettingsView: View {
                 Task { if v { await PrayerActivity.start() } else { await PrayerActivity.stop() } }
             })) {
                 TileRow(title: "عدّاد الصلاة في الجزيرة الديناميكية", icon: "timer", color: Theme.gold,
-                        subtitle: "على شاشة القفل أيضًا؛ يتحدّث كلما فتحت رفيقي")
+                        subtitle: "على شاشة القفل أيضًا؛ يُحدَّث كلما فتحت رفيقي")
             }
             .tint(Theme.gold)
         }
@@ -763,7 +782,7 @@ struct WallpaperSettings: View {
             Backdrop.merge(found)
             Backdrop.calibUntil = .distantPast
             if Backdrop.hasWallpaper { Backdrop.regenerate() }
-            msg = (found.count == 1 ? L("تم ضبط موضع واحد.") : LF("تم ضبط %@ مواضع.", ar(found.count)))
+            msg = LF("تم ضبط %@.", placesText(found.count))
                 + (Backdrop.hasWallpaper ? "" : " " + L("الخطوة التالية: التقط صورة لصفحة فارغة لضبط الخلفية."))
         } else if Backdrop.setWallpaper(img, screenPx: screenPx) {
             msg = isShot ? "تم ضبط الخلفية." : "تم اعتماد الصورة خلفيةً. إن لم تتطابق تمامًا، فاستخدم لقطة شاشة."

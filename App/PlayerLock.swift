@@ -65,16 +65,18 @@ enum PlayerLockCode {
     }
     @MainActor static func registerSuccess() { failures = 0; blockedUntil = nil }
 
-    /// بصمة الوجه أو رمز الجوال متاحة؟ (بديل لصاحب الجوال إن نسي رمز المشغّل)
+    /// بصمة الوجه متاحة؟ (طريق صاحب الجوال بدل الرمز)
+    /// البصمة وحدها لا رمز الجوال: كثير من الأطفال يعرفون رمز الجوال، فلا يصير بابًا خلفيًا لقفل المشغّل
     static var ownerAuthAvailable: Bool {
         var e: NSError?
-        return LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: &e)
+        return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e)
     }
     static func ownerAuth() async -> Bool {
         let ctx = LAContext()
+        ctx.localizedFallbackTitle = ""   // لا زر «إدخال رمز الجوال»
         var e: NSError?
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &e) else { return false }
-        return (try? await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: L("افتح قفل المشغّل"))) ?? false
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &e) else { return false }
+        return (try? await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: L("افتح قفل المشغّل"))) ?? false
     }
 }
 
@@ -115,6 +117,10 @@ struct PasscodePad: View {
     @State private var message: String?
     @State private var now = Date()
     @State private var success = false
+    /// لحظة الحكم بعد الرقم الرابع: لا يُقبل ضغط حتى تنتهي
+    @State private var checking = false
+    /// النتيجة تُرسل مرة واحدة فقط (لا «إلغاء» بعد النجاح ولا العكس)
+    @State private var finished = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -172,7 +178,8 @@ struct PasscodePad: View {
 
                 VStack {
                     HStack {
-                        Button(L("إلغاء")) { onFinish(false) }
+                        Button(L("إلغاء")) { finish(false) }
+                            .disabled(success)
                             .font(Theme.f(.body, .semibold)).foregroundStyle(.white.opacity(0.85))
                             .padding(.horizontal, 20).padding(.vertical, 12)
                         Spacer()
@@ -204,7 +211,7 @@ struct PasscodePad: View {
             }
             dots
                 .modifier(Shake(animatableData: CGFloat(shakes)))
-            Text(verbatim: blockedFor > 0 ? LF("حاول بعد %@ ثانية", ar(blockedFor)) : (message ?? " "))
+            Text(verbatim: blockedFor > 0 ? LF("حاول بعد %@", secondsText(blockedFor)) : (message ?? " "))
                 .font(Theme.f(.footnote, .semibold))
                 .foregroundStyle(blockedFor > 0 || message != nil ? Color(red: 1, green: 0.55, blue: 0.5) : .clear)
                 .frame(height: 18)
@@ -243,6 +250,8 @@ struct PasscodePad: View {
                             .foregroundStyle(.white.opacity(0.85)).frame(width: size, height: size)
                     }
                     .buttonStyle(.plain)
+                    // تبقى متاحة أثناء مهلة الأخطاء: محاولات طفل لا تمنع صاحب الجوال (النظام يحدّ البصمة بنفسه)
+                    .disabled(success || checking)
                     .accessibilityLabel(L("فتح ببصمة الوجه"))
                 } else {
                     Color.clear.frame(width: size, height: size)
@@ -255,13 +264,21 @@ struct PasscodePad: View {
                         .foregroundStyle(.white.opacity(entry.isEmpty ? 0.3 : 0.85)).frame(width: size, height: size)
                 }
                 .buttonStyle(.plain)
-                .disabled(entry.isEmpty)
+                .disabled(entry.isEmpty || keysOff)
+                .opacity(blockedFor > 0 ? 0.4 : 1)
                 .accessibilityLabel(L("حذف"))
             }
         }
         .environment(\.layoutDirection, .leftToRight)
-        .disabled(blockedFor > 0 || success)
-        .opacity(blockedFor > 0 ? 0.4 : 1)
+    }
+
+    /// أزرار الأرقام والحذف موقوفة: مهلة الأخطاء، أو لحظة الحكم، أو بعد النجاح
+    private var keysOff: Bool { blockedFor > 0 || success || checking }
+
+    private func finish(_ ok: Bool) {
+        guard !finished else { return }
+        finished = true
+        onFinish(ok)
     }
 
     private func digitKey(_ d: Int, _ size: CGFloat) -> some View {
@@ -272,21 +289,24 @@ struct PasscodePad: View {
                 .frame(width: size, height: size)
         }
         .buttonStyle(PadKeyStyle())
+        .disabled(keysOff)
+        .opacity(blockedFor > 0 ? 0.4 : 1)
         .accessibilityLabel(Text(verbatim: "\(d)"))
     }
 
     private func type(_ d: Int) {
-        guard entry.count < PlayerLockCode.length else { return }
+        guard !keysOff, entry.count < PlayerLockCode.length else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         message = nil
         entry.append(String(d))
         guard entry.count == PlayerLockCode.length else { return }
-        // لحظة قصيرة حتى تظهر النقطة الأخيرة قبل الحكم
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { evaluate() }
+        // الرمز يؤخذ الآن، ولحظة قصيرة حتى تظهر النقطة الأخيرة قبل الحكم
+        let code = entry
+        checking = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { checking = false; evaluate(code) }
     }
 
-    private func evaluate() {
-        let code = entry
+    private func evaluate(_ code: String) {
         switch purpose {
         case .create:
             if first == nil {
@@ -318,10 +338,11 @@ struct PasscodePad: View {
     private func succeed() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation(.easeOut(duration: 0.2)) { success = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { onFinish(true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) { finish(true) }
     }
 
     @MainActor private func faceID() async {
+        guard !success, !finished else { return }
         if await PlayerLockCode.ownerAuth() {
             PlayerLockCode.registerSuccess()
             succeed()
@@ -414,6 +435,8 @@ struct PlayerLockLayer: View {
     @State private var pad: PlayerLockFlow.Purpose?
     @State private var hint = false
     @State private var hintWork: DispatchWorkItem?
+    /// يتجدد زر القفل بعد كل لوحة (فتظهر/تختفي «تغيير الرمز» و«حذف الرمز» حسب الحال الآن)
+    @State private var rev = 0
 
     var body: some View {
         ZStack {
@@ -425,6 +448,7 @@ struct PlayerLockLayer: View {
                     .accessibilityHidden(true)
             }
             PlayerLockKnob(mode: $mode) { pad = $0 }
+                .id(rev)
                 .position(knobCenter)
             if hint && mode != .open {
                 Label(PlayerLockFlow.hint(mode), systemImage: mode == .code ? "lock.shield.fill" : "lock.fill")
@@ -440,6 +464,7 @@ struct PlayerLockLayer: View {
                     let r = PlayerLockFlow.after(p, ok: ok)
                     if let m = r.mode { mode = m }
                     withAnimation(.easeOut(duration: 0.2)) { pad = r.next }
+                    rev += 1
                 }
                 .id(p == .create(lockAfter: false) ? "create2" : "\(p)")
                 .transition(.opacity)

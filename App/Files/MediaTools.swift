@@ -723,7 +723,8 @@ enum MediaTools {
             let ct = c.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
             try ct?.insertTimeRange(CMTimeRange(start: .zero, duration: d), of: at, at: .zero)
         }
-        let out = try await export(c, preset: AVAssetExportPresetHighestQuality, to: output(for: audio, suffix: L("فيديو"), ext: "mp4"), type: .mp4, progress: progress)
+        // بجانب الصورة (قد تكون في مجلد مقفل) لا بجانب الصوت: لا يخرج محتوى مقفل إلى مجلد مفتوح
+        let out = try await export(c, preset: AVAssetExportPresetHighestQuality, to: output(for: image, suffix: L("فيديو"), ext: "mp4"), type: .mp4, progress: progress)
         try? FileManager.default.removeItem(at: tmp)
         return out
     }
@@ -764,27 +765,34 @@ extension MediaTools {
         let a = AVURLAsset(url: src)
         let video = isVideo(src)
         let ext = video ? "mp4" : "m4a"
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
-        guard let s = AVAssetExportSession(asset: a, presetName: video ? AVAssetExportPresetPassthrough : AVAssetExportPresetAppleM4A) else {
-            throw ToolError.failed(L("هذا الملف لا يدعم هذه العملية."))
-        }
-        s.outputURL = tmp
-        s.outputFileType = video ? .mp4 : .m4a
-        s.metadata = meta
-        await s.export()
-        progress(1)
-        guard s.status == .completed else { throw ToolError.failed(s.error?.localizedDescription ?? L("تعذّر الحفظ.")) }
-        // يحلّ محل الأصل (بنفس الاسم، وامتداد MP4/M4A) — الجديد يُحفظ أولًا، ولا يُحذف الأصل إلا بعد نجاحه،
-        // ولا يُطغى على ملف آخر بالاسم نفسه وامتداد مختلف (مثل «أغنية.m4a» بجانب «أغنية.mp3»)
         let fm = FileManager.default
-        if src.pathExtension.lowercased() == ext {
+        /// تصدير بإعداد معيّن؛ يرجع الملف المؤقت إن نجح
+        func export(_ preset: String) async -> URL? {
+            let tmp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + ext)
+            guard let s = AVAssetExportSession(asset: a, presetName: preset) else { return nil }
+            s.outputURL = tmp
+            s.outputFileType = video ? .mp4 : .m4a
+            s.metadata = meta
+            await s.export()
+            if s.status == .completed { return tmp }
+            try? fm.removeItem(at: tmp)
+            return nil
+        }
+        // نسخ مباشر بلا إعادة ترميز أولًا (الجودة كما هي)؛ وإن لم يدعمه نوع الصوت (MP3 وFLAC…) يُعاد ترميزه
+        var lossless = true
+        var out = await export(AVAssetExportPresetPassthrough)
+        if out == nil, !video { out = await export(AVAssetExportPresetAppleM4A); lossless = false }
+        progress(1)
+        guard let tmp = out else { throw ToolError.failed(L("هذا الملف لا يدعم هذه العملية.")) }
+        // نفس النوع ونسخ بلا فقد: يحلّ محل الأصل بأمان (الجديد يُكتب أولًا)
+        if lossless, src.pathExtension.lowercased() == ext {
             do { _ = try fm.replaceItemAt(src, withItemAt: tmp) } catch { try? fm.removeItem(at: tmp); throw error }
             return src
         }
+        // نوع مختلف أو أعيد ترميزه: ملف جديد بجانب الأصل، ويبقى الأصل كما هو (لا تُفقد جودته ولا تنكسر القوائم)
         let dest = uniqueFileURL(src.deletingPathExtension().appendingPathExtension(ext).lastPathComponent,
                                  in: src.deletingLastPathComponent())
         do { try fm.moveItem(at: tmp, to: dest) } catch { try? fm.removeItem(at: tmp); throw error }
-        try? fm.removeItem(at: src)
         return dest
     }
 

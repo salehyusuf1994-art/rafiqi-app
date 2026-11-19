@@ -369,8 +369,9 @@ final class FileStore: ObservableObject {
     /// يحذف مجلدات الخزنة الوسيطة الفارغة بعد نقل أو فتح مجلد
     private func pruneVault(_ dir: URL) {
         var d = dir.standardizedFileURL
+        // داخل مجلد مقفل المجلدات للمستخدم (ولو فارغة)؛ الوسيطة فقط هي التي تُنظَّف
         while inVault(d), !Self.same(d, vault), !Self.same(d, vaultTrash), !Self.same(d, trashTwins),
-              !d.lastPathComponent.hasPrefix(Self.lockPrefix),
+              !d.lastPathComponent.hasPrefix(Self.lockPrefix), !insideLocked(d),
               ((try? fm.contentsOfDirectory(atPath: d.path)) ?? ["x"]).isEmpty {
             try? fm.removeItem(at: d)
             d = d.deletingLastPathComponent()
@@ -562,12 +563,32 @@ final class FileStore: ObservableObject {
                 if move { try fm.moveItem(at: u, to: dest) } else { try fm.copyItem(at: u, to: dest) }
                 out.append(dest)
             } catch {
-                // نسخ عبر القراءة (بعض المزوّدات لا تسمح بالنسخ المباشر)
-                if let d = try? Data(contentsOf: u), (try? d.write(to: dest)) != nil { out.append(dest) }
+                // نسخ عبر القراءة على دفعات (بعض المزوّدات لا تسمح بالنسخ المباشر) — لا يُحمَّل الملف كله في الذاكرة
+                if Self.streamCopy(u, to: dest) { out.append(dest) }
             }
         }
         touch()
         return out
+    }
+
+    /// نسخ بقطع ٤ م.ب؛ يحذف الناتج الناقص إن فشل
+    nonisolated static func streamCopy(_ src: URL, to dest: URL) -> Bool {
+        guard let input = try? FileHandle(forReadingFrom: src) else { return false }
+        defer { try? input.close() }
+        guard FileManager.default.createFile(atPath: dest.path, contents: nil),
+              let output = try? FileHandle(forWritingTo: dest) else { return false }
+        defer { try? output.close() }
+        do {
+            while true {
+                let chunk = try autoreleasepool { try input.read(upToCount: 4 << 20) ?? Data() }
+                if chunk.isEmpty { break }
+                try output.write(contentsOf: chunk)
+            }
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: dest)
+            return false
+        }
     }
 
     @discardableResult
@@ -631,10 +652,17 @@ final class FileStore: ObservableObject {
         saveMeta()
     }
 
+    /// عنصر في أعلى السلة مباشرة (لا داخل مجلد محذوف) — وحده له أصل وتوأم مسجّلان باسمه
+    private func isTopOfTrash(_ u: URL) -> Bool {
+        let parent = u.deletingLastPathComponent()
+        return Self.same(parent, trash) || Self.same(parent, vaultTrash)
+    }
+
     func restore(_ urls: [URL]) {
         for u in urls {
             let name = u.lastPathComponent
-            let logical = meta.trashOrigin[name].map { url(forKey: $0) } ?? root
+            let top = isTopOfTrash(u)
+            let logical = (top ? meta.trashOrigin[name].map { url(forKey: $0) } : nil) ?? root
             // داخل الخزنة: يرجع لمجلده المقفل؛ ومجلد مقفل يرجع لتوأم مجلده في الخزنة
             let origin = physicalDir(forName: name, in: logical)
             try? fm.createDirectory(at: origin, withIntermediateDirectories: true)
@@ -642,7 +670,7 @@ final class FileStore: ObservableObject {
             let dest = unique(name, in: origin)
             if (try? fm.moveItem(at: u, to: dest)) != nil {
                 let twin = trashTwins.appendingPathComponent(name)
-                if fm.fileExists(atPath: twin.path) {
+                if top, fm.fileExists(atPath: twin.path) {
                     let t = vault.appendingPathComponent(key(dest), isDirectory: true)
                     try? fm.createDirectory(at: t.deletingLastPathComponent(), withIntermediateDirectories: true)
                     if (try? fm.moveItem(at: twin, to: t)) == nil {
@@ -650,8 +678,10 @@ final class FileStore: ObservableObject {
                     }
                 }
                 if isUnderRoot(dest) { migrateToVault(in: dest) }
-                meta.trashOrigin.removeValue(forKey: name)
-                meta.trashDate.removeValue(forKey: name)
+                if top {
+                    meta.trashOrigin.removeValue(forKey: name)
+                    meta.trashDate.removeValue(forKey: name)
+                }
             }
         }
         reconcileVault()
@@ -660,7 +690,10 @@ final class FileStore: ObservableObject {
 
     func deleteForever(_ urls: [URL]) {
         for u in urls {
+            let top = isTopOfTrash(u)
             try? fm.removeItem(at: u)
+            // التوأم والسجل باسم العنصر الأعلى فقط: حذف عنصر داخل مجلد محذوف لا يمس توأم مجلد آخر بنفس الاسم
+            guard top else { continue }
             try? fm.removeItem(at: trashTwins.appendingPathComponent(u.lastPathComponent))
             meta.trashOrigin.removeValue(forKey: u.lastPathComponent)
             meta.trashDate.removeValue(forKey: u.lastPathComponent)
@@ -671,7 +704,9 @@ final class FileStore: ObservableObject {
     /// تُحذف ملفات السلة نهائيًا بعد ٣٠ يومًا
     func purgeOldTrash() {
         let cutoff = Date().addingTimeInterval(-30 * 86400).timeIntervalSince1970
-        let old = list(trash).filter { (meta.trashDate[$0.name] ?? Date().timeIntervalSince1970) < cutoff }.map(\.url)
+        let items = ((try? fm.contentsOfDirectory(at: trash, includingPropertiesForKeys: nil)) ?? [])
+            + ((try? fm.contentsOfDirectory(at: vaultTrash, includingPropertiesForKeys: nil)) ?? [])
+        let old = items.filter { (meta.trashDate[$0.lastPathComponent] ?? Date().timeIntervalSince1970) < cutoff }
         if !old.isEmpty { deleteForever(old) }
     }
 
@@ -748,6 +783,24 @@ final class FileStore: ObservableObject {
 
     func relockAll() { unlocked.removeAll(); reconcileVault() }
 
+    /// أول مجلد مقفل (من الأعلى) في مسار هذا الرابط يحتاج تحققًا — nil إن كان المسار كله مفتوحًا
+    func lockedAncestor(_ u: URL) -> URL? {
+        let base = inVault(u) ? vault : root
+        let rel = key(u).split(separator: "/").map(String.init)
+        var cur = base
+        for part in rel {
+            cur = cur.appendingPathComponent(part)
+            if needsUnlock(cur) { return cur }
+        }
+        return nil
+    }
+
+    /// هل يمكن حماية الملفات؟ (يحتاج رمز قفل للجوال؛ بدونه لا يمكن طلب التحقق)
+    static var canProtect: Bool {
+        var err: NSError?
+        return LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: &err)
+    }
+
     // MARK: الضغط
 
     /// ضغط ملف أو عدة ملفات في ملف ZIP بجانبها
@@ -793,6 +846,12 @@ final class FileStore: ObservableObject {
         let fm = self.fm
         let ok: Bool = await Task.detached {
             do {
+                // ملف مضغوط «قنبلة» (حجمه بعد الفك أكبر من مساحة الجوال أو ملايين الملفات): يُرفض قبل أن يملأ الجوال
+                let archive = try Archive(url: url, accessMode: .read, pathEncoding: .utf8)
+                var total: Int64 = 0, count = 0
+                for e in archive { total += Int64(clamping: e.uncompressedSize); count += 1 }
+                let free = (try? dir.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage ?? .max
+                guard count <= 50_000, total < free - 200_000_000 else { return false }
                 try fm.createDirectory(at: dir, withIntermediateDirectories: true)
                 try fm.unzipItem(at: url, to: dir, pathEncoding: .utf8)
                 return true

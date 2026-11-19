@@ -81,6 +81,8 @@ struct CityPicker: View {
     func searchWorld() async {
         let text = q.trimmingCharacters(in: .whitespaces)
         guard text.count >= 2 else { world = []; searchingWorld = false; return }
+        // نتائج البحث السابق لا تبقى قابلة للضغط أثناء البحث الجديد، ولا تظهر «لا نتائج» قبل انتهائه
+        world = []; searchingWorld = true
         try? await Task.sleep(nanoseconds: 450_000_000)
         guard !Task.isCancelled else { return }
         searchingWorld = true

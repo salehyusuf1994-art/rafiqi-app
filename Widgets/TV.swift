@@ -162,7 +162,11 @@ enum TVChannels {
         }
         set {
             let stored: [TVChannel] = newValue.map { c in
-                guard let h = c.headers, !h.isEmpty else { TVSecrets.set(c.id, nil); return c }
+                guard let h = c.headers, !h.isEmpty else {
+                    // تعذّرت قراءة سرها الآن (لا أنه حُذف): يبقى كما هو
+                    if !TVSecrets.isUnreadable(c.id) { TVSecrets.set(c.id, nil) }
+                    return c
+                }
                 guard TVSecrets.set(c.id, h) else { return c }   // تعذّر: تبقى في مكانها القديم
                 var n = c; n.headers = nil; return n
             }
@@ -405,18 +409,36 @@ enum TVSecrets {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [String: [String: String]] = [:]
 
+    /// قنوات تعذّرت قراءة أسرارها هذه المرة (لا «غير موجودة»): لا تُحذف أسرارها عند الحفظ
+    nonisolated(unsafe) private static var unreadable: Set<String> = []
+
     static func get(_ id: String) -> [String: String]? {
         lock.lock(); defer { lock.unlock() }
         if let c = cache[id] { return c.isEmpty ? nil : c }
-        let h = SecureStore.data(service: service, account: id).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
-        cache[id] = h
-        return h.isEmpty ? nil : h
+        switch SecureStore.read(service: service, account: id) {
+        case .found(let d):
+            let h = (try? JSONDecoder().decode([String: String].self, from: d)) ?? [:]
+            cache[id] = h; unreadable.remove(id)
+            return h.isEmpty ? nil : h
+        case .missing:
+            cache[id] = [:]; unreadable.remove(id)
+            return nil
+        case .failed:
+            // لا نخزّن الفشل: نحاول مرة أخرى لاحقًا، ونحمي السر من الحذف
+            unreadable.insert(id)
+            return nil
+        }
     }
+
+    static func isUnreadable(_ id: String) -> Bool { lock.lock(); defer { lock.unlock() }; return unreadable.contains(id) }
 
     /// يحفظ ثم يتأكد بالقراءة؛ ويرجع false إن لم يُحفظ فعلًا. nil = حذف
     @discardableResult
     static func set(_ id: String, _ h: [String: String]?) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        let want = (h?.isEmpty ?? true) ? [:] : (h ?? [:])
+        // بلا تغيير: لا كتابة (استيراد آلاف القنوات كان يعيد كتابة كل الأسرار في كل مرة)
+        if let c = cache[id], c == want { return true }
         let value = (h?.isEmpty ?? true) ? nil : h.flatMap { try? JSONEncoder().encode($0) }
         if h != nil, !(h?.isEmpty ?? true), value == nil { return false }
         // ينتقل مع النسخة الاحتياطية المشفّرة

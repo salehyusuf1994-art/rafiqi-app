@@ -37,6 +37,9 @@ final class AudioPlayer: ObservableObject {
         save(reload: false)
     }
 
+    /// القناة التي تتجه إليها الأزرار: فقط إن كانت آخر ما بدأ (قناة متوقفة في النافذة العائمة لا تأخذ أزرار التلاوة)
+    static var activeTV: TVPlayback? { PlaybackGate.owner == .tv ? TVPlayback.current : nil }
+
     /// يُستدعى عند بدء التطبيق: يربط أوامر الويدجت وشاشة القفل
     func configure() {
         guard !configured else { return }
@@ -48,26 +51,26 @@ final class AudioPlayer: ObservableObject {
         // الأزرار تتجه لآخر ما بدأ: فيديو الملفات، ثم القناة، ثم القرآن/الإذاعة
         // (حتى لا تبدأ الإذاعة من نفسها لو ضُغط «تشغيل» من السماعة أثناء مشاهدة فيديو)
         rc.playCommand.addTarget { _ in Task { @MainActor in
-            if let v = PlaybackGate.activeVideo { v.remotePlay() } else if let tv = TVPlayback.current { tv.play() } else { AudioPlayer.shared.play() } }; return .success }
+            if let v = PlaybackGate.activeVideo { v.remotePlay() } else if let tv = Self.activeTV { tv.play() } else { AudioPlayer.shared.play() } }; return .success }
         rc.pauseCommand.addTarget { _ in Task { @MainActor in
-            if let v = PlaybackGate.activeVideo { v.remotePause() } else if let tv = TVPlayback.current { tv.pause() } else { AudioPlayer.shared.pause() } }; return .success }
+            if let v = PlaybackGate.activeVideo { v.remotePause() } else if let tv = Self.activeTV { tv.pause() } else { AudioPlayer.shared.pause() } }; return .success }
         rc.togglePlayPauseCommand.addTarget { _ in Task { @MainActor in
-            if let v = PlaybackGate.activeVideo { v.remoteToggle() } else if let tv = TVPlayback.current { tv.toggle() } else { AudioPlayer.shared.toggle() } }; return .success }
+            if let v = PlaybackGate.activeVideo { v.remoteToggle() } else if let tv = Self.activeTV { tv.toggle() } else { AudioPlayer.shared.toggle() } }; return .success }
         rc.nextTrackCommand.addTarget { _ in Task { @MainActor in
-            if let v = PlaybackGate.activeVideo { v.remoteStep(1) } else if let tv = TVPlayback.current { tv.zap(1) } else { AudioPlayer.shared.next() } }; return .success }
+            if let v = PlaybackGate.activeVideo { v.remoteStep(1) } else if let tv = Self.activeTV { tv.zap(1) } else { AudioPlayer.shared.next() } }; return .success }
         rc.previousTrackCommand.addTarget { _ in Task { @MainActor in
-            if let v = PlaybackGate.activeVideo { v.remoteStep(-1) } else if let tv = TVPlayback.current { tv.zap(-1) } else { AudioPlayer.shared.previous() } }; return .success }
+            if let v = PlaybackGate.activeVideo { v.remoteStep(-1) } else if let tv = Self.activeTV { tv.zap(-1) } else { AudioPlayer.shared.previous() } }; return .success }
         // التقديم والترجيع والسحب في شريط شاشة القفل (للتلاوة والملفات والفيديو)
         rc.skipForwardCommand.preferredIntervals = [NSNumber(value: FilePrefs.skip)]
         rc.skipBackwardCommand.preferredIntervals = [NSNumber(value: FilePrefs.skip)]
         rc.skipForwardCommand.addTarget { _ in Task { @MainActor in
-            if let v = PlaybackGate.activeVideo { v.remoteSeek(by: Double(FilePrefs.skip)) } else { AudioPlayer.shared.seek(by: Double(FilePrefs.skip)) } }; return .success }
+            if let v = PlaybackGate.activeVideo { v.remoteSeek(by: Double(FilePrefs.skip)) } else if Self.activeTV == nil { AudioPlayer.shared.seek(by: Double(FilePrefs.skip)) } }; return .success }
         rc.skipBackwardCommand.addTarget { _ in Task { @MainActor in
-            if let v = PlaybackGate.activeVideo { v.remoteSeek(by: -Double(FilePrefs.skip)) } else { AudioPlayer.shared.seek(by: -Double(FilePrefs.skip)) } }; return .success }
+            if let v = PlaybackGate.activeVideo { v.remoteSeek(by: -Double(FilePrefs.skip)) } else if Self.activeTV == nil { AudioPlayer.shared.seek(by: -Double(FilePrefs.skip)) } }; return .success }
         rc.changePlaybackPositionCommand.addTarget { e in
             guard let e = e as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             let t = e.positionTime
-            Task { @MainActor in if let v = PlaybackGate.activeVideo { v.remoteSeek(to: t) } else { AudioPlayer.shared.seek(to: t) } }
+            Task { @MainActor in if let v = PlaybackGate.activeVideo { v.remoteSeek(to: t) } else if Self.activeTV == nil { AudioPlayer.shared.seek(to: t) } }
             return .success
         }
         timeControlObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
@@ -307,7 +310,10 @@ final class AudioPlayer: ObservableObject {
     private func stalled(_ url: URL) {
         guard state.source == .radio else { return }
         guard stallRetries < Self.maxStallRetries else {
+            // نوقف المشغّل فعلًا: لا يظل يحاول في الخلفية ثم يرجع الصوت والواجهة تقول «متوقف»
+            player.pause()
             state.playing = false; loading = false; save()
+            updateNowPlayingInfo()
             return
         }
         let wait = UInt64(6 << stallRetries) * 1_000_000_000

@@ -79,6 +79,7 @@ struct GradDigits: View {
             .foregroundStyle(LinearGradient(colors: [Color.white, Color.white.opacity(0.58)], startPoint: .top, endPoint: .bottom))
             .lineLimit(1)
             .fixedSize()
+            .offset(y: digitLift(size, wf))
             .frame(height: size * 0.8)
     }
 }
@@ -308,7 +309,11 @@ enum Occasions {
 
     static func daysWord(_ n: Int) -> String {
         if Lang.isEN { return n == 1 ? "day" : "days" }
-        return (3...10).contains(n) ? "أيام" : "يومًا"
+        // ٣–١٠ «أيام»، ١١–٩٩ «يومًا»، والمئات وما بعدها مثل «١٠٠ يوم»
+        let r = n % 100
+        if (3...10).contains(r) { return "أيام" }
+        if (11...99).contains(r) { return "يومًا" }
+        return "يوم"
     }
 }
 

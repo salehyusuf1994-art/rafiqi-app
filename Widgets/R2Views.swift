@@ -136,7 +136,8 @@ struct R2ListView: View {
                     HStack {
                         PrName(p.key, 62, 17)
                         Spacer(minLength: 4)
-                        Digits(text: hm12(p.time), size: 14, color: .white, bold: on)
+                        // بلا فراغ السطر الكبير لخط الأرقام: كان يطيل الصفوف الستة فتخرج القائمة عن حواف الويدجت
+                        Digits(text: hm12(p.time), size: 14, color: .white, bold: on, tight: true)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(on ? 0.17 : 0)))
@@ -459,11 +460,14 @@ struct R2CalendarView: View {
                         HStack {
                             T2(text: (o.days == 0 ? L("اليوم") : L("المناسبة القادمة")) + ": " + L(o.name), size: 13, op: 0.9)
                             Spacer(minLength: 4)
-                            if o.days > 0 {
+                            if o.days > 2 {
                                 HStack(spacing: 4) {
                                     Digits(text: R2.num(o.days), size: 16, color: .white, bold: true)
                                     T2(text: L(Occasions.daysWord(o.days)), size: 12)
                                 }
+                            } else if o.days > 0 {
+                                // «يوم واحد» و«يومان» تُكتب كلمات (لا «١ يومًا» ولا «٢ يومان»)
+                                T2(text: daysCountText(o.days), size: 12)
                             }
                         }
                     }
@@ -568,7 +572,7 @@ struct R2ProgressView: View {
                 }
                 .frame(maxWidth: .infinity)
                 Spacer(minLength: 6)
-                T2(text: left == 0 ? L("آخر يوم في الشهر") : L("باقي") + " " + R2.num(left) + " " + L(Occasions.daysWord(left)), size: 11.5)
+                T2(text: left == 0 ? L("آخر يوم في الشهر") : L("باقي") + " " + (left <= 2 ? daysCountText(left) : R2.num(left) + " " + L(Occasions.daysWord(left))), size: 11.5)
             }
             .padding(14)
         }
@@ -590,11 +594,13 @@ struct R2OccasionView: View {
                         .lineLimit(1).minimumScaleFactor(0.45)
                         .frame(height: 46)
                         .padding(.horizontal, 10)
-                    if o.days > 0 {
+                    if o.days > 2 {
                         HStack(alignment: .lastTextBaseline, spacing: 5) {
                             GradDigits(text: R2.num(o.days), size: 40)
                             T2(text: L(Occasions.daysWord(o.days)), size: 13, op: 0.9)
                         }
+                    } else if o.days > 0 {
+                        T2(text: daysCountText(o.days), size: 18, op: 0.9).frame(height: 46)
                     }
                     T2(text: R2.hijriLine(o.date, year: false) + " · " + R2.gregLine(o.date, year: false), size: 10.5, op: R2.past)
                         .padding(.top, 3)

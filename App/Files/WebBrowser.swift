@@ -106,19 +106,28 @@ final class BrowserModel: NSObject, ObservableObject {
         found = arr.compactMap { $0.count == 2 ? MediaLink(url: $0[0], label: $0[1]) : nil }
     }
 
-    private func headers() async -> [String: String] {
+    /// ترويسات تنزيل رابط من هذه الصفحة: الكوكيز التي تخص رابط التنزيل نفسه فقط (بقواعد المتصفح)،
+    /// فلا تُرسل جلسة موقع لموقع آخر، ولا يُرسل كوكي «آمن» عبر اتصال غير مشفّر
+    private func headers(for target: URL?) async -> [String: String] {
         var h: [String: String] = [:]
         if let u = web.url { h["Referer"] = u.absoluteString }
+        guard let target, let host = target.host?.lowercased() else { return h }
+        let https = target.scheme?.lowercased() == "https"
+        let path = target.path.isEmpty ? "/" : target.path
         let cookies = await web.configuration.websiteDataStore.httpCookieStore.allCookies()
-        let host = web.url?.host ?? ""
-        let c = cookies.filter { host.hasSuffix($0.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))) }
-            .map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-        if !c.isEmpty { h["Cookie"] = c }
+        let match = cookies.filter { c in
+            let d = c.domain.lowercased()
+            let domainOK = d.hasPrefix(".") ? (host == String(d.dropFirst()) || host.hasSuffix(d)) : host == d
+            let pathOK = c.path.isEmpty || c.path == "/" || path == c.path || path.hasPrefix(c.path.hasSuffix("/") ? c.path : c.path + "/")
+            let expired = c.expiresDate.map { $0 < Date() } ?? false
+            return domainOK && pathOK && !expired && (https || !c.isSecure)
+        }
+        if let c = HTTPCookie.requestHeaderFields(with: match)["Cookie"], !c.isEmpty { h["Cookie"] = c }
         return h
     }
 
     func download(_ link: String) async {
-        let h = await headers()
+        let h = await headers(for: URL(string: link))
         if DownloadManager.shared.add(link, headers: h) { message = L("بدأ التنزيل، تابعه من «التنزيلات».") }
     }
 }

@@ -11,7 +11,7 @@ private let LARGE3 = CGSize(width: 364, height: 382)
 
 /// اسم اليوم المختصر (للأعمدة الضيقة)
 private func wdShort(_ i: Int) -> String {
-    let ar = ["أحد", "إثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"]
+    let ar = ["أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت"]
     let en = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     return (Lang.isEN ? en : ar)[max(0, min(6, i))]
 }
@@ -79,7 +79,8 @@ enum Quotes {
     /// اقتباس اليوم (يتغيّر يوميًا، والضغط ينقل للتالي)
     static func current(_ now: Date) -> Q {
         let l = list(cat)
-        let day = Int(now.timeIntervalSince1970 / 86400)
+        // رقم اليوم بتقويم الجوال (لا بأيام UTC): يتغيّر الاقتباس عند منتصف الليل المحلي، ويطابق التطبيق
+        let day = Cal.gregCal.ordinality(of: .day, in: .era, for: now) ?? Int(now.timeIntervalSince1970 / 86400)
         let i = day + d.integer(forKey: "quote_off")
         return l[((i % l.count) + l.count) % l.count]
     }

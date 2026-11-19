@@ -30,7 +30,7 @@ struct PrayerRingView: View {
                     Color.clear.frame(height: 33)
                     Digits(text: hm12(st.next.time), size: 19, color: .white, bold: true).frame(width: 140)
                     Color.clear.frame(height: 64)
-                    CountDown(to: st.next.time, size: 17, color: TXT, width: 146)
+                    CountDown(to: st.next.time, size: 17, color: TXT, width: 146, at: entry.date)
                     Spacer(minLength: 0)
                 }
             }
@@ -103,7 +103,7 @@ struct NextPrayerView: View {
         VStack(spacing: -4) {
             Digits(text: hm12(next.time), size: 30 * k, color: .white, bold: true)
             CImg(name: "lbl_next", s: 0.36 * k)
-            CountDown(to: next.time, size: 26 * k, color: .white, width: 140)
+            CountDown(to: next.time, size: 26 * k, color: .white, width: 140, at: entry.date)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -130,7 +130,7 @@ struct AgendaView: View {
                     Spacer(minLength: 0)
                     VStack(spacing: -4) {
                         CImg(name: "pr_\(st.next.key.rawValue)", s: 0.42)
-                        CountDown(to: st.next.time, size: 20, color: .white, width: 110)
+                        CountDown(to: st.next.time, size: 20, color: .white, width: 110, at: entry.date)
                     }
                 }
                 .frame(width: 350, height: 80)
@@ -163,7 +163,7 @@ struct ComboView: View {
                 .frame(width: 350, height: 62)
                 HStack(spacing: 8) {
                     Rectangle().fill(Color.white.opacity(0.25)).frame(width: 92, height: 1)
-                    CountDown(to: st.next.time, size: 20, color: .white, width: 120)
+                    CountDown(to: st.next.time, size: 20, color: .white, width: 120, at: entry.date)
                     Rectangle().fill(Color.white.opacity(0.25)).frame(width: 92, height: 1)
                 }
                 PrayerRow(date: entry.date, nextKey: st.next.key)
@@ -198,12 +198,12 @@ struct PrevNextView: View {
         return VStack(spacing: 0) {
             Spacer(minLength: 0)
             nameRow(st.prev)
-            HStack(spacing: 5) { Fit("lbl_ago_t", 54, 27); CountUp(from: st.prev.time, size: 20, color: .white, width: 86) }
+            HStack(spacing: 5) { Fit("lbl_ago_t", 54, 27); CountUp(from: st.prev.time, size: 20, color: .white, width: 86, at: entry.date) }
             Color.clear.frame(height: 6)
             Rectangle().fill(Color.white.opacity(0.28)).frame(width: 96, height: 1)
             Color.clear.frame(height: 6)
             nameRow(st.next)
-            HStack(spacing: 5) { Fit("lbl_left_t", 54, 27); CountDown(to: st.next.time, size: 20, color: .white, width: 86) }
+            HStack(spacing: 5) { Fit("lbl_left_t", 54, 27); CountDown(to: st.next.time, size: 20, color: .white, width: 86, at: entry.date) }
             Spacer(minLength: 0)
         }
     }
@@ -214,8 +214,8 @@ struct PrevNextView: View {
                 Fit(lbl, 130, 20, 0.8)
                 Fit("pr_\(q.key.rawValue)_t", 150, 54, prev ? 0.9 : 1)
                 HStack(spacing: 5) { PrIcon(key: q.key, size: 15, color: TXT); Digits(text: hm12(q.time), size: 17, color: TXT) }
-                if prev { CountUp(from: q.time, size: 26, color: .white, width: 160) }
-                else { CountDown(to: q.time, size: 26, color: .white, width: 160) }
+                if prev { CountUp(from: q.time, size: 26, color: .white, width: 160, at: entry.date) }
+                else { CountDown(to: q.time, size: 26, color: .white, width: 160, at: entry.date) }
             }
             .frame(width: 165, height: 132)
         }

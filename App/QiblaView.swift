@@ -44,6 +44,7 @@ final class Compass: NSObject, ObservableObject, CLLocationManagerDelegate {
     let available = CLLocationManager.headingAvailable()
     private let m = CLLocationManager()
     private var sx = 0.0, sy = 0.0, primed = false
+    private var running = false
 
     override init() {
         super.init()
@@ -54,16 +55,28 @@ final class Compass: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func start() {
         guard available else { return }
+        running = true
         m.startUpdatingHeading()
         // الشمال الحقيقي لا يُحسب إلا مع تشغيل الموقع؛ بدونه نأخذ المغناطيسي (فرقه في المدينة ٣–٤ درجات)
         let st = m.authorizationStatus
         if st == .authorizedWhenInUse || st == .authorizedAlways {
             m.desiredAccuracy = kCLLocationAccuracyKilometer
             m.startUpdatingLocation()
+        } else if st == .notDetermined {
+            // أول مرة: يُطلب الإذن (كانت الصفحة تطلب تفعيل الموقع بلا طريقة لذلك)
+            m.requestWhenInUseAuthorization()
         }
     }
 
-    func stop() { m.stopUpdatingHeading(); m.stopUpdatingLocation() }
+    /// تغيّر الإذن (منحه المستخدم الآن أو من الإعدادات): يبدأ الموقع فورًا
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let st = manager.authorizationStatus
+        guard running, available, st == .authorizedWhenInUse || st == .authorizedAlways else { return }
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer
+        manager.startUpdatingLocation()
+    }
+
+    func stop() { running = false; m.stopUpdatingHeading(); m.stopUpdatingLocation() }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         if let c = locations.last?.coordinate { coord = c }

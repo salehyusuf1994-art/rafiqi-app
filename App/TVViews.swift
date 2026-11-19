@@ -131,7 +131,18 @@ final class TVPlayback: ObservableObject {
     /// البث الحالي (للتحكم من شاشة القفل وسماعات البلوتوث، ولإيقافه إذا شغّلت القرآن أو الإذاعة)
     static weak var current: TVPlayback?
 
-    init(_ c: TVChannel) { channel = c }
+    private var rateObs: NSKeyValueObservation?
+
+    init(_ c: TVChannel) {
+        channel = c
+        // توقف/تشغيل من خارج التطبيق (مكالمة، فصل السماعة): شاشة القفل تعرض الحال الصحيحة
+        rateObs = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self, TVPlayback.current === self else { return }
+                self.updateNowPlaying()
+            }
+        }
+    }
 
     func start() {
         // نوقف القرآن أو الإذاعة أو الفيديو قبل البث، ونغلق أي قناة أخرى في النافذة العائمة
@@ -191,6 +202,13 @@ final class TVPlayback: ObservableObject {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // بث مباشر: لا تقديم ولا سحب (كانت تبقى مفعّلة من آخر ملف صوتي فتحرّكه وهو متوقف)، والتنقل بين القنوات متاح
+        let rc = MPRemoteCommandCenter.shared()
+        rc.skipForwardCommand.isEnabled = false
+        rc.skipBackwardCommand.isEnabled = false
+        rc.changePlaybackPositionCommand.isEnabled = false
+        rc.nextTrackCommand.isEnabled = true
+        rc.previousTrackCommand.isEnabled = true
     }
 
     func stop() {
@@ -245,6 +263,8 @@ final class TVPlayback: ObservableObject {
 /// المشغّل بأزرار النظام (تشغيل، AirPlay، ملء الشاشة)
 struct TVVideo: UIViewControllerRepresentable {
     let tv: TVPlayback
+    /// المشغّل مقفل: تُمنع النافذة العائمة
+    var locked = false
     var player: AVPlayer { tv.player }
 
     /// الصوت يكمل في الخلفية: النظام يوقف أي فيديو مربوط بالشاشة عند الخروج من التطبيق،
@@ -339,6 +359,9 @@ struct TVVideo: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: AVPlayerViewController, context: Context) {
         // في الخلفية يبقى المشغّل مفكوكًا عن الشاشة حتى يكمل الصوت
         if vc.player !== player && UIApplication.shared.applicationState != .background { vc.player = player }
+        // أثناء القفل: لا نافذة عائمة (كانت تظهر بسحبة واحدة وفيها كل أزرار التحكم)
+        vc.allowsPictureInPicturePlayback = !locked
+        vc.canStartPictureInPictureAutomaticallyFromInline = !locked
     }
 }
 
@@ -381,6 +404,10 @@ struct TVPlayerScreen: View {
                     }
                 }
             }
+            // أثناء القفل: ما تحت الطبقة لا يصل إليه قارئ الشاشة، وسحبات حواف النظام تحتاج سحبة ثانية
+            .accessibilityHidden(lockMode != .open)
+            .defersSystemGestures(on: lockMode != .open ? .all : [])
+            .persistentSystemOverlays(lockMode != .open ? .hidden : .automatic)
             // القفل فوق كل شيء: زرّه في منتصف حافة الفيديو، وعند القفل يغطي الشاشة كلها
             .overlayPreferenceValue(PlayerLockAnchorKey.self) { a in
                 GeometryReader { lg in
@@ -411,7 +438,7 @@ struct TVPlayerScreen: View {
 
     private var video: some View {
         ZStack {
-            TVVideo(tv: tv)
+            TVVideo(tv: tv, locked: lockMode != .open)
             if tv.loading && !tv.failed {
                 ProgressView().controlSize(.large).tint(.white)
             }
@@ -663,7 +690,7 @@ struct TVSections: View {
                 .sheet(isPresented: $managing, onDismiss: { favs = TVChannels.favorites; rev += 1 }) { CustomChannelsView() }
             }
         } footer: {
-            Text("القنوات من دليل iptv-org المفتوح، وتُبث من مواقعها الرسمية. قد تتوقف بعض القنوات مؤقتًا، وتتحدّث روابطها تلقائيًا كل يوم. اضغط مطوّلًا على القناة لإضافتها إلى «قنواتي».")
+            Text("القنوات من دليل iptv-org المفتوح، وتُبث من مواقعها الرسمية. قد تتوقف بعض القنوات مؤقتًا، وتُحدَّث روابطها تلقائيًا كل يوم. اضغط مطوّلًا على القناة لإضافتها إلى «قنواتي».")
         }
     }
 

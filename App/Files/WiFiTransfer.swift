@@ -47,7 +47,11 @@ final class WiFiServer: ObservableObject {
                 Task { @MainActor in
                     switch st {
                     case .ready: WiFiServer.shared.running = true
-                    case .failed, .cancelled: WiFiServer.shared.running = false
+                    // فشل المستمع (انقطاع الشبكة مثلًا): نوقف كل شيء حتى يعمل زر «تشغيل» من جديد
+                    case .failed:
+                        WiFiServer.shared.stop()
+                        WiFiServer.shared.lastEvent = L("انقطع النقل. تأكّد من الاتصال بشبكة واي فاي ثم شغّله من جديد.")
+                    case .cancelled: WiFiServer.shared.running = false
                     default: break
                     }
                 }
@@ -80,6 +84,7 @@ final class WiFiServer: ObservableObject {
         WiFiGuard.reset(code: nil)
         listener?.cancel()
         listener = nil
+        WiFiConns.cancelAll()
         running = false
         if awake { KeepAwake.end(); awake = false }
     }
@@ -132,6 +137,8 @@ enum WiFiGuard {
         return true
     }
     static var blocked: Bool { lock.lock(); defer { lock.unlock() }; return fails >= 10 }
+    /// نقل جارٍ (رفع أو تنزيل كبير) يُعدّ استخدامًا، فلا يتوقف الخادم في منتصفه بعد ١٠ دقائق
+    static func touch() { lock.lock(); last = Date(); lock.unlock() }
     static var lastActivity: Date { lock.lock(); defer { lock.unlock() }; return last }
     /// يتحقق من الرمز؛ بعد ١٠ محاولات خاطئة يُرفض كل شيء حتى يُعاد التشغيل
     static func check(_ given: String?) -> Bool {
@@ -140,6 +147,18 @@ enum WiFiGuard {
         if given == code { last = Date(); return true }
         if given != nil { fails += 1 }
         return false
+    }
+}
+
+/// الاتصالات المفتوحة: تُقطع كلها عند إيقاف النقل
+enum WiFiConns {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var all: [ObjectIdentifier: NWConnection] = [:]
+    static func add(_ c: NWConnection) { lock.lock(); all[ObjectIdentifier(c)] = c; lock.unlock() }
+    static func remove(_ c: NWConnection) { lock.lock(); all[ObjectIdentifier(c)] = nil; lock.unlock() }
+    static func cancelAll() {
+        lock.lock(); let list = Array(all.values); all = [:]; lock.unlock()
+        list.forEach { $0.cancel() }
     }
 }
 
@@ -155,6 +174,13 @@ final class HTTPConn {
     init(conn: NWConnection) { self.conn = conn }
 
     func start() {
+        WiFiConns.add(conn)
+        conn.stateUpdateHandler = { [conn] st in
+            switch st {
+            case .failed, .cancelled: WiFiConns.remove(conn)
+            default: break
+            }
+        }
         conn.start(queue: DispatchQueue(label: "rafiqi.wifi.conn"))
         readHead()
     }
@@ -191,6 +217,9 @@ final class HTTPConn {
         // الجلسة: رمز عشوائي في كوكي محمي (HttpOnly وSecure وSameSite=Strict)، لا رمز الدخول نفسه
         let cookie = (headers["cookie"] ?? "").split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
             .first { $0.hasPrefix("rfs=") }.map { String($0.dropFirst(4)) }
+        // السكربتات ملفات ثابتة بلا بيانات: تُخدم قبل الدخول، ولا سكربت داخل الصفحة نفسها (CSP بلا unsafe-inline)
+        if method == "GET" && path == "/login.js" { return reply(200, "text/javascript; charset=utf-8", Data(Self.loginJS.utf8)) }
+        if method == "GET" && path == "/app.js" { return reply(200, "text/javascript; charset=utf-8", Data(Self.appJS.utf8)) }
         if method == "POST" && path == "/login" {
             // الرمز في جسم الطلب (لا في الرابط حتى لا يُحفظ في سجل المتصفح)؛ قد يصل الجسم في حزمة لاحقة
             let need = min(64, Int(headers["content-length"] ?? "0") ?? 0)
@@ -215,12 +244,22 @@ final class HTTPConn {
         case ("PUT", "/put"):
             let name = (q["name"] ?? "file").replacingOccurrences(of: "/", with: "-")
             guard !name.hasPrefix(".") else { return reply(400, "text/plain", Data()) }
+            let length = Int(headers["content-length"] ?? "0") ?? 0
+            // لا نبدأ رفعًا لا تتسع له مساحة الجوال (مع هامش ٢٠٠ م.ب للنظام)
+            if let free = (try? root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage,
+               Int64(length) > free - 200_000_000 {
+                return reply(507, "text/plain", Data("no space".utf8))
+            }
             let dest = unique(name, in: dir)
-            FileManager.default.createFile(atPath: dest.path, contents: nil)
-            file = try? FileHandle(forWritingTo: dest)
+            guard FileManager.default.createFile(atPath: dest.path, contents: nil),
+                  let h = try? FileHandle(forWritingTo: dest) else { return reply(500, "text/plain", Data()) }
+            file = h
             target = dest
-            remaining = Int(headers["content-length"] ?? "0") ?? 0
-            if !body.isEmpty { file?.write(body); remaining -= body.count }
+            remaining = length
+            if !body.isEmpty {
+                guard write(body) else { return failUpload() }
+                remaining -= body.count
+            }
             readBody()
         case ("POST", "/mkdir"):
             let name = (q["name"] ?? "").replacingOccurrences(of: "/", with: "-")
@@ -256,18 +295,35 @@ final class HTTPConn {
     private func readBody() {
         guard remaining > 0 else { return finishUpload() }
         conn.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [self] data, _, done, err in
-            if let data, !data.isEmpty { file?.write(data); remaining -= data.count }
+            if let data, !data.isEmpty {
+                guard write(data) else { return failUpload() }
+                remaining -= data.count
+                WiFiGuard.touch()
+            }
             if remaining <= 0 { finishUpload() }
             else if done || err != nil {
-                try? file?.close()
+                try? file?.close(); file = nil
                 if let target { try? FileManager.default.removeItem(at: target) }
                 conn.cancel()
             } else { readBody() }
         }
     }
 
+    /// كتابة آمنة: امتلاء المساحة يرجع خطأ بدل أن يُسقط التطبيق
+    private func write(_ d: Data) -> Bool {
+        guard let file else { return false }
+        do { try file.write(contentsOf: d); return true } catch { return false }
+    }
+
+    /// فشل الكتابة: يُحذف الجزء الناقص ويُبلَّغ المتصفح
+    private func failUpload() {
+        try? file?.close(); file = nil
+        if let target { try? FileManager.default.removeItem(at: target) }
+        reply(507, "text/plain", Data("write failed".utf8))
+    }
+
     private func finishUpload() {
-        try? file?.close()
+        try? file?.close(); file = nil
         let n = target?.lastPathComponent ?? ""
         Task { @MainActor in WiFiServer.shared.note(LF("وصل «%@» من الكمبيوتر", n)) }
         reply(200, "text/plain", Data("ok".utf8))
@@ -299,6 +355,7 @@ final class HTTPConn {
             conn.send(content: nil, isComplete: true, completion: .contentProcessed { [self] _ in conn.cancel() })
             return
         }
+        WiFiGuard.touch()
         conn.send(content: chunk, completion: .contentProcessed { [self] e in
             if e != nil { try? h.close(); conn.cancel() } else { pump(h) }
         })
@@ -306,7 +363,7 @@ final class HTTPConn {
 
     /// ترويسات أمان ثابتة لكل رد
     private static let secureHeaders = "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nReferrer-Policy: no-referrer\r\n"
-        + "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'\r\n"
+        + "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'\r\n"
 
     private func reply(_ code: Int, _ type: String, _ body: Data, extra: String = "") {
         let status = code == 200 ? "OK" : "Error"
@@ -315,29 +372,48 @@ final class HTTPConn {
         conn.send(content: d, completion: .contentProcessed { [self] _ in conn.cancel() })
     }
 
+    /// نصوص الصفحة بلغة التطبيق
+    private static func t(_ ar: String, _ en: String) -> String { Lang.isEN ? en : ar }
+    private static var htmlHead: String { Lang.isEN ? #"<html lang="en" dir="ltr">"# : #"<html lang="ar" dir="rtl">"# }
+
     /// صفحة الرمز: يكتب المستخدم الرمز الظاهر في الجوال
     private func loginPage() -> String {
-        """
-        <!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>رفيقي — رمز الدخول</title>
+        let t = Self.t
+        return """
+        <!doctype html>\(Self.htmlHead)<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>\(t("رفيقي — رمز الدخول", "Rafiqi — Sign in"))</title>
         <style>body{margin:0;font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;background:#0b0c12;color:#eee;display:flex;min-height:100vh;align-items:center;justify-content:center}
         .c{background:#14151d;border:1px solid #2a2b35;border-radius:20px;padding:30px;text-align:center;width:300px}
         h1{color:#e3c27f;font-size:20px;margin:0 0 8px}p{color:#aaa;font-size:14px}
         input{font-size:28px;letter-spacing:8px;text-align:center;width:100%;box-sizing:border-box;padding:10px;border-radius:12px;border:1px solid #3a3b47;background:#0b0c12;color:#fff;direction:ltr}
         button{margin-top:14px;width:100%;background:#e3c27f;color:#000;border:0;border-radius:12px;padding:11px;font-size:16px;font-weight:600;cursor:pointer}#e{color:#f77;min-height:20px}</style></head><body>
-        <div class="c"><h1>رفيقي — ملفاتي</h1><p>اكتب الرمز الظاهر في صفحة النقل على الجوال</p>
-        <input id="k" inputmode="numeric" maxlength="8" autocomplete="off" autofocus><button onclick="go()">دخول</button><p id="e"></p></div>
-        <script>function go(){var k=document.getElementById('k').value.replace(/\\s/g,'');fetch('/login',{method:'POST',body:k,credentials:'same-origin'}).then(function(r){
-        if(r.ok){location.reload()}else{document.getElementById('e').textContent='الرمز غير صحيح'}})}
-        document.getElementById('k').onkeydown=function(e){if(e.key==='Enter')go()}</script></body></html>
+        <div class="c"><h1>\(t("رفيقي — ملفاتي", "Rafiqi — My Files"))</h1><p>\(t("اكتب الرمز الظاهر في صفحة النقل على الجوال", "Enter the code shown on the transfer page on your phone"))</p>
+        <input id="k" inputmode="numeric" maxlength="8" autocomplete="off" autofocus><button id="b">\(t("دخول", "Sign in"))</button>
+        <p id="e" data-bad="\(t("الرمز غير صحيح", "Wrong code"))"></p></div>
+        <script src="/login.js"></script></body></html>
         """
     }
 
-    /// صفحة المتصفح في الكمبيوتر (بالعربية، بدون مكتبات خارجية)
+    private static let loginJS = #"""
+    function go(){var k=document.getElementById('k').value.replace(/\s/g,''),e=document.getElementById('e');
+    fetch('/login',{method:'POST',body:k,credentials:'same-origin'}).then(function(r){if(r.ok){location.reload()}else{e.textContent=e.dataset.bad}}).catch(function(){e.textContent=e.dataset.bad})}
+    document.getElementById('b').onclick=go;document.getElementById('k').onkeydown=function(ev){if(ev.key==='Enter')go()};
+    """#
+
+    /// صفحة المتصفح في الكمبيوتر (بدون مكتبات خارجية). الأسماء تُكتب نصًا (textContent) فلا يُنفَّذ أي اسم ملف كشيفرة
     private func page() -> String {
-        """
-        <!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>رفيقي — ملفاتي</title>
+        let t = Self.t
+        let strings: [String: String] = [
+            "root": t("ملفاتي", "My Files"), "empty": t("المجلد فارغ", "This folder is empty"),
+            "uploading": t("يرفع", "Uploading"), "failed": t("تعذّر رفع", "Couldn't upload"),
+            "done": t("اكتمل الرفع ✓", "Upload complete ✓"),
+            "someFailed": t("انتهى الرفع، وتعذّر رفع %d ملف (قد تكون المساحة ممتلئة)", "Finished, but %d file(s) couldn't be uploaded (storage may be full)"),
+            "folderName": t("اسم المجلد", "Folder name"),
+        ]
+        let json = (try? JSONSerialization.data(withJSONObject: strings)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+        return """
+        <!doctype html>\(Self.htmlHead)<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>\(t("رفيقي — ملفاتي", "Rafiqi — My Files"))</title>
         <style>
         body{margin:0;font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;background:#0b0c12;color:#eee}
         header{padding:20px 28px;background:#14151d;border-bottom:1px solid #2a2b35;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
@@ -345,38 +421,47 @@ final class HTTPConn {
         button,.btn{background:#e3c27f;color:#000;border:0;border-radius:10px;padding:9px 16px;font-size:15px;cursor:pointer;font-weight:600}
         .ghost{background:#24252f;color:#eee}
         main{padding:16px 28px}#crumbs{margin:6px 0 14px;color:#aaa}#crumbs a{color:#e3c27f;text-decoration:none;cursor:pointer}
-        table{width:100%;border-collapse:collapse}td{padding:11px 8px;border-bottom:1px solid #22232c}
+        table{width:100%;border-collapse:collapse}td{padding:11px 8px;border-bottom:1px solid #22232c}td.m{color:#888}
         td.s{color:#999;white-space:nowrap;width:120px}a.f{color:#fff;text-decoration:none;cursor:pointer}
         #drop{border:2px dashed #3a3b47;border-radius:16px;padding:26px;text-align:center;color:#aaa;margin-bottom:16px}
         #drop.on{border-color:#e3c27f;color:#e3c27f}#prog{color:#e3c27f;margin:8px 0}
         </style></head><body>
-        <header><h1>رفيقي — ملفاتي</h1>
-        <button class="ghost" onclick="mk()">مجلد جديد</button>
-        <label class="btn">رفع ملفات<input id="pick" type="file" multiple hidden></label></header>
-        <main><div id="drop">اسحب الملفات وأفلتها هنا لرفعها إلى الجوال</div><div id="prog"></div>
+        <header><h1>\(t("رفيقي — ملفاتي", "Rafiqi — My Files"))</h1>
+        <button class="ghost" id="mk">\(t("مجلد جديد", "New folder"))</button>
+        <label class="btn">\(t("رفع ملفات", "Upload files"))<input id="pick" type="file" multiple hidden></label></header>
+        <main><div id="drop">\(t("اسحب الملفات وأفلتها هنا لرفعها إلى الجوال", "Drag and drop files here to upload them to your phone"))</div><div id="prog"></div>
         <div id="crumbs"></div><table id="t"></table></main>
-        <script>
-        var cur='';
-        function esc(s){return s.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
-        function sz(n){if(n<1024)return n+' B';var u=['KB','MB','GB'],i=-1;do{n/=1024;i++}while(n>=1024&&i<2);return n.toFixed(1)+' '+u[i]}
-        function load(p){cur=p;fetch('/list?path='+encodeURIComponent(p)).then(r=>r.json()).then(function(d){
-          var parts=p?p.split('/'):[],h='<a onclick="load(\\'\\')">ملفاتي</a>',acc='';
-          parts.forEach(function(x){acc+=(acc?'/':'')+x;h+=' / <a onclick="load(\\''+esc(acc).replace(/'/g,"\\\\'")+'\\')">'+esc(x)+'</a>'});
-          document.getElementById('crumbs').innerHTML=h;
-          var rows=d.items.map(function(it){var full=(p?p+'/':'')+it.name;var j=JSON.stringify(full).replace(/"/g,'&quot;');
-            return '<tr><td>'+(it.dir?'📁 <a class="f" onclick="load('+j+')">':'📄 <a class="f" href="/dl?path='+encodeURIComponent(full)+'">')+esc(it.name)+'</a></td><td class="s">'+(it.dir?'':sz(it.size))+'</td></tr>'}).join('');
-          document.getElementById('t').innerHTML=rows||'<tr><td style="color:#888">المجلد فارغ</td></tr>'})}
-        function up(files){var list=Array.from(files),i=0;function next(){if(i>=list.length){document.getElementById('prog').textContent='اكتمل الرفع ✓';load(cur);return}
-          var f=list[i++],x=new XMLHttpRequest();x.open('PUT','/put?path='+encodeURIComponent(cur)+'&name='+encodeURIComponent(f.name));
-          x.upload.onprogress=function(e){document.getElementById('prog').textContent='يرفع '+f.name+' — '+Math.round(e.loaded/e.total*100)+'%'};
-          x.onload=next;x.onerror=function(){document.getElementById('prog').textContent='تعذّر رفع '+f.name;next()};x.send(f)}next()}
-        function mk(){var n=prompt('اسم المجلد');if(n)fetch('/mkdir?path='+encodeURIComponent(cur)+'&name='+encodeURIComponent(n),{method:'POST'}).then(function(){load(cur)})}
-        document.getElementById('pick').onchange=function(e){up(e.target.files)};
-        var d=document.getElementById('drop');d.ondragover=function(e){e.preventDefault();d.className='on'};d.ondragleave=function(){d.className=''};
-        d.ondrop=function(e){e.preventDefault();d.className='';up(e.dataTransfer.files)};load('');
-        </script></body></html>
+        <script type="application/json" id="i18n">\(json.replacingOccurrences(of: "</", with: "<\\/"))</script>
+        <script src="/app.js"></script></body></html>
         """
     }
+
+    private static let appJS = #"""
+    var T=JSON.parse(document.getElementById('i18n').textContent),cur='';
+    function $(i){return document.getElementById(i)}
+    function el(tag,txt){var e=document.createElement(tag);if(txt!=null)e.textContent=txt;return e}
+    function link(txt,fn){var a=el('a',txt);a.href='#';a.onclick=function(ev){ev.preventDefault();fn()};return a}
+    function sz(n){if(n<1024)return n+' B';var u=['KB','MB','GB'],i=-1;do{n/=1024;i++}while(n>=1024&&i<2);return n.toFixed(1)+' '+u[i]}
+    function load(p){fetch('/list?path='+encodeURIComponent(p),{credentials:'same-origin'}).then(function(r){if(r.status===401){location.reload();throw 0}return r.json()}).then(function(d){
+      cur=p;var c=$('crumbs');c.textContent='';c.appendChild(link(T.root,function(){load('')}));
+      var acc='';(p?p.split('/'):[]).forEach(function(x){acc+=(acc?'/':'')+x;var to=acc;c.appendChild(document.createTextNode(' / '));c.appendChild(link(x,function(){load(to)}))});
+      var t=$('t');t.textContent='';
+      if(!d.items.length){var tr=el('tr'),td=el('td',T.empty);td.className='m';tr.appendChild(td);t.appendChild(tr);return}
+      d.items.forEach(function(it){var full=(p?p+'/':'')+it.name,tr=el('tr'),td=el('td'),a;
+        td.appendChild(document.createTextNode(it.dir?'📁 ':'📄 '));
+        if(it.dir){a=link(it.name,function(){load(full)})}else{a=el('a',it.name);a.href='/dl?path='+encodeURIComponent(full)}
+        a.className='f';td.appendChild(a);tr.appendChild(td);var s=el('td',it.dir?'':sz(it.size));s.className='s';tr.appendChild(s);t.appendChild(tr)})
+    }).catch(function(){})}
+    function up(files){var list=Array.from(files),i=0,bad=0;function next(){if(i>=list.length){$('prog').textContent=bad?T.someFailed.replace('%d',bad):T.done;load(cur);return}
+      var f=list[i++],x=new XMLHttpRequest();x.open('PUT','/put?path='+encodeURIComponent(cur)+'&name='+encodeURIComponent(f.name));
+      x.upload.onprogress=function(e){if(e.total)$('prog').textContent=T.uploading+' '+f.name+' — '+Math.round(e.loaded/e.total*100)+'%'};
+      x.onload=function(){if(x.status!==200){bad++;$('prog').textContent=T.failed+' '+f.name}next()};
+      x.onerror=function(){bad++;$('prog').textContent=T.failed+' '+f.name;next()};x.send(f)}next()}
+    $('mk').onclick=function(){var n=prompt(T.folderName);if(n)fetch('/mkdir?path='+encodeURIComponent(cur)+'&name='+encodeURIComponent(n),{method:'POST',credentials:'same-origin'}).then(function(){load(cur)})};
+    $('pick').onchange=function(e){up(e.target.files);e.target.value=''};
+    var d=$('drop');d.ondragover=function(e){e.preventDefault();d.className='on'};d.ondragleave=function(){d.className=''};
+    d.ondrop=function(e){e.preventDefault();d.className='';up(e.dataTransfer.files)};load('');
+    """#
 }
 
 struct WiFiTransferView: View {
@@ -441,6 +526,8 @@ struct WiFiTransferView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("تم") { server.stop(); dismiss() } } }
         }
         .onChange(of: phase) { _, p in if p == .background { server.stop() } }
+        // إغلاق الصفحة بالسحب لأسفل يوقف النقل أيضًا (لا يبقى الخادم يعمل في الخلفية)
+        .onDisappear { server.stop() }
     }
 
     private func step(_ n: Int, _ t: String) -> some View {

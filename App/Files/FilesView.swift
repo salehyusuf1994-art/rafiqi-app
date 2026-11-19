@@ -66,6 +66,10 @@ struct FilesTab: View {
             if p == .background {
                 store.relockAll()
                 if FilePrefs.lockTab { locked = true }
+                // المجلدات المفتوحة فوق الجذر تُغلق أيضًا: لا يبقى محتوى مقفل ظاهرًا عند الرجوع للتطبيق
+                if FilePrefs.lockTab || router.path.contains(where: { store.inVault($0) || store.insideLocked($0) }) {
+                    router.path = []
+                }
             }
         }
         .onAppear { store.purgeOldTrash() }
@@ -124,7 +128,18 @@ struct FilesTab: View {
         if let u = router.openFile {
             router.openFile = nil
             guard FileManager.default.fileExists(atPath: u.path) else { return }
-            FileOpener.open(u, siblings: FileStore.shared.list(u.deletingLastPathComponent()).filter { !$0.isDir }.map(\.url))
+            let open = { FileOpener.open(u, siblings: FileStore.shared.list(u.deletingLastPathComponent()).filter { !$0.isDir }.map(\.url)) }
+            // ملف داخل مجلد مقفل (من تذكير أو رابط): يُطلب التحقق أولًا لكل مجلد مقفل في طريقه
+            if let l = store.lockedAncestor(u.deletingLastPathComponent()) {
+                Task {
+                    guard await FileStore.authenticate(L("افتح المجلد المقفل")) else { return }
+                    var cur: URL? = l
+                    while let c = cur { store.unlocked.insert(store.key(c)); cur = store.lockedAncestor(u.deletingLastPathComponent()) }
+                    open()
+                }
+            } else {
+                open()
+            }
         }
     }
 
@@ -151,13 +166,32 @@ struct FilesTab: View {
 struct FolderScreen: View {
     let dir: URL
     @ObservedObject private var store = FileStore.shared
+    /// أول مجلد مقفل في المسار لم يُفتح بعد
+    private var lockedPart: URL? { store.lockedAncestor(dir) }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
                 BackRow()
-                PageHeader(title: store.displayName(dir), subtitle: store.count(dir) == 0 ? L("فارغ") : itemsText(store.count(dir)))
-                FolderContent(dir: dir, isRoot: false)
+                PageHeader(title: store.displayName(dir), subtitle: lockedPart != nil ? nil : (store.count(dir) == 0 ? L("فارغ") : itemsText(store.count(dir))))
+                // لا يُعرض محتوى مجلد مقفل (أو داخل مجلد مقفل) قبل التحقق، مهما كان طريق الوصول إليه
+                if let l = lockedPart {
+                    VStack(spacing: 14) {
+                        Badge(name: "lock.fill", size: 64, active: true)
+                        Text("المجلد مقفل").font(Theme.f(.headline)).foregroundStyle(.white)
+                        Button {
+                            Task { _ = await store.unlock(l) }
+                        } label: {
+                            Label("فتح", systemImage: "faceid").font(Theme.f(.headline))
+                                .foregroundStyle(.black).padding(.horizontal, 28).padding(.vertical, 12)
+                                .background(Capsule().fill(Theme.gold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity).padding(.top, 60)
+                    .task { _ = await store.unlock(l) }
+                } else {
+                    FolderContent(dir: dir, isRoot: false)
+                }
             }
             .padding(.horizontal, 16).padding(.bottom, 12)
         }
@@ -697,6 +731,8 @@ struct FolderContent: View {
         case .deleteForever: confirmDelete = [it.url]
         case .color(let c): store.setColor(it.url, c)
         case .lock(let on):
+            // بلا رمز قفل للجوال لا يمكن طلب التحقق، فالقفل لن يحمي شيئًا — نخبر المستخدم بدل قفل وهمي
+            if on && !FileStore.canProtect { show(L("القفل يحتاج رمز قفل للجوال. فعّله من إعدادات الجوال ← بصمة الوجه ورمز الدخول.")); return }
             Task {
                 if await FileStore.authenticate(on ? L("قفل المجلد") : L("إلغاء قفل المجلد")) {
                     store.setLocked(it.url, on)

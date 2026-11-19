@@ -81,6 +81,8 @@ struct StyleEditor: View {
                             let p = Palette.solids[i]
                             Button { style.color = p.1 } label: { Swatch(fill: Palette.color(p.1), on: Palette.same(p.1, style.color)) }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel(L(p.0))
+                                .accessibilityAddTraits(Palette.same(p.1, style.color) ? .isSelected : [])
                         }
                     }
                 }
@@ -98,6 +100,8 @@ struct StyleEditor: View {
                                        on: style.grad == i)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(LF("تدرّج %@", ar(i + 1)))
+                            .accessibilityAddTraits(style.grad == i ? .isSelected : [])
                         }
                     }
                 }
@@ -250,7 +254,7 @@ struct GlobalStyleView: View {
                             reloadWidgets()
                             msg = "أُلغيت التصاميم الخاصة، وأصبحت كل الويدجت على التصميم العام."
                         } label: {
-                            Text("إلغاء التصاميم الخاصة (\(ar(customCount)))").font(Theme.f(.subheadline))
+                            Text(verbatim: LF("إلغاء التصاميم الخاصة (%@)", ar(customCount))).font(Theme.f(.subheadline))
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                         }
                     }

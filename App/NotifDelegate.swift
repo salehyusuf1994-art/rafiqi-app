@@ -27,7 +27,7 @@ final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
             let parts = response.notification.request.identifier.split(separator: ".")
             if parts.count == 4, parts[1] == "pre", let t = Double(parts[3]) {
                 c.title = Notify.title(String(parts[2]), pre: false)
-                c.body = LF("الساعة %@", hm12(Date(timeIntervalSince1970: t))) + "."
+                c.body = LF("الساعة %@", { let d = Date(timeIntervalSince1970: t); let a = ampmText(d); return hm12(d) + (a.isEmpty ? "" : " " + a) }()) + "."
                 c.sound = .default
             }
             let req = UNNotificationRequest(identifier: "snooze." + UUID().uuidString, content: c,
@@ -43,9 +43,10 @@ final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
                 FilesRouter.shared.page = .files
                 FilesRouter.shared.path = []
                 FilesRouter.shared.openTab = true
+                // الفتح يمر بنفس طريق «إدارة الملفات»: يحترم قفل التبويب والمجلدات المقفلة
                 if FileManager.default.fileExists(atPath: u.path) {
                     try? await Task.sleep(nanoseconds: 700_000_000)
-                    FileOpener.open(u)
+                    FilesRouter.shared.openFile = u
                 }
             }
         }

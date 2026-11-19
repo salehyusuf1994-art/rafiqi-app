@@ -23,9 +23,8 @@ enum AppGroup {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
     }
 
-    static var defaults: UserDefaults {
-        UserDefaults(suiteName: identifier) ?? .standard
-    }
+    /// نسخة واحدة (UserDefaults آمن للاستخدام من عدة خيوط) — كان يُنشأ كائن جديد مع كل قراءة إعداد
+    nonisolated(unsafe) static let defaults: UserDefaults = UserDefaults(suiteName: identifier) ?? .standard
 }
 
 // MARK: - الإعدادات المشتركة
@@ -173,6 +172,19 @@ func hmsText(_ seconds: TimeInterval) -> String {
     return ar(s / 3600) + ":" + two((s % 3600) / 60) + ":" + two(s % 60)
 }
 
+func secondsText(_ n: Int) -> String {
+    countText(n, one: "ثانية واحدة", two: "ثانيتين", few: "ثوانٍ", many: "ثانية", en: n == 1 ? "second" : "seconds")
+}
+func daysCountText(_ n: Int) -> String {
+    countText(n, one: "يوم واحد", two: "يومان", few: "أيام", many: "يومًا", en: n == 1 ? "day" : "days")
+}
+func copiesText(_ n: Int) -> String {
+    countText(n, one: "نسخة واحدة", two: "نسختان", few: "نسخ", many: "نسخة", en: n == 1 ? "copy" : "copies")
+}
+func placesText(_ n: Int) -> String {
+    countText(n, one: "موضع واحد", two: "موضعين", few: "مواضع", many: "موضعًا", en: n == 1 ? "place" : "places")
+}
+
 func pagesText(_ n: Int) -> String {
     countText(n, one: "صفحة واحدة", two: "صفحتان", few: "صفحات", many: "صفحة", en: n == 1 ? "page" : "pages")
 }
@@ -200,7 +212,8 @@ enum Cal {
 
     /// الهجري مع تعديل المستخدم (±يومين)
     static func shifted(_ date: Date, greg: Bool) -> Date {
-        greg ? date : date.addingTimeInterval(Double(Settings.hijriOffset) * 86400)
+        // بالأيام التقويمية لا بـ٨٦٤٠٠ ثانية: يوم تغيّر التوقيت الصيفي يكون ٢٣ أو ٢٥ ساعة
+        greg || Settings.hijriOffset == 0 ? date : (gregCal.date(byAdding: .day, value: Settings.hijriOffset, to: date) ?? date)
     }
 
     static func dmy(_ date: Date, greg: Bool) -> DMY {
@@ -218,7 +231,7 @@ enum Cal {
         let prev = c.date(byAdding: .day, value: -1, to: first) ?? first
         let prevLen = c.range(of: .day, in: .month, for: prev)?.count ?? 30
         // أول الشهر بالتاريخ الفعلي (عشان يوم الأسبوع يطلع صح مع التعديل)
-        let realFirst = greg ? first : first.addingTimeInterval(-Double(Settings.hijriOffset) * 86400)
+        let realFirst = greg || Settings.hijriOffset == 0 ? first : (gregCal.date(byAdding: .day, value: -Settings.hijriOffset, to: first) ?? first)
         return (realFirst, len, prevLen, dmy(date, greg: greg).d)
     }
 
@@ -239,8 +252,8 @@ enum Cal {
         let c = hijriCal
         let y = h.m < 9 ? h.y : h.y + 1
         guard let start = c.date(from: DateComponents(year: y, month: 9, day: 1)) else { return (false, 0, 30, 0) }
-        let real = start.addingTimeInterval(-Double(Settings.hijriOffset) * 86400)
         let g = gregCal
+        let real = g.date(byAdding: .day, value: -Settings.hijriOffset, to: start) ?? start
         let days = g.dateComponents([.day], from: g.startOfDay(for: date), to: g.startOfDay(for: real)).day ?? 0
         return (false, 0, 30, max(0, days))
     }

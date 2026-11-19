@@ -41,7 +41,14 @@ enum RadioCountries {
         ("PS", "فلسطين"), ("EG", "مصر"), ("SD", "السودان"), ("LY", "ليبيا"), ("TN", "تونس"), ("DZ", "الجزائر"),
         ("MA", "المغرب"), ("MR", "موريتانيا"),
     ]
-    static func name(_ code: String) -> String { list.first { $0.0 == code }.map { L($0.1) } ?? code }
+    static func name(_ code: String) -> String { list.first { $0.0 == code }.map { countryName($0.0, $0.1) } ?? code }
+}
+
+/// اسم الدولة: بالعربية كما هو، وبالإنجليزية من النظام برمز الدولة
+/// (لا بترجمة النص: «المغرب» اسم صلاة أيضًا، فكانت ترجمته تختلط)
+func countryName(_ code: String, _ arabic: String) -> String {
+    guard Lang.isEN, !code.isEmpty else { return L(arabic) }
+    return Locale(identifier: "en_US").localizedString(forRegionCode: code) ?? L(arabic)
 }
 
 // ── شعار الإذاعة ──
@@ -372,6 +379,8 @@ struct StationBrowser: View {
     @State private var order = "clickcount"
     @State private var results: [Station] = []
     @State private var loading = false
+    /// رقم آخر طلب: الرد المتأخر لطلب أقدم (تغيير الدولة أو الترتيب بسرعة) يُتجاهل
+    @State private var requestID = 0
     @State private var loaded = false
 
     var body: some View {
@@ -445,10 +454,13 @@ struct StationBrowser: View {
     }
 
     private func load() async {
+        requestID += 1
+        let mine = requestID
         loading = true
         // عربي فقط: لغة البث عربية دائمًا، وإن لم تُحدَّد دولة فالدول العربية كلها
         let r = await Stations.search(q.trimmingCharacters(in: .whitespaces), country: country.isEmpty ? category.country : country,
                                       tag: category.tag, language: category.language ?? "arabic", limit: 100, order: order)
+        guard mine == requestID else { return }
         // لغة البث عربية تكفي: تشمل إذاعات عربية تبث من خارج الدول العربية (مثل مونت كارلو الدولية)
         results = order == "name" ? r.sorted { $0.name.localizedCompare($1.name) == .orderedAscending } : r
         loading = false
@@ -588,17 +600,17 @@ struct RadioCountry: Hashable, Identifiable {
 
     /// الدول الرئيسية (فيها إذاعات كثيرة)
     static let main: [RadioCountry] = [
-        .init(code: "SA", name: L("السعودية")), .init(code: "EG", name: L("مصر")), .init(code: "AE", name: L("الإمارات")),
-        .init(code: "KW", name: L("الكويت")), .init(code: "QA", name: L("قطر")), .init(code: "OM", name: L("عُمان")),
-        .init(code: "BH", name: L("البحرين")), .init(code: "JO", name: L("الأردن")), .init(code: "IQ", name: L("العراق")),
-        .init(code: "LB", name: L("لبنان")), .init(code: "SY", name: L("سوريا")), .init(code: "PS", name: L("فلسطين")),
-        .init(code: "MA", name: L("المغرب")), .init(code: "DZ", name: L("الجزائر")), .init(code: "TN", name: L("تونس")),
+        .init(code: "SA", name: countryName("SA", "السعودية")), .init(code: "EG", name: countryName("EG", "مصر")), .init(code: "AE", name: countryName("AE", "الإمارات")),
+        .init(code: "KW", name: countryName("KW", "الكويت")), .init(code: "QA", name: countryName("QA", "قطر")), .init(code: "OM", name: countryName("OM", "عُمان")),
+        .init(code: "BH", name: countryName("BH", "البحرين")), .init(code: "JO", name: countryName("JO", "الأردن")), .init(code: "IQ", name: countryName("IQ", "العراق")),
+        .init(code: "LB", name: countryName("LB", "لبنان")), .init(code: "SY", name: countryName("SY", "سوريا")), .init(code: "PS", name: countryName("PS", "فلسطين")),
+        .init(code: "MA", name: countryName("MA", "المغرب")), .init(code: "DZ", name: countryName("DZ", "الجزائر")), .init(code: "TN", name: countryName("TN", "تونس")),
     ]
     /// دول عربية أخرى (إذاعاتها قليلة) — داخل «دول عربية أخرى»
     static let others: [RadioCountry] = [
-        .init(code: "LY", name: L("ليبيا")), .init(code: "SD", name: L("السودان")), .init(code: "YE", name: L("اليمن")),
-        .init(code: "MR", name: L("موريتانيا")), .init(code: "SO", name: L("الصومال"), arabicOnly: false),
-        .init(code: "DJ", name: L("جيبوتي"), arabicOnly: false), .init(code: "KM", name: L("جزر القمر"), arabicOnly: false),
+        .init(code: "LY", name: countryName("LY", "ليبيا")), .init(code: "SD", name: countryName("SD", "السودان")), .init(code: "YE", name: countryName("YE", "اليمن")),
+        .init(code: "MR", name: countryName("MR", "موريتانيا")), .init(code: "SO", name: countryName("SO", "الصومال"), arabicOnly: false),
+        .init(code: "DJ", name: countryName("DJ", "جيبوتي"), arabicOnly: false), .init(code: "KM", name: countryName("KM", "جزر القمر"), arabicOnly: false),
     ]
 }
 

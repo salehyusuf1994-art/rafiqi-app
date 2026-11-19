@@ -200,6 +200,8 @@ struct ToolHost: View {
     @State private var cues: [(Double, Double, String)] = []
     @State private var player: AVPlayer?
     @State private var editBody = ""
+    /// ترميز الملف الأصلي (يُحفظ به)؛ nil = تعذّرت قراءته فلا يُسمح بالحفظ حتى لا يُمسح محتواه
+    @State private var editEncoding: String.Encoding? = nil
     @State private var metaTitle = ""
     @State private var metaArtist = ""
     @State private var metaAlbum = ""
@@ -232,10 +234,14 @@ struct ToolHost: View {
             translating = false
             if let err { error = err; return }
             let base = url.deletingPathExtension()
-            let dest = base.appendingPathExtension("\(target).srt")
-            try? MediaTools.srt(out).write(to: dest, atomically: true, encoding: .utf8)
-            // ملف الترجمة الذي يقرؤه المشغّل تلقائيًا
-            try? MediaTools.srt(out).write(to: base.appendingPathExtension("srt"), atomically: true, encoding: .utf8)
+            let dir = url.deletingLastPathComponent(), stem = base.lastPathComponent
+            // لا نكتب فوق ملف موجود للمستخدم: اسم جديد إن وُجد بنفس الاسم
+            try? MediaTools.srt(out).write(to: uniqueFileURL("\(stem).\(target).srt", in: dir), atomically: true, encoding: .utf8)
+            // ملف الترجمة الذي يقرؤه المشغّل تلقائيًا — فقط إن لم يكن للفيديو ترجمة أصلًا
+            let auto = base.appendingPathExtension("srt")
+            if !FileManager.default.fileExists(atPath: auto.path) {
+                try? MediaTools.srt(out).write(to: auto, atomically: true, encoding: .utf8)
+            }
             FileStore.shared.touch()
             text = out.map(\.2).joined(separator: "\n")
         })
@@ -529,7 +535,18 @@ struct ToolHost: View {
             end = tool == .ringtone ? min(total, 30) : total
             player = AVPlayer(url: url)
         }
-        if tool == .editText { editBody = (try? String(contentsOf: url, encoding: .utf8)) ?? "" }
+        if tool == .editText {
+            if let d = try? Data(contentsOf: url) {
+                let arabic = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.windowsArabic.rawValue)))
+                // UTF-16 فقط مع علامته (BOM)؛ وإلا العربية القديمة (Windows-1256) — تحفظ البايتات كما هي إن لم يُعدَّل النص
+                let bom16 = d.starts(with: [0xFF, 0xFE]) || d.starts(with: [0xFE, 0xFF])
+                for enc in (bom16 ? [String.Encoding.utf16] : [String.Encoding.utf8, arabic]) {
+                    if let t = String(data: d, encoding: enc) { editBody = t; editEncoding = enc; break }
+                }
+                if d.isEmpty { editBody = ""; editEncoding = .utf8 }
+            }
+            if editEncoding == nil { error = L("تعذّرت قراءة نص هذا الملف، فلن يُعدَّل حتى لا يضيع محتواه.") }
+        }
         if tool == .metadata {
             let m = await MediaTools.readMetadata(url)
             metaTitle = m.title ?? url.deletingPathExtension().lastPathComponent
@@ -589,8 +606,14 @@ struct ToolHost: View {
             case .transcribe:
                 let r = try await MediaTools.transcribe(url, lang: lang, progress: p)
                 let base = url.deletingPathExtension()
-                try? r.text.write(to: base.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
-                if !r.srt.isEmpty { try? MediaTools.srt(r.srt).write(to: base.appendingPathExtension("srt"), atomically: true, encoding: .utf8) }
+                let dir = url.deletingLastPathComponent(), stem = base.lastPathComponent
+                // ملفات جديدة دائمًا؛ لا يُستبدل نص أو ترجمة موجودة للمستخدم
+                try? r.text.write(to: uniqueFileURL("\(stem).txt", in: dir), atomically: true, encoding: .utf8)
+                if !r.srt.isEmpty {
+                    let auto = base.appendingPathExtension("srt")
+                    let dest = FileManager.default.fileExists(atPath: auto.path) ? uniqueFileURL("\(stem).\(lang.prefix(2)).srt", in: dir) : auto
+                    try? MediaTools.srt(r.srt).write(to: dest, atomically: true, encoding: .utf8)
+                }
                 text = r.text
             case .translate:
                 let r = try await MediaTools.transcribe(url, lang: lang, progress: { v in Task { @MainActor in progress = v * 0.7 } })
@@ -615,7 +638,11 @@ struct ToolHost: View {
             case .docToPDF:
                 result = try await DocToPDF.convert(url)
             case .editText:
-                try editBody.write(to: url, atomically: true, encoding: .utf8)
+                guard let enc = editEncoding else { return }
+                // يُحفظ بترميزه الأصلي؛ وإن احتوى حروفًا لا يدعمها فبـUTF-8
+                if (try? editBody.write(to: url, atomically: true, encoding: enc)) == nil {
+                    try editBody.write(to: url, atomically: true, encoding: .utf8)
+                }
                 dismiss()
             }
         } catch {

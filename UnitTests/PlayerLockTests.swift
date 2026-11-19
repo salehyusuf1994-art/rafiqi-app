@@ -3,6 +3,13 @@ import XCTest
 
 /// قفل المشغّل: الرمز لا يُحفظ نصًا، والتحقق صحيح، والمحاولات الخاطئة تُبطئ التخمين
 final class PlayerLockTests: XCTestCase {
+    /// على الجوال الحقيقي تمسح هذه الاختبارات رمز المشغّل الفعلي (نفس التطبيق ونفس سلسلة المفاتيح): المحاكي فقط
+    override func setUpWithError() throws {
+        #if !targetEnvironment(simulator)
+        throw XCTSkip("يعمل على المحاكي فقط حتى لا يُمسح رمز المشغّل الحقيقي")
+        #endif
+    }
+
     override func tearDown() {
         PlayerLockCode.clear()
         MainActor.assumeIsolated { PlayerLockCode.registerSuccess() }

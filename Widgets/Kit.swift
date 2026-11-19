@@ -20,6 +20,9 @@ var PCT: String { Lang.isEN || Settings.westernDigits ? "%" : "٪" }
 
 // MARK: - صور خط الثلث
 
+/// يعمل داخل امتداد الويدجت (ذاكرته محدودة بنحو ٣٠ م.ب) لا داخل التطبيق
+let isWidgetProcess = Bundle.main.bundlePath.hasSuffix(".appex")
+
 enum Calli {
     static let dir: URL = Bundle.main.bundleURL.appendingPathComponent("Calli")
     private static var cache: [String: UIImage] = [:]
@@ -39,7 +42,8 @@ enum Calli {
         if let c { return c }
         guard let data = try? Data(contentsOf: dir.appendingPathComponent(n + ".png")),
               let img = UIImage(data: data, scale: 3) else { return nil }
-        lock.lock(); cache[n] = img; lock.unlock()
+        // حد أعلى للذاكرة (ذاكرة الويدجت محدودة): يُفرّغ المخزن إن كبر كثيرًا
+        lock.lock(); if cache.count >= (isWidgetProcess ? 160 : 4000) { cache.removeAll() }; cache[n] = img; lock.unlock()
         return img
     }
 
@@ -180,6 +184,10 @@ func digitFont(_ size: CGFloat, bold: Bool, _ font: WFont = .thuluth) -> Font {
     return .custom(bold ? "HilalDigits-Bold" : "HilalDigits-Regular", fixedSize: size)
 }
 
+/// أرقام الرقعة ترسم أسفل منتصف سطرها بكثير (قياس الخط: مركز الحبر عند ٦٤٪ من السطر لا ٥٠٪)،
+/// فتنزل على ما تحتها في الأرقام الكبيرة — نرفعها لتتوسّط مثل بقية الخطوط (رسم فقط، لا يغيّر التنسيق)
+func digitLift(_ size: CGFloat, _ font: WFont) -> CGFloat { font == .ruqaa ? -size * 0.2 : 0 }
+
 struct Digits: View {
     let text: String
     let size: CGFloat
@@ -190,6 +198,7 @@ struct Digits: View {
     @Environment(\.wfont) private var wf
     var body: some View {
         Text(text).font(digitFont(size, bold: bold, wf)).foregroundStyle(color).lineLimit(1)
+            .offset(y: digitLift(size, wf))
             // في الويدجت: الأرقام تتدحرج بنعومة عند كل تحديث بدل أن تقفز
             .contentTransition(.numericText())
             .fixedSize()
@@ -237,6 +246,7 @@ struct CountDown: View {
             }
         }
         .font(digitFont(size, bold: true, wf)).foregroundStyle(color)
+        .offset(y: digitLift(size, wf))
         .multilineTextAlignment(.center).frame(width: width)
         .environment(\.layoutDirection, .leftToRight)
         .digitsLocale()
@@ -261,6 +271,7 @@ struct CountUp: View {
             }
         }
             .font(digitFont(size, bold: true, wf)).foregroundStyle(color)
+        .offset(y: digitLift(size, wf))
             .multilineTextAlignment(.center).frame(width: width)
             .environment(\.layoutDirection, .leftToRight)
             .digitsLocale()
@@ -415,13 +426,17 @@ struct HProvider<I: WidgetConfigurationIntent & Positioned>: AppIntentTimelinePr
                 let left = max(0, np.duration - np.elapsed(at: now))
                 let n = min(60, Int(left / 30))
                 let entries = (0...n).map { e(now.addingTimeInterval(Double($0) * 30)) }
-                return Timeline(entries: entries, policy: .after(now.addingTimeInterval(min(3600, left + 5))))
+                // التحديث التالي بعد آخر مدخل مباشرة (لا يتجمّد التقدّم في المقاطع الأطول من ٣٠ دقيقة)
+                return Timeline(entries: entries, policy: .after(now.addingTimeInterval(min(Double(n) * 30 + 30, left + 5))))
             }
             return Timeline(entries: [first], policy: .after(now.addingTimeInterval(3600)))
         case .weather:
             let w = await Weather.load()
             // كل ساعة (ضمن حصة التحديث اليومية)، ومدخلات عند تغيّر الصلاة خلالها (لويدجت الطقس التي تعرض الصلاة القادمة)
-            let marks = Prayer.boundaries(from: now, hours: 1).map { $0.addingTimeInterval(1) }
+            var marks = Prayer.boundaries(from: now, hours: 1).map { $0.addingTimeInterval(1) }
+            // منتصف الليل خلال الساعة: مدخل جديد يحدّث اسم اليوم والتاريخ في ويدجت الطقس
+            let mid = Cal.nextMidnight(after: now).addingTimeInterval(5)
+            if mid < now.addingTimeInterval(3600) { marks.append(mid); marks.sort() }
             return Timeline(entries: [e(now, w)] + marks.map { e($0, w) }, policy: .after(now.addingTimeInterval(60 * 60)))
         }
     }
