@@ -41,40 +41,31 @@ jobs:
       - name: Crawl
         continue-on-error: true
         timeout-minutes: 180
+        env:
+          CRAWL_TAB: ${{ matrix.tab }}
+          CRAWL_MIN: ${{ github.event.inputs.minutes || '55' }}
         run: |
+          case "$CRAWL_TAB" in ''|*[!0-9]*) echo "::error::bad tab"; exit 1;; esac
+          case "$CRAWL_MIN" in ''|*[!0-9]*) echo "::error::bad minutes"; exit 1;; esac
           UDID=$(python3 ci/pick_sim.py)
           xcrun simctl boot $UDID || true
           xcrun simctl bootstatus $UDID -b
           xcrun simctl spawn $UDID defaults write -g AppleLanguages -array ar
           xcrun simctl spawn $UDID defaults write -g AppleLocale ar_SA
           xcrun simctl location $UDID set 24.4672,39.6111 || true
-          TEST_RUNNER_CRAWL_TAB=${{ matrix.tab }} TEST_RUNNER_CRAWL_MIN=${{ github.event.inputs.minutes || '55' }} \
+          TEST_RUNNER_CRAWL_TAB=$CRAWL_TAB TEST_RUNNER_CRAWL_MIN=$CRAWL_MIN \
           xcodebuild test -project Hilal.xcodeproj -scheme Hilal -destination "id=$UDID" \
             -derivedDataPath uibuild CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- \
             -only-testing:HilalUITests/CrawlTests > ui.log 2>&1 || true
           grep -E "CRAWL|error:" ui.log | tail -40
           xcrun simctl spawn $UDID log show --last 90m --style compact --predicate 'eventMessage CONTAINS "RFDBG" OR eventMessage CONTAINS "TVDBG" OR eventMessage CONTAINS[c] "attempt to present" OR (process == "Hilal" AND messageType == fault)' > applog.txt 2>&1 || true
           mkdir -p out && cp -R ~/uitest/crawl/* out/ 2>/dev/null || true
-          cp applog.txt out/applog_${{ matrix.tab }}.txt; grep -E "CRAWL" ui.log > out/uilog_${{ matrix.tab }}.txt || true
+          cp applog.txt "out/applog_$CRAWL_TAB.txt"; grep -E "CRAWL" ui.log > "out/uilog_$CRAWL_TAB.txt" || true
           ls out | head
-      - uses: actions/upload-artifact@v4
+      # لا رفع لملفات مكشوفة إطلاقًا: كل تبويب يُشفَّر هنا مباشرة إلى فرعه الخاص (crawlout-<رقم التبويب>)
+      - name: Seal outputs (encrypted; only the owner's private key opens them)
         if: always()
-        with:
-          name: crawl-${{ matrix.tab }}
-          path: out
-          retention-days: 1
-  publish:
-    needs: crawl
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: all
-      - name: Seal outputs (encrypted)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir pub && cp -R all/*/* pub/ 2>/dev/null || true
-          bash ci/seal.sh pub crawlout
+          CRAWL_TAB: ${{ matrix.tab }}
+        run: mkdir -p out && bash ci/seal.sh out "crawlout-$CRAWL_TAB"
