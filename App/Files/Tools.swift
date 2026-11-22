@@ -145,6 +145,24 @@ enum ToolKind: String, Identifiable, CaseIterable {
 
 @MainActor
 enum ToolRunner {
+    /// وضع الفحص فقط (-splitTest): نغمة ٩٠ ثانية في «إدارة الملفات» وتُفتح عليها أداة «تقسيم المقطع»
+    static func splitSelfTest() {
+        let u = FileStore.shared.root.appendingPathComponent("اختبار التقسيم.m4a")
+        Task.detached {
+            try? FileManager.default.removeItem(at: u)
+            let rate = 44_100.0, frames = AVAudioFrameCount(rate * 90)
+            if let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
+               let file = try? AVAudioFile(forWriting: u, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1]),
+               let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: frames), let p = buf.floatChannelData?[0] {
+                buf.frameLength = frames
+                for i in 0..<Int(frames) { p[i] = 0.2 * sinf(2 * .pi * 440 * Float(i) / Float(rate)) }
+                try? file.write(from: buf)
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await MainActor.run { FileStore.shared.touch(); run(.split, on: u, toast: { _ in }) }
+        }
+    }
+
     static func run(_ t: ToolKind, on url: URL, toast: @escaping (String) -> Void) {
         // ننتظر إغلاق قائمة الإجراءات ثم نعرض صفحة الأداة
         Task { @MainActor in

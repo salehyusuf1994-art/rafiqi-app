@@ -371,23 +371,8 @@ struct ContentView: View {
             TVChannels.migrateSecrets()
             // إعادة ربط التنزيلات الجارية بالخلفية
             _ = DownloadManager.shared
-            // وضع الفحص فقط: نغمة ٩٠ ثانية في «إدارة الملفات» وتُفتح عليها أداة «تقسيم المقطع»
-            if ProcessInfo.processInfo.arguments.contains("-splitTest") {
-                let u = FileStore.shared.root.appendingPathComponent("اختبار التقسيم.m4a")
-                Task.detached {
-                    try? FileManager.default.removeItem(at: u)
-                    let rate = 44_100.0, frames = AVAudioFrameCount(rate * 90)
-                    if let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
-                       let file = try? AVAudioFile(forWriting: u, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1]),
-                       let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: frames), let p = buf.floatChannelData?[0] {
-                        buf.frameLength = frames
-                        for i in 0..<Int(frames) { p[i] = 0.2 * sinf(2 * .pi * 440 * Float(i) / Float(rate)) }
-                        try? file.write(from: buf)
-                    }
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    await MainActor.run { FileStore.shared.touch(); ToolRunner.run(.split, on: u, toast: { _ in }) }
-                }
-            }
+            // وضع الفحص فقط: يفتح «تقسيم المقطع» على نغمة تجريبية
+            if ProcessInfo.processInfo.arguments.contains("-splitTest") { ToolRunner.splitSelfTest() }
             if ProcessInfo.processInfo.arguments.contains("-sepTest") {
                 Task.detached {
                     let r = await Separator.selfTest()
