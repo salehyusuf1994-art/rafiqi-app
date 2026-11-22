@@ -8,7 +8,7 @@ import PhotosUI
 
 enum ToolKind: String, Identifiable, CaseIterable {
     // صوت وفيديو
-    case trim, toM4A, toMP3, toWAV, ringtone, speed, adjustAudio, transcribe, translate, removeMusic, removeVocals
+    case trim, split, toM4A, toMP3, toWAV, ringtone, speed, adjustAudio, transcribe, translate, removeMusic, removeVocals
     // فيديو
     case mute, replaceAudio, rotate, crop, text, compress, gif, reverse
     // صور
@@ -23,6 +23,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
     var title: String {
         switch self {
         case .trim: return L("قص المقطع")
+        case .split: return L("تقسيم المقطع")
         case .toM4A: return L("تحويل إلى M4A (صوت)")
         case .toWAV: return L("تحويل إلى WAV")
         case .toMP3: return L("تحويل إلى MP3")
@@ -64,6 +65,7 @@ enum ToolKind: String, Identifiable, CaseIterable {
     var icon: String {
         switch self {
         case .trim: return "scissors"
+        case .split: return "rectangle.split.3x1"
         case .toM4A: return "waveform"
         case .toWAV: return "waveform.path"
         case .toMP3: return "music.note"
@@ -106,14 +108,14 @@ enum ToolKind: String, Identifiable, CaseIterable {
         switch it.kind {
         case .video:
             return [
-                (L("تعديل الفيديو"), [.trim, .text, .crop, .rotate, .speed, .reverse, .mute, .replaceAudio, .compress, .metadata]),
+                (L("تعديل الفيديو"), [.trim, .split, .text, .crop, .rotate, .speed, .reverse, .mute, .replaceAudio, .compress, .metadata]),
                 (L("التحويل"), [.toMP3, .toM4A, .gif, .ringtone]),
                 (L("الذكاء الاصطناعي"), [.removeMusic, .removeVocals]),
                 (L("النص والترجمة"), [.transcribe, .translate] + (VideoController.subtitles(for: it.url).isEmpty ? [] : [.burnSubs])),
             ]
         case .audio:
             return [
-                (L("تعديل الصوت"), [.trim, .adjustAudio, .speed, .metadata]),
+                (L("تعديل الصوت"), [.trim, .split, .adjustAudio, .speed, .metadata]),
                 (L("التحويل"), [.toMP3, .toM4A, .toWAV, .ringtone]),
                 (L("الذكاء الاصطناعي"), [.removeMusic, .removeVocals]),
                 (L("النص"), [.transcribe]),
@@ -210,6 +212,15 @@ struct ToolHost: View {
     @State private var metaAlbum = ""
     @State private var cover: UIImage?
     @State private var coverItem: PhotosPickerItem?
+    // التقسيم
+    @State private var splitSec: Double = 600
+    @State private var splitCustom = false
+    @State private var splitMin = ""
+    @State private var splitSecs = ""
+    @State private var splitExact = false
+    @State private var splitParts: [URL] = []
+    @State private var splitFolder: URL?
+    @State private var splitStep: (Int, Int)?
 
     var body: some View {
         NavigationStack {
@@ -220,7 +231,8 @@ struct ToolHost: View {
                         Label(error, systemImage: "exclamationmark.triangle.fill").font(Theme.f(.subheadline)).foregroundStyle(.orange)
                             .frame(maxWidth: .infinity, alignment: .leading).glassCard(padding: 14)
                     }
-                    if let result { resultCard(result) }
+                    if !splitParts.isEmpty { splitCard }
+                    else if let result { resultCard(result) }
                     else if let text { textCard(text) }
                     else if !codes.isEmpty { codesCard }
                     else if running || translating { progressCard }
@@ -269,6 +281,8 @@ struct ToolHost: View {
         switch tool {
         case .trim, .ringtone:
             trimEditor
+        case .split:
+            splitEditor
         case .speed:
             card {
                 Text(LF("السرعة: %@", ar(String(format: "%g", speed)) + "×")).font(Theme.f(.headline)).foregroundStyle(.white)
@@ -450,15 +464,130 @@ struct ToolHost: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.gold))
         }
-        .disabled((tool == .text && overlay.trimmingCharacters(in: .whitespaces).isEmpty) || ((tool == .replaceAudio || tool == .withAudio) && audioPick == nil))
-        .opacity((tool == .text && overlay.isEmpty) || ((tool == .replaceAudio || tool == .withAudio) && audioPick == nil) ? 0.5 : 1)
+        .disabled(runBlocked)
+        .opacity(runBlocked ? 0.5 : 1)
+    }
+
+    private var runBlocked: Bool {
+        (tool == .text && overlay.trimmingCharacters(in: .whitespaces).isEmpty)
+            || ((tool == .replaceAudio || tool == .withAudio) && audioPick == nil)
+            || (tool == .split && splitCount < 2)
     }
 
     private var progressCard: some View {
         card {
             ProgressView(value: progress).tint(Theme.gold)
+            if tool == .split, let st = splitStep {
+                Text(LF("جزء %@ من %@", ar(st.0), ar(st.1))).font(Theme.f(.headline)).foregroundStyle(.white)
+            }
             Text(LF("جارٍ التنفيذ… %@٪", ar(Int(progress * 100)))).font(Theme.f(.subheadline)).foregroundStyle(.white)
             note("الشاشة تبقى مضاءة حتى ينتهي. أبقِ التطبيق مفتوحًا.")
+            if tool == .split {
+                pill("إلغاء", "xmark") { job?.cancel() }
+            }
+        }
+    }
+
+    // MARK: التقسيم
+
+    /// المدد الجاهزة (تظهر فقط الأقصر من المقطع حتى ينتج جزءان على الأقل)
+    private static let splitPresets: [Double] = [60, 120, 300, 600, 900, 1200, 1800, 3600]
+
+    private func splitLabel(_ s: Double) -> String {
+        switch s {
+        case 1800: return L("نصف ساعة")
+        case 3600: return L("ساعة")
+        default: return minutesText(Int(s / 60))
+        }
+    }
+
+    /// يقبل الأرقام العربية والإنجليزية
+    private func number(_ t: String) -> Int {
+        Int(String(t.compactMap { $0.wholeNumberValue.map { Character(String($0)) } }).prefix(5)) ?? 0
+    }
+
+    private var splitSeconds: Double {
+        splitCustom ? Double(number(splitMin) * 60 + number(splitSecs)) : splitSec
+    }
+    private var splitRanges: [ClosedRange<Double>] { MediaTools.splitRanges(total: total, every: splitSeconds) }
+    private var splitCount: Int { let n = splitRanges.count; return n <= MediaTools.maxSplitParts ? n : 0 }
+
+    private var splitEditor: some View {
+        let presets = Self.splitPresets.filter { $0 < total }
+        let ranges = splitRanges
+        return card {
+            Text(LF("مدة المقطع: %@", durationText(total))).font(Theme.f(.subheadline)).foregroundStyle(Theme.sub)
+            Text("طول كل جزء").font(Theme.f(.headline)).foregroundStyle(.white)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], alignment: .leading, spacing: 8) {
+                ForEach(presets, id: \.self) { v in
+                    Chip(title: splitLabel(v), on: !splitCustom && splitSec == v) { splitCustom = false; splitSec = v }
+                        .accessibilityAddTraits(!splitCustom && splitSec == v ? .isSelected : [])
+                }
+                Chip(title: "مدة أخرى", on: splitCustom) { splitCustom = true }
+                    .accessibilityAddTraits(splitCustom ? .isSelected : [])
+            }
+            if splitCustom {
+                HStack(spacing: 10) {
+                    splitField("دقائق", $splitMin)
+                    splitField("ثوانٍ", $splitSecs)
+                }
+            }
+            if ranges.count > MediaTools.maxSplitParts {
+                Label(LF("عدد الأجزاء كبير جدًا (الحد %@ جزء). اختر مدة أطول.", ar(MediaTools.maxSplitParts)), systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.f(.subheadline)).foregroundStyle(.orange)
+            } else if ranges.count >= 2, let last = ranges.last {
+                let lastLen = last.upperBound - last.lowerBound
+                let partsText = countText(ranges.count, one: "جزء واحد", two: "جزأين", few: "أجزاء", many: "جزءًا", en: "parts")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(LF("سيُقسَّم إلى %@، مدة كل جزء %@.", partsText, durationText(splitSeconds)))
+                        .font(Theme.f(.headline)).foregroundStyle(Theme.gold)
+                    if abs(lastLen - splitSeconds) >= 1 {
+                        Text(LF("والجزء الأخير %@.", durationText(lastLen))).font(Theme.f(.subheadline)).foregroundStyle(.white)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            } else if total > 0 && (!splitCustom || splitSeconds >= 1) {
+                note("المدة المختارة أطول من المقطع أو تساويه، فلن يُقسَّم.")
+            } else if total <= 0 {
+                note("تعذّرت قراءة مدة المقطع.")
+            }
+            Toggle(L("قص دقيق بالثانية (أبطأ)"), isOn: $splitExact).tint(Theme.gold)
+            note(splitExact
+                 ? "يُعاد ترميز كل جزء ليبدأ وينتهي على الثانية بالضبط. يستغرق وقتًا أطول."
+                 : "يُقسَّم بدون إعادة ضغط، فيبقى بنفس الجودة وبسرعة عالية. قد يتقدّم موضع القص أو يتأخر ثانية أو ثانيتين.")
+            note("تُحفظ الأجزاء مرتبة في مجلد جديد بجانب الملف الأصلي.")
+        }
+    }
+
+    private func splitField(_ title: String, _ v: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(L(title)).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+            TextField(ar("0"), text: v).keyboardType(.numberPad).multilineTextAlignment(.center)
+                .font(Theme.font(18, .bold).monospacedDigit())
+                .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Theme.card))
+                .accessibilityLabel(L(title))
+        }
+    }
+
+    private var splitCard: some View {
+        card {
+            Label("تم بنجاح", systemImage: "checkmark.seal.fill").font(Theme.f(.headline)).foregroundStyle(Color(red: 0.45, green: 0.80, blue: 0.62))
+            Text(LF("قُسِّم المقطع إلى %@.", countText(splitParts.count, one: "جزء واحد", two: "جزأين", few: "أجزاء", many: "جزءًا", en: "parts")))
+                .font(Theme.f(.subheadline)).foregroundStyle(.white)
+            if let f = splitFolder {
+                Label(f.lastPathComponent, systemImage: "folder.fill").font(Theme.f(.subheadline)).foregroundStyle(Theme.gold)
+            }
+            HStack(spacing: 10) {
+                pill("تشغيل", "play.fill") {
+                    let ps = splitParts; dismiss()
+                    Task { try? await Task.sleep(nanoseconds: 400_000_000); if let f = ps.first { FileOpener.open(f, siblings: ps) } }
+                }
+                pill("مشاركة", "square.and.arrow.up") { FileOpener.share(splitParts) }
+                if splitParts.allSatisfy({ FileKind.of($0, isDir: false) == .video }) {
+                    pill("إلى الصور", "square.and.arrow.down") { let ps = splitParts; Task { _ = await FileStore.shared.saveToPhotos(ps) } }
+                }
+            }
+            note("حُفظت الأجزاء مرتبة في مجلد جديد بجانب الملف الأصلي.")
         }
     }
 
@@ -535,6 +664,13 @@ struct ToolHost: View {
     // MARK: التنفيذ
 
     private func prepare() async {
+        if tool == .split {
+            let d = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+            total = d.isFinite ? d : 0
+            // الافتراضي ١٠ دقائق، وإن كان المقطع أقصر فأطول مدة جاهزة تعطي جزأين على الأقل
+            if let v = Self.splitPresets.last(where: { $0 <= 600 && $0 < total }) ?? Self.splitPresets.first(where: { $0 < total }) { splitSec = v }
+            else { splitCustom = true }
+        }
         if tool == .trim || tool == .ringtone {
             let d = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
             total = d.isFinite ? d : 0
@@ -575,6 +711,12 @@ struct ToolHost: View {
         do {
             switch tool {
             case .trim: result = try await MediaTools.trim(url, start: start, end: end, progress: p)
+            case .split:
+                splitStep = nil; splitFolder = nil
+                splitParts = try await MediaTools.split(url, every: splitSeconds, exact: splitExact,
+                    folderReady: { f in Task { @MainActor in splitFolder = f } },
+                    part: { i, n in Task { @MainActor in splitStep = (i, n) } },
+                    progress: p)
             case .ringtone: result = try await MediaTools.trim(url, start: start, end: min(end, start + 40), ringtone: true, progress: p)
             case .toM4A: result = try await MediaTools.toM4A(url, progress: p)
             case .toWAV: result = try await MediaTools.toWAV(url, progress: p)
@@ -655,7 +797,10 @@ struct ToolHost: View {
                 dismiss()
             }
         } catch is CancellationError {
-            // أُغلقت الأداة: لا رسالة خطأ
+            // أُغلقت الأداة: لا رسالة خطأ؛ و«إلغاء» التقسيم يوضّح ما بقي
+            if tool == .split, let st = splitStep, st.0 > 1, let f = splitFolder {
+                error = LF("أُلغي التقسيم. بقيت الأجزاء المكتملة (%@ من %@) في مجلد «%@».", ar(st.0 - 1), ar(st.1), f.lastPathComponent)
+            }
         } catch {
             self.error = error.localizedDescription
         }

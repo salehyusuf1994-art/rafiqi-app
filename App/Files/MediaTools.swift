@@ -15,6 +15,12 @@ enum ToolError: LocalizedError {
     var errorDescription: String? { if case .failed(let s) = self { return s }; return nil }
 }
 
+/// جلسة التصدير لإيقافها من معالج الإلغاء
+private final class ExportBox: @unchecked Sendable {
+    let session: AVAssetExportSession
+    init(_ s: AVAssetExportSession) { session = s }
+}
+
 enum MediaTools {
     // MARK: أساسيات
 
@@ -62,8 +68,14 @@ enum MediaTools {
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
         }
-        await s.export()
+        // إغلاق الأداة أو «إلغاء» يوقف التصدير فعلًا (لا يبقى يعمل في الخلفية)
+        let box = ExportBox(s)
+        await withTaskCancellationHandler { await s.export() } onCancel: { box.session.cancelExport() }
         watcher.cancel()
+        if Task.isCancelled || s.status == .cancelled {
+            try? FileManager.default.removeItem(at: out)
+            throw CancellationError()
+        }
         progress(1)
         if s.status != .completed {
             try? FileManager.default.removeItem(at: out)
@@ -155,6 +167,109 @@ enum MediaTools {
             return try await export(a, preset: AVAssetExportPresetHighestQuality, to: output(for: src, suffix: L("مقطوع"), ext: "mp4"), type: .mp4, range: range, progress: progress)
         }
         return try await export(a, preset: AVAssetExportPresetAppleM4A, to: output(for: src, suffix: L("مقطوع"), ext: "m4a"), type: .m4a, range: range, progress: progress)
+    }
+
+    // MARK: التقسيم
+
+    /// مدد الأجزاء: أجزاء متساوية والأخير هو الباقي؛ بقية أقل من ثانية تُضم للجزء السابق (لا جزء شبه فارغ)
+    static func splitRanges(total: Double, every seg: Double) -> [ClosedRange<Double>] {
+        guard total.isFinite, total > 0, seg.isFinite, seg >= 1 else { return [] }
+        var out: [ClosedRange<Double>] = []
+        var t = 0.0
+        while t < total - 1e-6 {
+            out.append(t...min(total, t + seg))
+            t += seg
+        }
+        if out.count > 1, let last = out.last, last.upperBound - last.lowerBound < 1 {
+            out.removeLast()
+            out[out.count - 1] = out[out.count - 1].lowerBound...total
+        }
+        return out
+    }
+
+    /// أقصى عدد للأجزاء (حماية من مجلد بآلاف الملفات بسبب مدة قصيرة جدًا)
+    static let maxSplitParts = 1000
+
+    /// اسم الجزء: «الاسم - ٠٣ من ٨٠» — الترقيم بأصفار بادئة ليبقى الترتيب صحيحًا في القائمة
+    static func splitPartName(base: String, index: Int, count: Int) -> String {
+        let w = String(count).count
+        let num = String(repeating: "0", count: max(0, w - String(index).count)) + String(index)
+        return LF("%@ - %@ من %@", base, ar(num), ar(count))
+    }
+
+    /// تقسيم المقطع إلى أجزاء متساوية المدة داخل مجلد جديد بجانبه.
+    /// exact = false: بلا إعادة ضغط (سريع وبالجودة نفسها، والقص على أقرب إطار مفتاحي فقد يزيد أو ينقص ثانية أو ثانيتين)؛
+    /// exact = true، أو صيغة لا تقبل النسخ المباشر: إعادة ترميز (أبطأ، والقص على الثانية).
+    /// عند الإلغاء أو الفشل يُحذف الجزء غير المكتمل فقط، ويُحذف المجلد إن بقي فارغًا.
+    static func split(_ src: URL, every seg: Double, exact: Bool,
+                      folderReady: @escaping (URL) -> Void = { _ in },
+                      part: @escaping (Int, Int) -> Void,
+                      progress: @escaping (Double) -> Void) async throws -> [URL] {
+        let a = AVURLAsset(url: src)
+        let total = await duration(a).seconds
+        let ranges = splitRanges(total: total, every: seg)
+        guard total.isFinite, total > 0 else { throw ToolError.failed(L("هذا الملف لا يدعم هذه العملية.")) }
+        guard ranges.count >= 2 else { throw ToolError.failed(L("المدة المختارة أطول من المقطع أو تساويه، فلن يُقسَّم.")) }
+        guard ranges.count <= maxSplitParts else { throw ToolError.failed(LF("عدد الأجزاء كبير جدًا (الحد %@ جزء). اختر مدة أطول.", ar(maxSplitParts))) }
+        let video = isVideo(src)
+        if video, await videoTrack(a) == nil { throw ToolError.failed(L("لا يحتوي الملف على فيديو.")) }
+        if !video, await audioTracks(a).isEmpty { throw ToolError.failed(L("لا يحتوي الملف على صوت.")) }
+
+        // الصيغة: نسخ مباشر بصيغة الملف نفسها إن أمكن، وإلا إعادة ترميز
+        var preset = video ? AVAssetExportPresetHighestQuality : AVAssetExportPresetAppleM4A
+        var type: AVFileType = video ? .mp4 : .m4a
+        var passthrough = false
+        if !exact {
+            let byExt: [String: AVFileType] = ["mp4": .mp4, "m4v": .m4v, "mov": .mov, "m4a": .m4a, "aac": .m4a,
+                                               "wav": .wav, "caf": .caf, "aif": .aiff, "aiff": .aiff, "3gp": .mobile3GPP]
+            var candidates: [AVFileType] = byExt[src.pathExtension.lowercased()].map { [$0] } ?? []
+            candidates += video ? [.mp4, .mov] : [.m4a, .caf]
+            for t in candidates {
+                if await AVAssetExportSession.compatibility(ofExportPreset: AVAssetExportPresetPassthrough, with: a, outputFileType: t) {
+                    preset = AVAssetExportPresetPassthrough; type = t; passthrough = true; break
+                }
+            }
+        }
+        let ext: String = [AVFileType.mp4: "mp4", .m4v: "m4v", .mov: "mov", .m4a: "m4a", .wav: "wav",
+                           .caf: "caf", .aiff: "aiff", .mobile3GPP: "3gp"][type] ?? (video ? "mp4" : "m4a")
+
+        // المساحة: النسخ المباشر بحجم الأصل تقريبًا، وإعادة الترميز قد تزيد
+        let size = Int64((try? src.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        let need = Int64(Double(size) * (passthrough ? 1.05 : 1.3)) + 100_000_000
+        let dir = src.deletingLastPathComponent()
+        if let free = (try? dir.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage,
+           free < need {
+            throw ToolError.failed(LF("المساحة المتاحة لا تكفي للتقسيم: يحتاج تقريبًا %@، والمتاح %@.", sizeText(need), sizeText(free)))
+        }
+
+        let base = src.deletingPathExtension().lastPathComponent
+        // اسم مجلد جديد دائمًا (لا يُكتب داخل مجلد سابق)؛ والنقطة في اسم الملف لا تُعامل كامتداد
+        let stem = LF("%@ - مقسّم", base)
+        var folder = dir.appendingPathComponent(stem, isDirectory: true)
+        var k = 2
+        while FileManager.default.fileExists(atPath: folder.path) {
+            folder = dir.appendingPathComponent("\(stem) (\(k))", isDirectory: true); k += 1
+        }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        folderReady(folder)
+        var parts: [URL] = []
+        do {
+            for (i, r) in ranges.enumerated() {
+                try Task.checkCancellation()
+                part(i + 1, ranges.count)
+                let out = folder.appendingPathComponent(splitPartName(base: base, index: i + 1, count: ranges.count)).appendingPathExtension(ext)
+                let range = CMTimeRange(start: CMTime(seconds: r.lowerBound, preferredTimescale: 600),
+                                        end: CMTime(seconds: r.upperBound, preferredTimescale: 600))
+                let n = Double(ranges.count)
+                parts.append(try await export(a, preset: preset, to: out, type: type, range: range,
+                                              progress: { v in progress((Double(i) + v) / n) }))
+            }
+        } catch {
+            if parts.isEmpty { try? FileManager.default.removeItem(at: folder) }
+            throw error
+        }
+        progress(1)
+        return parts
     }
 
     // MARK: الفيديو
