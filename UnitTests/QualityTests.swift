@@ -63,6 +63,20 @@ final class QualityTests: XCTestCase {
         XCTAssertEqual(Words.text("gm1"), Words.gm[0])
     }
 
+    /// أداة التثبيت (AltStore) تسجّل التطبيق باسمه في Info.plist الأساسي وترفض الحروف غير الإنجليزية، فيفشل التحديث:
+    /// الاسم الأساسي إنجليزي، والعربي «رفيقي» يأتي من ar.lproj/InfoPlist.strings فيبقى على الشاشة كما هو
+    func testBundleNamesAreASCII() throws {
+        let info = try XCTUnwrap(Bundle.main.infoDictionary)
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            let v = try XCTUnwrap(info[key] as? String, key)
+            XCTAssertFalse(v.isEmpty, key)
+            XCTAssertTrue(v.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == " ") }, "\(key) = \(v)")
+        }
+        let ar = try XCTUnwrap(Bundle.main.path(forResource: "InfoPlist", ofType: "strings", inDirectory: nil, forLocalization: "ar"))
+        let dict = try XCTUnwrap(NSDictionary(contentsOfFile: ar) as? [String: String])
+        XCTAssertEqual(dict["CFBundleDisplayName"], "رفيقي")
+    }
+
     /// ويدجت التاريخين (بلا تحويل للتقويم): «ميلادي شامي» يغيّر أسماء الأشهر الميلادية فيها، والتاريخ الأساسي يبقى كما هو
     func testShamiOnBothDatesWidget() {
         XCTAssertFalse(Catalog.info("hilal.daytwoy").hasCalendar)
