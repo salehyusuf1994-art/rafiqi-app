@@ -528,6 +528,18 @@ struct ToolHost: View {
         }
     }
 
+    /// المدة بالكلمات: «١٠ دقائق»، «نصف ساعة»، «ساعة و٢٠ دقيقة»، «دقيقتان و٣٠ ثانية»
+    private func lengthWords(_ s: Double) -> String {
+        let t = max(1, Int(s.rounded()))
+        if t == 1800 { return L("نصف ساعة") }
+        let h = t / 3600, m = (t % 3600) / 60, sec = t % 60
+        var parts: [String] = []
+        if h > 0 { parts.append(countText(h, one: "ساعة", two: "ساعتان", few: "ساعات", many: "ساعة", en: h == 1 ? "hour" : "hours")) }
+        if m > 0 { parts.append(minutesText(m)) }
+        if sec > 0 { parts.append(sec == 2 && !Lang.isEN ? "ثانيتان" : secondsText(sec)) }
+        return parts.joined(separator: Lang.isEN ? " " : " و")
+    }
+
     /// يقبل الأرقام العربية والإنجليزية
     private func number(_ t: String) -> Int {
         Int(String(t.compactMap { $0.wholeNumberValue.map { Character(String($0)) } }).prefix(5)) ?? 0
@@ -566,10 +578,10 @@ struct ToolHost: View {
                 let lastLen = last.upperBound - last.lowerBound
                 let partsText = countText(ranges.count, one: "جزء واحد", two: "جزأين", few: "أجزاء", many: "جزءًا", en: "parts")
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(LF("سيُقسَّم إلى %@، مدة كل جزء %@.", partsText, durationText(splitSeconds)))
+                    Text(LF("سيُقسَّم إلى %@، مدة كل جزء %@.", partsText, lengthWords(splitSeconds)))
                         .font(Theme.f(.headline)).foregroundStyle(Theme.gold)
                     if abs(lastLen - splitSeconds) >= 1 {
-                        Text(LF("والجزء الأخير %@.", durationText(lastLen))).font(Theme.f(.subheadline)).foregroundStyle(.white)
+                        Text(LF("والجزء الأخير %@.", lengthWords(lastLen))).font(Theme.f(.subheadline)).foregroundStyle(.white)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
