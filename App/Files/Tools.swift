@@ -221,6 +221,7 @@ struct ToolHost: View {
     @State private var splitParts: [URL] = []
     @State private var splitFolder: URL?
     @State private var splitStep: (Int, Int)?
+    @FocusState private var splitFocus: Bool
 
     var body: some View {
         NavigationStack {
@@ -240,8 +241,16 @@ struct ToolHost: View {
                 }
                 .padding(16)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(AppBackground())
             .hiddenNavBar()
+            // لوحة الأرقام بلا زر إنهاء: «تم» فوقها
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button(L("تم")) { splitFocus = false }.font(Theme.f(.headline)).tint(Theme.gold)
+                }
+            }
         }
         .task { await prepare() }
         // إغلاق الأداة يوقف المهمة الجارية (لا تبقى تعمل في الخلفية وتسخّن الجوال)
@@ -563,6 +572,7 @@ struct ToolHost: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(L(title)).font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             TextField(ar("0"), text: v).keyboardType(.numberPad).multilineTextAlignment(.center)
+                .focused($splitFocus)
                 .font(Theme.font(18, .bold).monospacedDigit())
                 .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Theme.card))
                 .accessibilityLabel(L(title))

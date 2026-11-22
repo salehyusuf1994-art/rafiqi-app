@@ -129,6 +129,41 @@ final class TVTapTests: XCTestCase {
         XCTAssertTrue(found, "notification permission was not requested")
     }
 
+    /// «تقسيم المقطع»: نغمة ٩٠ ثانية — المدة الجاهزة (دقيقة) ثم مدة مخصّصة ٢٠ ثانية = ٥ أجزاء في مجلد جديد
+    func testSplitTool() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-shot", "home", "-splitTest"]
+        app.launch()
+        let header = app.staticTexts["طول كل جزء"].firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 30), "split editor did not open")
+        sleep(1)
+        let summary = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'سيُقسَّم إلى'")).firstMatch
+        XCTAssertTrue(summary.waitForExistence(timeout: 5), "no parts summary")
+        print("TVTEST split summary:", summary.label)
+        shot(app, "14_split_editor")
+        app.buttons["مدة أخرى"].firstMatch.tap()
+        let fields = app.textFields
+        XCTAssertTrue(fields.element(boundBy: 1).waitForExistence(timeout: 5), "custom fields missing")
+        fields.element(boundBy: 1).tap()
+        fields.element(boundBy: 1).typeText("20")
+        sleep(1)
+        print("TVTEST split custom summary:", summary.label)
+        shot(app, "15_split_custom")
+        // إخفاء لوحة الأرقام بزر «تم» ثم التنفيذ
+        let doneKey = app.buttons["تم"].firstMatch
+        if doneKey.waitForExistence(timeout: 3) { doneKey.tap() } else { app.swipeDown() }
+        sleep(1)
+        let run = app.buttons["تنفيذ"].firstMatch
+        XCTAssertTrue(run.waitForExistence(timeout: 5))
+        if !run.isHittable { app.swipeUp() }
+        run.tap()
+        let done = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'قُسِّم المقطع إلى'")).firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 120), "split did not finish")
+        print("TVTEST split done:", done.label)
+        shot(app, "16_split_done")
+        XCTAssertTrue(done.label.contains("٥") || done.label.contains("5"), "expected 5 parts: \(done.label)")
+    }
+
     /// فصل الصوت بالذكاء الاصطناعي: كلام + نغمة
     func testSeparator() throws {
         let app = XCUIApplication()
