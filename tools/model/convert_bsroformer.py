@@ -30,16 +30,83 @@ def safe_rmsnorm(self, x):
     return y * self.scale * self.gamma
 
 
+def groups_of(dims):
+    """النطاقات المتتالية ذات العرض نفسه: [(البداية، العدد، العرض)]"""
+    out, i = [], 0
+    while i < len(dims):
+        j = i
+        while j < len(dims) and dims[j] == dims[i]:
+            j += 1
+        out.append((i, j - i, dims[i]))
+        i = j
+    return out
+
+
+class GroupedBandSplit(torch.nn.Module):
+    """BandSplit نفسه رياضيًا: ٦٢ عملية صغيرة ← ٧ عمليات مجمّعة (الأسرع على المحرك العصبي وكرت الشاشة)"""
+    def __init__(self, bs):
+        super().__init__()
+        dims = list(bs.dim_inputs)
+        self.groups = groups_of(dims)
+        self.g = torch.nn.ParameterList()
+        self.w = torch.nn.ParameterList()
+        self.b = torch.nn.ParameterList()
+        for (s0, n, d) in self.groups:
+            nets = [bs.to_features[k] for k in range(s0, s0 + n)]
+            self.g.append(torch.nn.Parameter(torch.stack([net[0].gamma for net in nets]) * (d ** 0.5)))      # [n, d]
+            self.w.append(torch.nn.Parameter(torch.stack([net[1].weight.t() for net in nets])))           # [n, d, e]
+            self.b.append(torch.nn.Parameter(torch.stack([net[1].bias for net in nets])))                 # [n, e]
+
+    def forward(self, x):
+        outs, off = [], 0
+        for k, (s0, n, d) in enumerate(self.groups):
+            xg = x[..., off:off + n * d].reshape(x.shape[0], x.shape[1], n, d)
+            off += n * d
+            m = xg.abs().amax(dim=-1, keepdim=True).clamp(min=1e-8)
+            y = xg / m
+            y = y / y.pow(2).sum(dim=-1, keepdim=True).sqrt().clamp(min=1e-12)
+            y = y * self.g[k]
+            outs.append(torch.einsum('btnd,nde->btne', y, self.w[k]) + self.b[k])
+        return torch.cat(outs, dim=2)
+
+
+class GroupedMaskEstimator(torch.nn.Module):
+    """MaskEstimator نفسه رياضيًا: MLP لكل نطاق ← دفعات مجمّعة"""
+    def __init__(self, me):
+        super().__init__()
+        dims = list(me.dim_inputs)
+        self.groups = groups_of(dims)
+        self.w1, self.b1, self.w2, self.b2 = (torch.nn.ParameterList() for _ in range(4))
+        for (s0, n, d) in self.groups:
+            mlps = [me.to_freqs[k][0] for k in range(s0, s0 + n)]   # Sequential(Linear, Tanh, Linear)
+            self.w1.append(torch.nn.Parameter(torch.stack([m[0].weight.t() for m in mlps])))
+            self.b1.append(torch.nn.Parameter(torch.stack([m[0].bias for m in mlps])))
+            self.w2.append(torch.nn.Parameter(torch.stack([m[2].weight.t() for m in mlps])))
+            self.b2.append(torch.nn.Parameter(torch.stack([m[2].bias for m in mlps])))
+
+    def forward(self, x):          # x: [b, t, 62, dim]
+        outs = []
+        for k, (s0, n, d) in enumerate(self.groups):
+            xg = x[:, :, s0:s0 + n]
+            h = torch.tanh(torch.einsum('btne,neh->btnh', xg, self.w1[k]) + self.b1[k])
+            o = torch.einsum('btnh,nho->btno', h, self.w2[k]) + self.b2[k]      # [b, t, n, 2d]
+            o = o[..., :d] * torch.sigmoid(o[..., d:])                         # GLU
+            outs.append(o.reshape(o.shape[0], o.shape[1], n * d))
+        return torch.cat(outs, dim=-1)
+
+
 class Core(torch.nn.Module):
     """BSRoformer.forward من بعد STFT حتى القناع"""
-    def __init__(self, m):
+    def __init__(self, m, grouped=False):
         super().__init__()
         self.m = m
+        self.split = GroupedBandSplit(m.band_split) if grouped else m.band_split
+        self.mask = GroupedMaskEstimator(m.mask_estimators[0]) if grouped else m.mask_estimators[0]
 
     def forward(self, spec):
         m = self.m
         x = rearrange(spec, 'b f t c -> b t (f c)')
-        x = m.band_split(x)
+        x = self.split(x)
         for block in m.layers:
             time_t, freq_t = block[-2], block[-1]
             x = rearrange(x, 'b t f d -> b f t d')
@@ -51,7 +118,7 @@ class Core(torch.nn.Module):
             x = freq_t(x)
             x, = unpack(x, ps, '* f d')
         x = m.final_norm(x)
-        mask = m.mask_estimators[0](x)
+        mask = self.mask(x)
         return rearrange(mask, 'b t (f c) -> b f t c', c=2)
 
 
@@ -116,7 +183,13 @@ def main():
         print('safe norm max diff', (mask2 - mask).abs().max().item())
         assert (mask2 - mask).abs().max().item() < 1e-3
 
-        traced = torch.jit.trace(core, spec, check_trace=False)
+        # النسخة المجمّعة مطابقة للأصل (الأوزان نفسها، ترتيب حساب مختلف فقط)
+        grouped = Core(model, grouped=True).eval()
+        mask3 = grouped(spec)
+        gdiff = (mask3 - mask2).abs().max().item()
+        print('grouped max diff', gdiff, 'mask range', mask2.abs().max().item())
+        assert gdiff < 1e-3, 'grouped core differs'
+        traced = torch.jit.trace(grouped, spec, check_trace=False)
 
     import coremltools as ct
     mlm = ct.convert(
