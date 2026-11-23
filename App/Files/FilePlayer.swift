@@ -331,6 +331,8 @@ final class VideoController: AVPlayerViewController, AVPlayerViewControllerDeleg
         index = i
         let url = playlist[i]
         if let timeObs, let old = player { old.removeTimeObserver(timeObs); self.timeObs = nil }
+        // المقطع السابق يتوقف ويُفرَّغ قبل التالي: كان يبقى يعمل في الخلفية فيتداخل الصوتان عند «التالي»
+        if let old = player { old.pause(); old.replaceCurrentItem(with: nil) }
         let p = AVPlayer(url: url)
         player = p
         // بدأ التشغيل (أول مرة أو بعد إيقاف مؤقت): يتوقف أي صوت أو قناة أو فيديو آخر
