@@ -191,14 +191,7 @@ enum Roformer {
                          progress: @escaping (Double) -> Void) async throws -> (URL, URL?) {
         guard SepModelStore.isReady else { throw ToolError.failed(L("نموذج الفصل عالي الدقة غير منزّل.")) }
         progress(0.01)
-        let model: MLModel
-        do {
-            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuAndGPU
-            model = try await MLModel.load(contentsOf: SepModelStore.compiledURL, configuration: cfg)
-        } catch {
-            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuOnly
-            model = try await MLModel.load(contentsOf: SepModelStore.compiledURL, configuration: cfg)
-        }
+        let model = try await Runner.make()
         try Task.checkCancellation()
         let (lch, rch) = try await Separator.readPCM(src)
         let n = lch.count
@@ -222,7 +215,7 @@ enum Roformer {
     }
 
     /// الصوت البشري للمقطع كاملًا: قطع ٨ ثوانٍ بتداخل النصف، وحواف متلاشية، وانعكاس عند طرفي المقطع
-    static func vocals(model: MLModel, _ lch: [Float], _ rch: [Float], progress: @escaping (Double) -> Void) async throws -> ([Float], [Float]) {
+    static func vocals(model: Runner, _ lch: [Float], _ rch: [Float], progress: @escaping (Double) -> Void) async throws -> ([Float], [Float]) {
         let n = lch.count
         let step = chunk / 2, border = chunk - step, fade = chunk / 10
         // الحشو بالانعكاس كي تأخذ الأطراف تغطية كاملة (بلا نسخ المقطع: قراءة مباشرة بالانعكاس)
@@ -270,7 +263,7 @@ enum Roformer {
     }
 
     /// قطعة واحدة (٨ ثوانٍ): STFT ← النموذج ← قناع مركّب ← iSTFT
-    static func separateChunk(model: MLModel, stft: STFT, _ l: [Float], _ r: [Float]) async throws -> ([Float], [Float]) {
+    static func separateChunk(model: Runner, stft: STFT, _ l: [Float], _ r: [Float]) async throws -> ([Float], [Float]) {
         let input = try MLMultiArray(shape: [1, NSNumber(value: 2 * bins), NSNumber(value: frames), 2], dataType: .float32)
         let ip = input.dataPointer.bindMemory(to: Float.self, capacity: 2 * bins * frames * 2)
         // الطيف لكل قناة: [frames][bins] حقيقي/تخيلي
@@ -284,7 +277,7 @@ enum Roformer {
                 }
             }
         }
-        let out = try await model.prediction(from: MLDictionaryFeatureProvider(dictionary: ["spec": input]))
+        let out = try await model.predict(MLDictionaryFeatureProvider(dictionary: ["spec": input]))
         guard let m = out.featureValue(for: "mask")?.multiArrayValue, m.count >= 2 * bins * frames * 2 else {
             throw ToolError.failed(L("تعذّرت المعالجة."))
         }
@@ -311,6 +304,39 @@ enum Roformer {
             res.append(stft.inverse(re: yr, im: yi, length: chunk))
         }
         return (res[0], res[1])
+    }
+
+    /// النموذج على كرت الشاشة، ومعالج احتياطي: iOS يمنع كرت الشاشة حين يخرج المستخدم من التطبيق
+    /// (فيفشل التنبؤ برسالة «Unable to compute…»)، فتُعاد القطعة نفسها على المعالج العادي ويكمل الفصل
+    final class Runner {
+        private let gpu: MLModel?
+        private var cpu: MLModel?
+        private init(gpu: MLModel?, cpu: MLModel?) { self.gpu = gpu; self.cpu = cpu }
+
+        static func make() async throws -> Runner {
+            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuAndGPU
+            if let g = try? await MLModel.load(contentsOf: SepModelStore.compiledURL, configuration: cfg) { return Runner(gpu: g, cpu: nil) }
+            return Runner(gpu: nil, cpu: try await cpuModel())
+        }
+
+        private static func cpuModel() async throws -> MLModel {
+            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuOnly
+            return try await MLModel.load(contentsOf: SepModelStore.compiledURL, configuration: cfg)
+        }
+
+        func predict(_ input: MLFeatureProvider) async throws -> MLFeatureProvider {
+            if let gpu {
+                do { return try await gpu.prediction(from: input) }
+                catch { try Task.checkCancellation() }
+            }
+            do {
+                if cpu == nil { cpu = try await Self.cpuModel() }
+                return try await cpu!.prediction(from: input)
+            } catch {
+                try Task.checkCancellation()
+                throw ToolError.failed(L("تعذّرت المعالجة. أبقِ التطبيق مفتوحًا أثناء الفصل وحاول مرة أخرى."))
+            }
+        }
     }
 
     /// STFT/iSTFT مطابقان لـ torch (center=True بانعكاس، نافذة Hann دورية، بلا تطبيع)

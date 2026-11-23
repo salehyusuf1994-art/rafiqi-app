@@ -927,6 +927,7 @@ T.update({
  'يمكنك تنزيله مرة أخرى في أي وقت. حتى ذلك يُستخدم النموذج المضمّن.': 'You can download it again any time. Until then, the built-in model is used.',
  'المساحة المتاحة لا تكفي لتنزيل النموذج: يحتاج تقريبًا %@، والمتاح %@.': 'Not enough free space to download the model: about %@ is needed and %@ is available.',
  'تعذّر التنزيل.': 'Download failed.',
+ 'تعذّرت المعالجة. أبقِ التطبيق مفتوحًا أثناء الفصل وحاول مرة أخرى.': 'Processing failed. Keep the app open while separating and try again.',
  'ملف النموذج المنزّل غير سليم. حاول مرة أخرى.': 'The downloaded model file is damaged. Please try again.',
  'نموذج الفصل عالي الدقة غير منزّل.': 'The high-accuracy separation model isn’t downloaded.',
  'يفصل الذكاء الاصطناعي الصوت البشري ويحذف الموسيقى والإيقاعات. تتم المعالجة على جوالك بدون إنترنت، والمقاطع الطويلة تأخذ بضع دقائق.': 'AI separates the human voice and removes music and beats. Processing happens on your phone without internet; long clips take a few minutes.',
