@@ -252,7 +252,8 @@ enum MediaTools {
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
         // مجلد الأجزاء يُفتح مرتبًا بالاسم: ١، ٢، ٣ … (لا بالتاريخ فيظهر مقلوبًا)
-        await MainActor.run { FilePrefs.setFolderSort(.name, true, for: FileStore.shared.key(folder)) }
+        let made = folder
+        await MainActor.run { FilePrefs.setFolderSort(.name, true, for: FileStore.shared.key(made)) }
         folderReady(folder)
         var parts: [URL] = []
         do {
