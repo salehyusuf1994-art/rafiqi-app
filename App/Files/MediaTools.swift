@@ -300,6 +300,7 @@ enum MediaTools {
 
     static func mute(_ src: URL, progress: @escaping (Double) -> Void) async throws -> URL {
         let (c, _, _) = try await composition(AVURLAsset(url: src), audio: false)
+        if let out = try await passthrough(c, for: src, suffix: L("بدون صوت"), progress: progress) { return out }
         return try await export(c, preset: AVAssetExportPresetHighestQuality, to: output(for: src, suffix: L("بدون صوت"), ext: "mp4"), type: .mp4, progress: progress)
     }
 
@@ -418,7 +419,20 @@ enum MediaTools {
             at = at + len
             if bd.seconds <= 0 { break }
         }
+        // الصوت الجديد بدل الأصلي: الفيديو يُنسخ كما هو بلا إعادة ضغط (أسرع بكثير وبجودته الأصلية تمامًا)
+        if !keepOriginal, let out = try await passthrough(c, for: src, suffix: L("صوت جديد"), progress: progress) { return out }
         return try await export(c, preset: AVAssetExportPresetHighestQuality, to: output(for: src, suffix: L("صوت جديد"), ext: "mp4"), type: .mp4, progress: progress)
+    }
+
+    /// تصدير بلا إعادة ترميز إن قبلته الصيغة (nil = غير ممكن، فيُستخدم التصدير العادي)
+    private static func passthrough(_ c: AVAsset, for src: URL, suffix: String, progress: @escaping (Double) -> Void) async throws -> URL? {
+        for (t, ext) in [(AVFileType.mp4, "mp4"), (.mov, "mov")] {
+            guard await AVAssetExportSession.compatibility(ofExportPreset: AVAssetExportPresetPassthrough, with: c, outputFileType: t) else { continue }
+            do { return try await export(c, preset: AVAssetExportPresetPassthrough, to: output(for: src, suffix: suffix, ext: ext), type: t, progress: progress) }
+            catch is CancellationError { throw CancellationError() }
+            catch { return nil }
+        }
+        return nil
     }
 
     /// بصمة المسار: الترميز والمقاس والاتجاه (فيديو) أو التردد والقنوات (صوت)

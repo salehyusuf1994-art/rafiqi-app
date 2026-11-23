@@ -774,7 +774,7 @@ struct ToolHost: View {
                 if video {
                     let v = try await MediaTools.replaceAudio(url, with: stem, keepOriginal: false, progress: { x in Task { @MainActor in progress = 0.8 + x * 0.2 } })
                     try? FileManager.default.removeItem(at: stem)
-                    let named = MediaTools.output(for: url, suffix: keep == .vocals ? L("بدون موسيقى") : L("بدون صوت بشري"), ext: "mp4")
+                    let named = MediaTools.output(for: url, suffix: keep == .vocals ? L("بدون موسيقى") : L("بدون صوت بشري"), ext: v.pathExtension)
                     try? FileManager.default.moveItem(at: v, to: named)
                     result = FileManager.default.fileExists(atPath: named.path) ? named : v
                 } else {

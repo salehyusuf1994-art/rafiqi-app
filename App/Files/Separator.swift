@@ -195,13 +195,28 @@ enum Separator {
         r.add(o)
         r.startReading()
         var lch: [Float] = [], rch: [Float] = []
+        // حجز مسبق بطول المقطع (لا نسخ متكرر مع كل إضافة)
+        if let d = try? await a.load(.duration).seconds, d.isFinite, d > 0 {
+            let cap = Int(d * rate) + 44_100
+            lch.reserveCapacity(cap); rch.reserveCapacity(cap)
+        }
+        var data: [Float] = [], l: [Float] = [], r: [Float] = []
         while let sb = o.copyNextSampleBuffer(), let bb = CMSampleBufferGetDataBuffer(sb) {
             let len = CMBlockBufferGetDataLength(bb) / 8 * 8   // عيّنات كاملة لقناتين فقط
             guard len > 0 else { continue }
-            var data = [Float](repeating: 0, count: len / 4)
+            let frames = len / 8
+            if data.count < frames * 2 { data = [Float](repeating: 0, count: frames * 2); l = [Float](repeating: 0, count: frames); r = l }
             data.withUnsafeMutableBytes { if let p = $0.baseAddress { _ = CMBlockBufferCopyDataBytes(bb, atOffset: 0, dataLength: len, destination: p) } }
-            var i = 0
-            while i + 1 < data.count { lch.append(data[i]); rch.append(data[i + 1]); i += 2 }
+            // فصل القناتين المتداخلتين دفعة واحدة (vDSP)
+            data.withUnsafeBufferPointer { dp in
+                l.withUnsafeMutableBufferPointer { lp in
+                    r.withUnsafeMutableBufferPointer { rp in
+                        var split = DSPSplitComplex(realp: lp.baseAddress!, imagp: rp.baseAddress!)
+                        dp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: frames) { vDSP_ctoz($0, 2, &split, 1, vDSP_Length(frames)) }
+                    }
+                }
+            }
+            lch.append(contentsOf: l[0..<frames]); rch.append(contentsOf: r[0..<frames])
         }
         guard r.status == .completed || !lch.isEmpty else { throw ToolError.failed(L("تعذّرت قراءة الصوت.")) }
         return (lch, rch)

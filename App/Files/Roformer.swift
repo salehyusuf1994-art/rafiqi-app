@@ -219,7 +219,8 @@ enum Roformer {
         var chunks = 0
         let (vl, vr) = try await vocals(model: model, lch, rch, overlap: overlap, chunks: &chunks, progress: { progress(0.04 + 0.9 * $0) })
         var ml = [Float](repeating: 0, count: n), mr = ml
-        for i in 0..<n { ml[i] = lch[i] - vl[i]; mr[i] = rch[i] - vr[i] }
+        vDSP_vsub(vl, 1, lch, 1, &ml, 1, vDSP_Length(n))     // ml = lch − vl
+        vDSP_vsub(vr, 1, rch, 1, &mr, 1, vDSP_Length(n))
         let vName = L("بدون موسيقى"), mName = L("بدون صوت بشري")
         let mainOut = MediaTools.output(for: src, suffix: keep == .vocals ? vName : mName, ext: "m4a")
         if keep == .vocals { try Separator.writeM4A(vl, vr, to: mainOut) } else { try Separator.writeM4A(ml, mr, to: mainOut) }
@@ -254,89 +255,232 @@ enum Roformer {
         let padded = n > 2 * border
         let off = padded ? border : 0
         let len = n + 2 * off
-        @inline(__always) func at(_ x: [Float], _ i: Int) -> Float {
-            var j = i - off
-            if j < 0 { j = -j }
-            if j >= n { j = 2 * (n - 1) - j }
-            return j >= 0 && j < n ? x[j] : 0
-        }
         var win = [Float](repeating: 1, count: chunk)
         for i in 0..<fade { win[i] = Float(i) / Float(fade - 1); win[chunk - 1 - i] = Float(i) / Float(fade - 1) }
-        var accL = [Float](repeating: 0, count: len), accR = accL, cnt = accL
-
-        let stft = STFT()
+        let acc = Accum(len: len)
+        let src = Source(l: lch, r: rch, off: off)
         var starts: [Int] = []
         var i = 0
         while i < len { starts.append(i); i += step }
         chunks = starts.count
-        for (ci, s) in starts.enumerated() {
-            try Task.checkCancellation()
-            let length = min(chunk, len - s)
-            // القطعة (الأخيرة تُكمل بالانعكاس أو بالأصفار)
-            var pl = [Float](repeating: 0, count: chunk), pr = pl
-            for k in 0..<length { pl[k] = at(lch, s + k); pr[k] = at(rch, s + k) }
-            if length < chunk && length > chunk / 2 + 1 {
-                for k in length..<chunk { let j = 2 * (length - 1) - k; if j >= 0 { pl[k] = pl[j]; pr[k] = pr[j] } }
-            }
-            let (yl, yr) = try await separateChunk(model: model, stft: stft, pl, pr)
-            var w = win
-            if s == 0 { for k in 0..<fade { w[k] = 1 } }
-            if s + chunk >= len { for k in 0..<fade { w[chunk - 1 - k] = 1 } }
-            for k in 0..<length {
-                accL[s + k] += yl[k] * w[k]; accR[s + k] += yr[k] * w[k]; cnt[s + k] += w[k]
-            }
-            progress(Double(ci + 1) / Double(starts.count))
+        let total = starts.count
+
+        // خط إنتاج: المعالج يجهّز القطعة التالية ويُنهي السابقة بينما كرت الشاشة يعمل على الحالية.
+        // الحساب نفسه بالضبط وبالترتيب نفسه؛ فقط لا ينتظر كرت الشاشة المعالج.
+        func prepare(_ ci: Int) -> Task<Prepared, Error> {
+            let s0 = starts[ci]
+            return Task.detached(priority: .userInitiated) { try Prepared.make(src, start: s0, len: len) }
         }
+        var next: Task<Prepared, Error>? = prepare(0)
+        var finishing: Task<Void, Error>?
+        defer { next?.cancel(); finishing?.cancel() }
+        for ci in 0..<total {
+            try Task.checkCancellation()
+            guard let p = try await next?.value else { break }
+            next = ci + 1 < total ? prepare(ci + 1) : nil
+            let out = try await model.predict(MLDictionaryFeatureProvider(dictionary: ["spec": p.input]))
+            guard let m = out.featureValue(for: "mask")?.multiArrayValue else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
+            let mask = try MaskBuffer(m)
+            let s0 = starts[ci], length = p.length
+            var w = win
+            if s0 == 0 { for k in 0..<fade { w[k] = 1 } }
+            if s0 + chunk >= len { for k in 0..<fade { w[chunk - 1 - k] = 1 } }
+            let weights = w
+            let prev = finishing
+            finishing = Task.detached(priority: .userInitiated) {
+                let yl = FastSTFT.shared.synthesize(spec: p.spec, mask: mask.values, channel: 0)
+                let yr = FastSTFT.shared.synthesize(spec: p.spec, mask: mask.values, channel: 1)
+                try await prev?.value          // الجمع بالترتيب
+                acc.add(yl, yr, at: s0, length: length, weights: weights)
+            }
+            progress(Double(ci + 1) / Double(total))
+        }
+        try await finishing?.value
+        finishing = nil
         var outL = [Float](repeating: 0, count: n), outR = outL
         for k in 0..<n {
-            let c = cnt[off + k]
-            if c > 1e-6 { outL[k] = accL[off + k] / c; outR[k] = accR[off + k] / c }
+            let c = acc.cnt[off + k]
+            if c > 1e-6 { outL[k] = acc.l[off + k] / c; outR[k] = acc.r[off + k] / c }
         }
         return (outL, outR)
     }
 
-    /// قطعة واحدة (٨ ثوانٍ): STFT ← النموذج ← قناع مركّب ← iSTFT
-    static func separateChunk(model: Runner, stft: STFT, _ l: [Float], _ r: [Float]) async throws -> ([Float], [Float]) {
-        let input = try MLMultiArray(shape: [1, NSNumber(value: 2 * bins), NSNumber(value: frames), 2], dataType: .float32)
-        let ip = input.dataPointer.bindMemory(to: Float.self, capacity: 2 * bins * frames * 2)
-        // الطيف لكل قناة: [frames][bins] حقيقي/تخيلي
-        let sl = stft.forward(l), sr = stft.forward(r)
-        for (s, sp) in [sl, sr].enumerated() {
-            for t in 0..<frames {
-                for f in 0..<bins {
-                    let fs = f * 2 + s
-                    let o = (fs * frames + t) * 2
-                    ip[o] = sp.re[t * bins + f]; ip[o + 1] = sp.im[t * bins + f]
-                }
+    /// المقطع مع الحشو بالانعكاس (قراءة فقط، من عدة مهام)
+    final class Source: @unchecked Sendable {
+        let l: [Float], r: [Float], off: Int, n: Int
+        init(l: [Float], r: [Float], off: Int) { self.l = l; self.r = r; self.off = off; n = l.count }
+        @inline(__always) func index(_ i: Int) -> Int {
+            var j = i - off
+            if j < 0 { j = -j }
+            if j >= n { j = 2 * (n - 1) - j }
+            return j
+        }
+    }
+
+    /// مجمّع الناتج (تُضاف إليه القطع بالترتيب، واحدة بعد واحدة)
+    final class Accum: @unchecked Sendable {
+        var l: [Float], r: [Float], cnt: [Float]
+        init(len: Int) { l = [Float](repeating: 0, count: len); r = l; cnt = l }
+        func add(_ yl: [Float], _ yr: [Float], at s: Int, length: Int, weights w: [Float]) {
+            let n = vDSP_Length(length)
+            l.withUnsafeMutableBufferPointer { lp in
+                vDSP_vma(yl, 1, w, 1, lp.baseAddress! + s, 1, lp.baseAddress! + s, 1, n)
+            }
+            r.withUnsafeMutableBufferPointer { rp in
+                vDSP_vma(yr, 1, w, 1, rp.baseAddress! + s, 1, rp.baseAddress! + s, 1, n)
+            }
+            cnt.withUnsafeMutableBufferPointer { cp in
+                vDSP_vadd(cp.baseAddress! + s, 1, w, 1, cp.baseAddress! + s, 1, n)
             }
         }
-        let out = try await model.predict(MLDictionaryFeatureProvider(dictionary: ["spec": input]))
-        guard let m = out.featureValue(for: "mask")?.multiArrayValue, m.count >= 2 * bins * frames * 2 else {
-            throw ToolError.failed(L("تعذّرت المعالجة."))
-        }
-        let total = 2 * bins * frames * 2
-        var mask = [Float](repeating: 0, count: total)
-        if m.dataType == .float16 {
-            let p = m.dataPointer.bindMemory(to: Float16.self, capacity: total)
-            for k in 0..<total { mask[k] = Float(p[k]) }
-        } else {
-            let p = m.dataPointer.bindMemory(to: Float.self, capacity: total)
-            for k in 0..<total { mask[k] = p[k] }
-        }
-        var res: [[Float]] = []
-        for (s, sp) in [sl, sr].enumerated() {
-            var yr = [Float](repeating: 0, count: bins * frames), yi = yr
-            for t in 0..<frames {
-                for f in 1..<bins {     // DC = صفر (كما في النموذج الأصلي)
-                    let o = ((f * 2 + s) * frames + t) * 2
-                    let a = sp.re[t * bins + f], b = sp.im[t * bins + f], c = mask[o], d = mask[o + 1]
-                    yr[t * bins + f] = a * c - b * d
-                    yi[t * bins + f] = a * d + b * c
-                }
+    }
+
+    /// قطعة جاهزة للنموذج: الطيف في دخل النموذج نفسه (يُقرأ لاحقًا لضرب القناع)
+    final class Prepared: @unchecked Sendable {
+        let input: MLMultiArray
+        let length: Int
+        var spec: UnsafePointer<Float> { UnsafePointer(input.dataPointer.assumingMemoryBound(to: Float.self)) }
+        private init(input: MLMultiArray, length: Int) { self.input = input; self.length = length }
+
+        static func make(_ src: Source, start s: Int, len: Int) throws -> Prepared {
+            try Task.checkCancellation()
+            let length = min(chunk, len - s)
+            // القطعة (الأخيرة تُكمل بالانعكاس أو بالأصفار)
+            var pl = [Float](repeating: 0, count: chunk), pr = pl
+            for k in 0..<length {
+                let j = src.index(s + k)
+                if j >= 0 && j < src.n { pl[k] = src.l[j]; pr[k] = src.r[j] }
             }
-            res.append(stft.inverse(re: yr, im: yi, length: chunk))
+            if length < chunk && length > chunk / 2 + 1 {
+                for k in length..<chunk { let j = 2 * (length - 1) - k; if j >= 0 { pl[k] = pl[j]; pr[k] = pr[j] } }
+            }
+            let input = try MLMultiArray(shape: [1, NSNumber(value: 2 * bins), NSNumber(value: frames), 2], dataType: .float32)
+            let ip = input.dataPointer.bindMemory(to: Float.self, capacity: 2 * bins * frames * 2)
+            pl.withUnsafeBufferPointer { FastSTFT.shared.analyze($0.baseAddress!, n: chunk, channel: 0, into: ip) }
+            pr.withUnsafeBufferPointer { FastSTFT.shared.analyze($0.baseAddress!, n: chunk, channel: 1, into: ip) }
+            return Prepared(input: input, length: length)
         }
-        return (res[0], res[1])
+    }
+
+    /// قناع النموذج في مصفوفة متصلة Float (يحترم خطوات الذاكرة إن أرجعها كرت الشاشة بحشو)
+    final class MaskBuffer: @unchecked Sendable {
+        private let ptr: UnsafeMutablePointer<Float>
+        var values: UnsafePointer<Float> { UnsafePointer(ptr) }
+        deinit { ptr.deallocate() }
+        init(_ m: MLMultiArray) throws {
+            let total = 2 * bins * frames * 2
+            guard m.count >= total, m.shape.count == 4 else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
+            let shape = m.shape.map(\.intValue), st = m.strides.map(\.intValue)
+            let contiguous = st == [shape[1] * shape[2] * shape[3], shape[2] * shape[3], shape[3], 1]
+            let out = UnsafeMutablePointer<Float>.allocate(capacity: total)
+            switch (m.dataType, contiguous) {
+            case (.float32, true):
+                let p = m.dataPointer.bindMemory(to: Float.self, capacity: total)
+                out.update(from: p, count: total)
+            case (.float16, true):
+                let p = m.dataPointer.bindMemory(to: Float16.self, capacity: total)
+                for k in 0..<total { out[k] = Float(p[k]) }
+            default:
+                let f32 = m.dataType == .float32
+                let p32 = m.dataPointer.assumingMemoryBound(to: Float.self)
+                let p16 = m.dataPointer.assumingMemoryBound(to: Float16.self)
+                var k = 0
+                for a in 0..<shape[1] { for b in 0..<shape[2] { for c in 0..<shape[3] {
+                    let o = a * st[1] + b * st[2] + c * st[3]
+                    out[k] = f32 ? p32[o] : Float(p16[o]); k += 1
+                } } }
+            }
+            ptr = out
+        }
+    }
+
+    /// STFT/iSTFT متجهة (vDSP) بنفس حساب STFT أدناه بالضبط، مكتوبة مباشرة في تخطيط دخل النموذج
+    final class FastSTFT: @unchecked Sendable {
+        static let shared = FastSTFT()
+        let fwd: vDSP_DFT_Setup, inv: vDSP_DFT_Setup
+        let win: [Float], winScaled: [Float], envInv: [Float]
+        private init() {
+            let ref = STFT()
+            fwd = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(nfft), .FORWARD)!
+            inv = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(nfft), .INVERSE)!
+            win = ref.win
+            winScaled = ref.win.map { $0 * ref.scale }
+            // مجموع مربعات النافذة عبر الإطارات (ثابت)، مقلوبًا لمواضع الناتج
+            let total = nfft + hop * (frames - 1)
+            var ws = [Float](repeating: 0, count: total)
+            for t in 0..<frames { for i in 0..<nfft { ws[t * hop + i] += ref.win[i] * ref.win[i] } }
+            var e = [Float](repeating: 0, count: chunk)
+            for i in 0..<chunk { let j = i + nfft / 2; if j < total, ws[j] > 1e-8 { e[i] = 1 / ws[j] } }
+            envInv = e
+        }
+
+        /// طيف القناة s مكتوب في دخل النموذج [1, 2050, 801, 2] (التردد f والقناة s في الموضع f×2+s)
+        func analyze(_ x: UnsafePointer<Float>, n: Int, channel s: Int, into ip: UnsafeMutablePointer<Float>) {
+            let half = nfft / 2
+            let frame = UnsafeMutablePointer<Float>.allocate(capacity: nfft)
+            let er = UnsafeMutablePointer<Float>.allocate(capacity: half), ei = UnsafeMutablePointer<Float>.allocate(capacity: half)
+            let orr = UnsafeMutablePointer<Float>.allocate(capacity: half), oi = UnsafeMutablePointer<Float>.allocate(capacity: half)
+            defer { frame.deallocate(); er.deallocate(); ei.deallocate(); orr.deallocate(); oi.deallocate() }
+            var split = DSPSplitComplex(realp: er, imagp: ei)
+            let fStride = vDSP_Stride(4 * frames)
+            var h: Float = 0.5
+            for t in 0..<frames {
+                let start = t * hop - half
+                if start >= 0 && start + nfft <= n {
+                    vDSP_vmul(x + start, 1, win, 1, frame, 1, vDSP_Length(nfft))
+                } else {
+                    for i in 0..<nfft {
+                        var j = start + i
+                        if j < 0 { j = -j }
+                        if j >= n { j = 2 * (n - 1) - j }
+                        frame[i] = (j >= 0 && j < n ? x[j] : 0) * win[i]
+                    }
+                }
+                frame.withMemoryRebound(to: DSPComplex.self, capacity: half) { vDSP_ctoz($0, 2, &split, 1, vDSP_Length(half)) }
+                vDSP_DFT_Execute(fwd, er, ei, orr, oi)
+                // vDSP يعطي ضعف القيمة، والمكان ٠ يحمل DC (حقيقي) و Nyquist (في التخيلي)
+                let base = ip + (s * frames + t) * 2
+                vDSP_vsmul(orr, 1, &h, base, fStride, vDSP_Length(half))
+                vDSP_vsmul(oi, 1, &h, base + 1, fStride, vDSP_Length(half))
+                base[1] = 0
+                let nyq = ip + ((half * 2 + s) * frames + t) * 2
+                nyq[0] = oi[0] * 0.5
+                nyq[1] = 0
+            }
+        }
+
+        /// Y = X × القناع (DC صفر كما في الأصل) ثم iSTFT مع قسمة مجموع مربعات النافذة: الناتج بطول القطعة
+        func synthesize(spec ip: UnsafePointer<Float>, mask mp: UnsafePointer<Float>, channel s: Int) -> [Float] {
+            let half = nfft / 2
+            let total = nfft + hop * (frames - 1)
+            let acc = UnsafeMutablePointer<Float>.allocate(capacity: total); acc.initialize(repeating: 0, count: total)
+            let buf = UnsafeMutablePointer<Float>.allocate(capacity: 6 * bins + 4 * half + nfft)
+            defer { acc.deallocate(); buf.deallocate() }
+            let xr = buf, xi = buf + bins, mr = buf + 2 * bins, mi = buf + 3 * bins, yr = buf + 4 * bins, yi = buf + 5 * bins
+            let pr = buf + 6 * bins, pi = pr + half, orr = pi + half, oi = orr + half, frame = oi + half
+            var X = DSPSplitComplex(realp: xr, imagp: xi), M = DSPSplitComplex(realp: mr, imagp: mi)
+            var Y = DSPSplitComplex(realp: yr, imagp: yi), O = DSPSplitComplex(realp: orr, imagp: oi)
+            var two: Float = 2
+            // خطوة vDSP_ctoz بعدد Float (٢ = أعداد مركّبة متتالية): بين ترددين متتاليين لنفس القناة والإطار ٤ × الإطارات
+            let cStride = vDSP_Stride(4 * frames)
+            for t in 0..<frames {
+                let o = (s * frames + t) * 2
+                (ip + o).withMemoryRebound(to: DSPComplex.self, capacity: 1) { vDSP_ctoz($0, cStride, &X, 1, vDSP_Length(bins)) }
+                (mp + o).withMemoryRebound(to: DSPComplex.self, capacity: 1) { vDSP_ctoz($0, cStride, &M, 1, vDSP_Length(bins)) }
+                vDSP_zvmul(&X, 1, &M, 1, &Y, 1, vDSP_Length(bins), 1)
+                vDSP_vsmul(yr, 1, &two, pr, 1, vDSP_Length(half))
+                vDSP_vsmul(yi, 1, &two, pi, 1, vDSP_Length(half))
+                pr[0] = 0                     // DC = صفر
+                pi[0] = yr[half] * 2          // Nyquist في مكان التخيلي للـ DC
+                vDSP_DFT_Execute(inv, pr, pi, orr, oi)
+                frame.withMemoryRebound(to: DSPComplex.self, capacity: half) { vDSP_ztoc(&O, 1, $0, 2, vDSP_Length(half)) }
+                let a = acc + t * hop
+                vDSP_vma(frame, 1, winScaled, 1, a, 1, a, 1, vDSP_Length(nfft))
+            }
+            var out = [Float](repeating: 0, count: chunk)
+            vDSP_vmul(acc + half, 1, envInv, 1, &out, 1, vDSP_Length(chunk))
+            return out
+        }
     }
 
     /// النموذج على المحرك العصبي وكرت الشاشة (الأسرع)، وبدائل تلقائية لكل قطعة:
