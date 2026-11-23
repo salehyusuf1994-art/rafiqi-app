@@ -20,7 +20,7 @@ from einops import rearrange, pack, unpack
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from models.bs_roformer import bs_roformer as bsr  # noqa: E402
 
-FRAMES = 801
+FRAMES = 801  # يُغيَّر بـ --frames
 
 
 def safe_rmsnorm(self, x):
@@ -68,7 +68,10 @@ def main():
     ap.add_argument('--config', required=True)
     ap.add_argument('--weights', required=True)
     ap.add_argument('--out', required=True)
+    ap.add_argument('--frames', type=int, default=801)
     a = ap.parse_args()
+    global FRAMES
+    FRAMES = a.frames
 
     cfg = yaml.load(open(a.config), Loader=yaml.FullLoader)
     mc = dict(cfg['model'])
@@ -88,7 +91,8 @@ def main():
 
     # مرجع بالدقة الكاملة: النموذج الأصلي على مقطع عشوائي، ثم نفس المقطع عبر القلب + STFT/iSTFT
     torch.manual_seed(0)
-    n = cfg['audio']['chunk_size']
+    # قطعة أقصر من ٨ ثوانٍ تقلل ذاكرة الانتباه (تتناسب مع مربع الطول) فتعمل على معالج الجوال الرسومي
+    n = (FRAMES - 1) * 441
     audio = torch.randn(1, 2, n) * 0.1
     with torch.no_grad():
         ref = model(audio)

@@ -8,7 +8,11 @@ on:
       tag:
         description: "Release tag"
         type: string
-        default: sep-model-v1
+        default: sep-model-v2
+      frames:
+        description: "STFT frames per chunk (801 = 8 s, 401 = 4 s)"
+        type: string
+        default: "401"
 
 permissions:
   contents: write   # إنشاء الإصدار ورفع ملفات النموذج فقط
@@ -19,6 +23,7 @@ jobs:
     timeout-minutes: 90
     env:
       TAG: ${{ inputs.tag }}
+      FRAMES: ${{ inputs.frames }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,6 +32,7 @@ jobs:
       - name: Validate inputs
         run: |
           [[ "$TAG" =~ ^sep-model-v[0-9]+$ ]] || { echo "::error::bad tag"; exit 1; }
+          [[ "$FRAMES" =~ ^[0-9]{3}$ ]] || { echo "::error::bad frames"; exit 1; }
       - name: Install
         run: |
           pip install -q --index-url https://download.pytorch.org/whl/cpu "torch==2.5.1"
@@ -48,7 +54,7 @@ jobs:
           ls -la w/bs_roformer/vocals_viperx
           grep -i "license" w/README.md | head -3
       - name: Convert
-        run: python tools/model/convert_bsroformer.py --config w/bs_roformer/vocals_viperx/config.yaml --weights w/bs_roformer/vocals_viperx/model.safetensors --out out
+        run: python tools/model/convert_bsroformer.py --config w/bs_roformer/vocals_viperx/config.yaml --weights w/bs_roformer/vocals_viperx/model.safetensors --out out --frames "$FRAMES"
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
