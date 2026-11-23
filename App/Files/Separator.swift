@@ -218,15 +218,36 @@ enum Separator {
 
     // MARK: اختبار ذاتي (للفحص الآلي فقط): كلام + موسيقى (وتر، نغمات، باص، طبول) ← فصل ← قياس النقاء
 
+    private static func dot(_ a: [Float], _ b: [Float], _ shift: Int, _ step: Int) -> (Double, Double, Double) {
+        let n = min(a.count - shift, b.count)
+        guard n > 1000 else { return (0, 0, 0) }
+        var ab = 0.0, aa = 0.0, bb = 0.0
+        for i in stride(from: 0, to: n, by: step) { let x = Double(a[i + shift]), y = Double(b[i]); ab += x * y; aa += x * x; bb += y * y }
+        return (ab, aa, bb)
+    }
+
+    /// كم بقي من المرجع داخل الناتج (١ = كاملًا، ٠ = لا شيء)، بنفس محاذاة التأخير
+    static func share(_ est: [Float], _ ref: [Float], shift: Int) -> Double {
+        let (ab, _, bb) = dot(est, ref, shift, 1)
+        return bb > 0 ? ab / bb : 0
+    }
+
+    /// تأخير الترميز بين الناتج والمرجع
+    static func align(_ est: [Float], _ ref: [Float]) -> Int {
+        var best = 0, bestC = -1.0
+        for sh in stride(from: 0, through: 4096, by: 32) {
+            let (ab, aa, bb) = dot(est, ref, sh, 4)
+            if aa > 0, bb > 0, ab / sqrt(aa * bb) > bestC { bestC = ab / sqrt(aa * bb); best = sh }
+        }
+        for sh in max(0, best - 32)...(best + 32) {
+            let (ab, aa, bb) = dot(est, ref, sh, 2)
+            if aa > 0, bb > 0, ab / sqrt(aa * bb) > bestC { bestC = ab / sqrt(aa * bb); best = sh }
+        }
+        return best
+    }
+
     /// SI-SDR بالديسيبل بعد محاذاة التأخير (كلما زاد كان الفصل أنقى)
     static func sdr(_ est: [Float], _ ref: [Float]) -> Double {
-        func dot(_ a: [Float], _ b: [Float], _ shift: Int, _ step: Int) -> (Double, Double, Double) {
-            let n = min(a.count - shift, b.count)
-            guard n > 1000 else { return (0, 0, 0) }
-            var ab = 0.0, aa = 0.0, bb = 0.0
-            for i in stride(from: 0, to: n, by: step) { let x = Double(a[i + shift]), y = Double(b[i]); ab += x * y; aa += x * x; bb += y * y }
-            return (ab, aa, bb)
-        }
         // تأخير الترميز: بحث خشن ثم دقيق
         var best = 0, bestC = -1.0
         for sh in stride(from: 0, through: 4096, by: 32) {
@@ -323,6 +344,13 @@ enum Separator {
                 let (mu, _) = try await readPCM(mus)
                 res["sdrV_" + name] = sdr(vo, sp)
                 res["sdrM_" + name] = sdr(mu, tn)
+                // ما يهم المستخدم مباشرة: كم بقي من الصوت البشري، وكم بقي من الموسيقى (طاقة، ٪)
+                let sv = align(vo, sp)
+                res["keepV_" + name] = 100 * max(0, share(vo, sp, shift: sv))
+                res["leakV_" + name] = 100 * pow(share(vo, tn, shift: sv), 2)
+                let sm = align(mu, tn)
+                res["keepM_" + name] = 100 * max(0, share(mu, tn, shift: sm))
+                res["leakM_" + name] = 100 * pow(share(mu, sp, shift: sm), 2)
                 if name == "hq" {
                     // التشابه (للتوافق مع الفحص السابق)
                     func corr(_ a: [Float], _ b: [Float]) -> Double {
@@ -340,8 +368,11 @@ enum Separator {
                 }
             }
             clean.forEach { try? FileManager.default.removeItem(at: $0) }
-            return String(format: "SEPTEST vocals~speech=%.2f music~tone=%.2f sdrV_std=%.2f sdrV_hq=%.2f sdrM_std=%.2f sdrM_hq=%.2f",
-                          res["vs"] ?? 0, res["mt"] ?? 0, res["sdrV_std"] ?? 0, res["sdrV_hq"] ?? 0, res["sdrM_std"] ?? 0, res["sdrM_hq"] ?? 0)
+            var r = String(format: "SEPTEST vocals~speech=%.2f music~tone=%.2f", res["vs"] ?? 0, res["mt"] ?? 0)
+            for k in ["sdrV", "sdrM", "keepV", "leakV", "keepM", "leakM"] {
+                r += String(format: " %@_std=%.2f %@_hq=%.2f", k, res[k + "_std"] ?? 0, k, res[k + "_hq"] ?? 0)
+            }
+            return r
         } catch {
             return "SEPTEST error: \(error.localizedDescription)"
         }

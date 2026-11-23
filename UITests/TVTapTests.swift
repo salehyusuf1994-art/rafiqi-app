@@ -187,6 +187,11 @@ final class TVTapTests: XCTestCase {
         XCTAssertGreaterThan(val("sdrM_hq"), 3, "music SDR too low")
         XCTAssertGreaterThanOrEqual(val("sdrV_hq"), val("sdrV_std") - 0.3, "high quality worse for vocals")
         XCTAssertGreaterThanOrEqual(val("sdrM_hq"), val("sdrM_std") - 0.3, "high quality worse for music")
+        // إزالة الموسيقى: يبقى أغلب الصوت البشري ولا يبقى إلا القليل من الموسيقى (والعكس)
+        XCTAssertGreaterThan(val("keepV_hq"), 70, "voice lost while removing music")
+        XCTAssertLessThan(val("leakV_hq"), 10, "music left in the vocals")
+        XCTAssertGreaterThan(val("keepM_hq"), 70, "music lost while removing voice")
+        XCTAssertLessThan(val("leakM_hq"), 10, "voice left in the music")
     }
 
     /// الإشعارات: الضغط على بطاقة صلاة يفتح صفحتها
