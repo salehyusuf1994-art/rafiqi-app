@@ -49,7 +49,7 @@ struct SepModelCard: View {
                     ProgressView().tint(Theme.gold)
                     Text("جارٍ تجهيز النموذج لأول مرة…").font(Theme.f(.subheadline)).foregroundStyle(.white)
                 }
-                Text("قد يستغرق بضع دقائق، ومرة واحدة فقط. أبقِ التطبيق مفتوحًا.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                Text("لحظات، ومرة واحدة فقط. أبقِ التطبيق مفتوحًا.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             }
         }
         .confirmationDialog("حذف النموذج عالي الدقة؟", isPresented: $confirmDelete, titleVisibility: .visible) {

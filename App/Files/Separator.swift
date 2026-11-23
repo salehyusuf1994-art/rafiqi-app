@@ -346,7 +346,8 @@ enum Separator {
             // old: الأداة كما كانت عند المستخدم، mdx: نفس النموذج بالتحسينات،
             // rof: النموذج عالي الدقة بالتداخل الخفيف (الأسرع)، rofh: بتداخل النصف (كل ثانية مرتين) للمقارنة
             try await SepModelStore.shared.ensureReady()
-            for name in ["old", "mdx", "rof", "rofh"] {
+            // (mdx وتداخل النصف قيسا سابقًا: نفس الجودة؛ يبقى الأساسي فقط لتقصير الفحص)
+            for name in ["old", "rof"] {
                 let voc: URL, mus: URL
                 let t0 = Date()
                 if name.hasPrefix("rof") {
@@ -389,7 +390,7 @@ enum Separator {
             clean.forEach { try? FileManager.default.removeItem(at: $0) }
             var r = String(format: "SEPTEST vocals~speech=%.2f music~tone=%.2f", res["vs"] ?? 0, res["mt"] ?? 0)
             for k in ["sdrV", "sdrM", "keepV", "leakV", "keepM", "leakM", "sec"] {
-                for e in ["old", "mdx", "rof", "rofh"] { r += String(format: " %@_%@=%.2f", k, e, res[k + "_" + e] ?? 0) }
+                for e in ["old", "rof"] { r += String(format: " %@_%@=%.2f", k, e, res[k + "_" + e] ?? 0) }
             }
             return r
         } catch {

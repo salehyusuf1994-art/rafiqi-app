@@ -189,9 +189,9 @@ final class TVTapTests: XCTestCase {
         XCTAssertLessThan(val("leakV_rof"), 10, "music left in the vocals")
         XCTAssertGreaterThan(val("keepM_rof"), 70, "music lost while removing voice")
         XCTAssertLessThan(val("leakM_rof"), 10, "voice left in the music")
-        // التداخل الخفيف (الأسرع) لا يقلّل الجودة عن تداخل النصف
-        XCTAssertGreaterThan(val("sdrV_rof"), val("sdrV_rofh") - 0.2, "lighter overlap lowered vocal quality")
-        XCTAssertGreaterThan(val("sdrM_rof"), val("sdrM_rofh") - 0.2, "lighter overlap lowered music quality")
+        // الجودة لا تقل عن المقيس سابقًا (٢٦ و٢٥ ديسيبل)
+        XCTAssertGreaterThan(val("sdrV_rof"), 25.5, "vocal quality dropped")
+        XCTAssertGreaterThan(val("sdrM_rof"), 24.5, "music quality dropped")
     }
 
     /// الإشعارات: الضغط على بطاقة صلاة يفتح صفحتها

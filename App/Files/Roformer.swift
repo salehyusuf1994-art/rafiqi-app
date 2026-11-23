@@ -30,7 +30,9 @@ final class SepModelStore: NSObject, ObservableObject {
 
     enum State: Equatable { case missing, downloading(Double), preparing, ready, failed(String) }
     /// أين يعمل النموذج (من خطة الحساب): «المحرك العصبي ٩٧٪» — للتشخيص
-    @Published var planSummary: String? = UserDefaults.standard.string(forKey: "sepmodel.plan")
+    @Published var planSummary: String? = UserDefaults.standard.string(forKey: SepModelStore.planKey)
+    /// مفتاح جديد: الخطة السابقة كانت للمحرك العصبي
+    nonisolated static let planKey = "sepmodel.plan.gpu"
     @Published private(set) var state: State = .missing
 
     nonisolated static var dir: URL {
@@ -232,6 +234,7 @@ enum Roformer {
         let plan = await MainActor.run { SepModelStore.shared.planSummary }
         var report = LF("استغرق الفصل %@ (%@ ثانية لكل ٨ ثوانٍ من المقطع).", durationText(secs),
                         ar(String(format: "%.1f", secs / Double(max(1, chunks)))))
+        report += " " + LF("النموذج وحده %@ ثانية لكل جزء.", ar(String(format: "%.1f", model.modelSeconds / Double(max(1, chunks)))))
         if let plan { report += " " + LF("يعمل على: %@.", plan) }
         if model.fallbacks > 0 { report += " " + LF("%@ من الأجزاء عملت على بديل أبطأ (خرجت من التطبيق؟).", ar(model.fallbacks)) }
         let finalReport = report
@@ -340,7 +343,10 @@ enum Roformer {
     /// iOS يمنع كرت الشاشة حين يخرج المستخدم من التطبيق (رسالة «Unable to compute…»)، فتُعاد القطعة نفسها
     /// على كرت الشاشة ثم المعالج العادي ويكمل الفصل
     final class Runner {
-        private var tiers: [(units: MLComputeUnits, model: MLModel?)] = [(.all, nil), (.cpuAndGPU, nil), (.cpuOnly, nil)]
+        // المحرك العصبي يقبل هذا النموذج في الخطة ثم يرفضه عند التشغيل (جُرّب على الجوال): كرت الشاشة مباشرة
+        private var tiers: [(units: MLComputeUnits, model: MLModel?)] = [(.cpuAndGPU, nil), (.cpuOnly, nil)]
+        /// وقت النموذج وحده (لفصله عن وقت التحويل الطيفي في التقرير)
+        private(set) var modelSeconds = 0.0
         /// عدد القطع التي احتاجت بديلًا (للتشخيص)
         private(set) var fallbacks = 0
         /// بدائل جُرّب تحميلها (لا يُعاد التحميل المكلف مع كل قطعة)
@@ -348,8 +354,8 @@ enum Roformer {
 
         static func make() async throws -> Runner {
             let r = Runner()
-            if UserDefaults.standard.string(forKey: "sepmodel.plan") == nil, let p = await planSummary() {
-                UserDefaults.standard.set(p, forKey: "sepmodel.plan")
+            if UserDefaults.standard.string(forKey: SepModelStore.planKey) == nil, let p = await planSummary() {
+                UserDefaults.standard.set(p, forKey: SepModelStore.planKey)
                 await MainActor.run { SepModelStore.shared.planSummary = p }
             }
             for k in r.tiers.indices {
@@ -373,7 +379,9 @@ enum Roformer {
                 }
                 guard let m = tiers[k].model else { continue }
                 do {
+                    let t = Date()
                     let out = try await m.prediction(from: input)
+                    modelSeconds += Date().timeIntervalSince(t)
                     if k > 0 && tiers[0].model != nil { fallbacks += 1 }
                     return out
                 } catch {
@@ -383,42 +391,44 @@ enum Roformer {
             throw ToolError.failed(L("تعذّرت المعالجة. أبقِ التطبيق مفتوحًا أثناء الفصل وحاول مرة أخرى."))
         }
 
-        /// بعد التنزيل: تحميل على المحرك العصبي وتنبؤ واحد (تجهيز يحفظه النظام)، وحساب أين يعمل كل جزء من النموذج
+        /// بعد التنزيل: حساب أين يعمل كل جزء من النموذج (بلا تجهيز طويل للمحرك العصبي)
         static func warmUp() async {
-            if let m = try? await load(.all),
-               let input = try? MLMultiArray(shape: [1, NSNumber(value: 2 * bins), NSNumber(value: frames), 2], dataType: .float32) {
-                _ = try? await m.prediction(from: MLDictionaryFeatureProvider(dictionary: ["spec": input]))
-            }
             let summary = await planSummary()
-            UserDefaults.standard.set(summary, forKey: "sepmodel.plan")
+            UserDefaults.standard.set(summary, forKey: SepModelStore.planKey)
             await MainActor.run { SepModelStore.shared.planSummary = summary }
         }
 
-        /// «المحرك العصبي ٩٥٪ · كرت الشاشة ٥٪» حسب الكلفة التقديرية لكل عملية
+        /// «كرت الشاشة ٩٥٪ · المعالج ٥٪ (gather ×٢٤ …)» حسب الكلفة التقديرية لكل عملية، مع أسماء ما ينزل على المعالج
         static func planSummary() async -> String? {
             guard #available(iOS 17.4, *) else { return nil }
-            let cfg = MLModelConfiguration(); cfg.computeUnits = .all
+            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuAndGPU
             guard let plan = try? await MLComputePlan.load(contentsOf: SepModelStore.compiledURL, configuration: cfg),
                   case .program(let program) = plan.modelStructure,
                   let main = program.functions["main"] else { return nil }
-            var ane = 0.0, gpu = 0.0, cpu = 0.0
+            var gpu = 0.0, cpu = 0.0, nGPU = 0, nCPU = 0
+            var cpuOps: [String: (n: Int, w: Double)] = [:]
             for op in main.block.operations {
                 guard let use = plan.deviceUsage(for: op) else { continue }
                 let w = plan.estimatedCost(of: op)?.weight ?? 0
                 switch use.preferred {
-                case .neuralEngine: ane += w
-                case .gpu: gpu += w
-                case .cpu: cpu += w
-                @unknown default: cpu += w
+                case .gpu: gpu += w; nGPU += 1
+                default:
+                    cpu += w; nCPU += 1
+                    let e = cpuOps[op.operatorName] ?? (0, 0)
+                    cpuOps[op.operatorName] = (e.n + 1, e.w + w)
                 }
             }
-            let total = ane + gpu + cpu
-            guard total > 0 else { return nil }
-            var parts: [String] = []
-            for (name, v) in [(L("المحرك العصبي"), ane), (L("كرت الشاشة"), gpu), (L("المعالج"), cpu)] where v / total >= 0.01 {
-                parts.append("\(name) \(ar(Int((100 * v / total).rounded())))٪")
+            let total = gpu + cpu
+            var s = total > 0
+                ? LF("كرت الشاشة %@٪ · المعالج %@٪", ar(Int((100 * gpu / total).rounded())), ar(Int((100 * cpu / total).rounded())))
+                : LF("كرت الشاشة %@ عملية · المعالج %@ عملية", ar(nGPU), ar(nCPU))
+            if !cpuOps.isEmpty {
+                // أكثر ما ينزل على المعالج (بأسماء العمليات كما في Core ML) — لتحديد ما يُعاد كتابته
+                let top = cpuOps.sorted { ($0.value.w, $0.value.n) > ($1.value.w, $1.value.n) }.prefix(5)
+                    .map { "\($0.key)×\($0.value.n)" }.joined(separator: "، ")
+                s += " (" + top + ")"
             }
-            return parts.joined(separator: " · ")
+            return s
         }
     }
 

@@ -2450,6 +2450,10 @@
 "يمكنك تنزيله مرة أخرى في أي وقت. حتى ذلك يُستخدم النموذج المضمّن." = "You can download it again any time. Until then, the built-in model is used.";
 "المساحة المتاحة لا تكفي لتنزيل النموذج: يحتاج تقريبًا %@، والمتاح %@." = "Not enough free space to download the model: about %@ is needed and %@ is available.";
 "تعذّر التنزيل." = "Download failed.";
+"لحظات، ومرة واحدة فقط. أبقِ التطبيق مفتوحًا." = "A moment, only once. Keep the app open.";
+"النموذج وحده %@ ثانية لكل جزء." = "The model alone takes %@ s per part.";
+"كرت الشاشة %@٪ · المعالج %@٪" = "GPU %@% · CPU %@%";
+"كرت الشاشة %@ عملية · المعالج %@ عملية" = "GPU %@ ops · CPU %@ ops";
 "استغرق الفصل %@ (%@ ثانية لكل ٨ ثوانٍ من المقطع)." = "Separation took %@ (%@ s per 8 s of audio).";
 "يعمل على: %@." = "Runs on: %@.";
 "يعمل على: %@" = "Runs on: %@";
