@@ -239,6 +239,8 @@ struct ToolHost: View {
     @State private var splitParts: [URL] = []
     @State private var splitFolder: URL?
     @State private var splitStep: (Int, Int)?
+    @AppStorage("sep.engine") private var sepEngine = "high"
+    @ObservedObject private var sepStore = SepModelStore.shared
     @FocusState private var splitFocus: Bool
 
     var body: some View {
@@ -424,7 +426,7 @@ struct ToolHost: View {
                      : "يحذف الذكاء الاصطناعي الصوت البشري ويبقي الموسيقى. تتم المعالجة على جوالك بدون إنترنت، والمقاطع الطويلة تأخذ بضع دقائق.")
                 if !Separator.available { note("نموذج الفصل غير مضمّن في هذه النسخة.") }
             }
-            card { SepModelCard() }
+            card { SepEngineCard() }
         case .pdfPages:
             PDFPagesEditor(url: url) { dismiss() }
         case .metadata:
@@ -500,6 +502,8 @@ struct ToolHost: View {
         (tool == .text && overlay.trimmingCharacters(in: .whitespaces).isEmpty)
             || ((tool == .replaceAudio || tool == .withAudio) && audioPick == nil)
             || (tool == .split && splitCount < 2)
+            // عالي الدقة يحتاج النموذج منزّلًا (أو اختيار «السريع»)
+            || ((tool == .removeMusic || tool == .removeVocals) && sepEngine == "high" && sepStore.state != .ready)
     }
 
     private var progressCard: some View {
@@ -770,7 +774,13 @@ struct ToolHost: View {
                 let keep: Separator.Keep = tool == .removeMusic ? .vocals : .music
                 Roformer.lastReport = nil
                 let video = MediaTools.isVideo(url)
-                let stem = try await Separator.separate(url, keep: keep, progress: { v in Task { @MainActor in progress = video ? v * 0.8 : v } })
+                // يكمل بعد الخروج من التطبيق (iOS 26، على المعالج)، ويرجع لكرت الشاشة عند العودة
+                SepContinued.shared.begin(title: tool == .removeMusic ? L("إزالة الموسيقى") : L("إزالة الصوت البشري"), subtitle: url.lastPathComponent)
+                var ok = false
+                defer { SepContinued.shared.end(success: ok) }
+                let engine: Separator.Engine = sepEngine == "fast" ? .builtIn : .roformer
+                let stem = try await Separator.separate(url, keep: keep, engine: engine, progress: { v in
+                    Task { @MainActor in progress = video ? v * 0.8 : v; SepContinued.shared.update(video ? v * 0.8 : v) } })
                 if video {
                     let v = try await MediaTools.replaceAudio(url, with: stem, keepOriginal: false, progress: { x in Task { @MainActor in progress = 0.8 + x * 0.2 } })
                     try? FileManager.default.removeItem(at: stem)
@@ -780,6 +790,7 @@ struct ToolHost: View {
                 } else {
                     result = stem
                 }
+                ok = true
             case .speed: result = try await MediaTools.speed(url, factor: speed, progress: p)
             case .adjustAudio: result = try await MediaTools.adjustAudio(url, gainDB: Float(gain), fadeIn: fadeIn ? 3 : 0, fadeOut: fadeOut ? 3 : 0, progress: p)
             case .mute: result = try await MediaTools.mute(url, progress: p)

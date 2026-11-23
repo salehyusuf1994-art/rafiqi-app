@@ -237,7 +237,7 @@ enum Roformer {
                         ar(String(format: "%.1f", secs / Double(max(1, chunks)))))
         report += " " + LF("النموذج وحده %@ ثانية لكل جزء.", ar(String(format: "%.1f", model.modelSeconds / Double(max(1, chunks)))))
         if let plan { report += " " + LF("يعمل على: %@.", plan) }
-        if model.fallbacks > 0 { report += " " + LF("%@ من الأجزاء عملت على بديل أبطأ (خرجت من التطبيق؟).", ar(model.fallbacks)) }
+        report += model.extraReport
         let finalReport = report
         await MainActor.run { lastReport = finalReport }
         return (mainOut, other)
@@ -491,48 +491,76 @@ enum Roformer {
         private var tiers: [(units: MLComputeUnits, model: MLModel?)] = [(.cpuAndGPU, nil), (.cpuOnly, nil)]
         /// وقت النموذج وحده (لفصله عن وقت التحويل الطيفي في التقرير)
         private(set) var modelSeconds = 0.0
-        /// عدد القطع التي احتاجت بديلًا (للتشخيص)
+        /// عدد القطع التي احتاجت بديلًا والتطبيق مفتوح (للتشخيص)
         private(set) var fallbacks = 0
+        /// عدد القطع التي عملت والتطبيق في الخلفية (على المعالج)
+        private(set) var backgroundParts = 0
+        /// أعلى حرارة مرّ بها الجوال أثناء الفصل (ProcessInfo.ThermalState)
+        private(set) var maxThermal = ProcessInfo.ThermalState.nominal
         /// بدائل جُرّب تحميلها (لا يُعاد التحميل المكلف مع كل قطعة)
         private var tried: Set<Int> = []
+        private let url: URL
+        private init(url: URL) { self.url = url }
 
-        static func make() async throws -> Runner {
-            let r = Runner()
-            if UserDefaults.standard.string(forKey: SepModelStore.planKey) == nil, let p = await planSummary() {
+        /// وصف النموذج (أسماء الدخل والخرج)
+        var description: MLModelDescription? { tiers.compactMap(\.model).first?.modelDescription }
+
+        /// url: النموذج المجهّز (عالي الدقة افتراضيًا، أو المضمّن)
+        static func make(url: URL = SepModelStore.compiledURL, plan: Bool = true) async throws -> Runner {
+            await MainActor.run { AppActivity.start() }
+            let r = Runner(url: url)
+            if plan, UserDefaults.standard.string(forKey: SepModelStore.planKey) == nil, let p = await planSummary() {
                 UserDefaults.standard.set(p, forKey: SepModelStore.planKey)
                 await MainActor.run { SepModelStore.shared.planSummary = p }
             }
             for k in r.tiers.indices {
                 r.tried.insert(k)
-                if let m = try? await load(r.tiers[k].units) { r.tiers[k].model = m; return r }
+                if let m = try? await load(r.tiers[k].units, url) { r.tiers[k].model = m; return r }
             }
             throw ToolError.failed(L("تعذّرت المعالجة."))
         }
 
-        private static func load(_ units: MLComputeUnits) async throws -> MLModel {
+        private static func load(_ units: MLComputeUnits, _ url: URL) async throws -> MLModel {
             let cfg = MLModelConfiguration(); cfg.computeUnits = units
-            return try await MLModel.load(contentsOf: SepModelStore.compiledURL, configuration: cfg)
+            return try await MLModel.load(contentsOf: url, configuration: cfg)
         }
 
         func predict(_ input: MLFeatureProvider) async throws -> MLFeatureProvider {
-            // كل قطعة تبدأ بالأسرع (قد يعود المستخدم للتطبيق)، وعند الفشل تنتقل للبديل التالي
-            for k in tiers.indices {
+            // في الخلفية: المعالج مباشرة (iOS يمنع كرت الشاشة هناك). والتطبيق مفتوح: كرت الشاشة أولًا،
+            // فإن فشل (خروج لحظة الحساب) يُعاد الجزء على المعالج
+            let bg = AppActivity.inBackground
+            for k in tiers.indices where !(bg && k == 0) {
                 if tiers[k].model == nil && !tried.contains(k) {
                     tried.insert(k)
-                    tiers[k].model = try? await Self.load(tiers[k].units)
+                    tiers[k].model = try? await Self.load(tiers[k].units, url)
                 }
                 guard let m = tiers[k].model else { continue }
                 do {
                     let t = Date()
                     let out = try await m.prediction(from: input)
                     modelSeconds += Date().timeIntervalSince(t)
-                    if k > 0 && tiers[0].model != nil { fallbacks += 1 }
+                    if bg { backgroundParts += 1 } else if k > 0 && tiers[0].model != nil { fallbacks += 1 }
+                    let th = ProcessInfo.processInfo.thermalState
+                    if th.rawValue > maxThermal.rawValue { maxThermal = th }
                     return out
                 } catch {
                     try Task.checkCancellation()
                 }
             }
             throw ToolError.failed(L("تعذّرت المعالجة. أبقِ التطبيق مفتوحًا أثناء الفصل وحاول مرة أخرى."))
+        }
+
+        /// ما حدث أثناء الفصل: الخلفية والبدائل والحرارة
+        var extraReport: String {
+            var r = ""
+            if backgroundParts > 0 { r += " " + LF("%@ من الأجزاء عملت في الخلفية على المعالج (أبطأ).", ar(backgroundParts)) }
+            if fallbacks > 0 { r += " " + LF("%@ من الأجزاء عملت على بديل أبطأ (خرجت من التطبيق؟).", ar(fallbacks)) }
+            switch maxThermal {
+            case .serious, .critical: r += " " + L("سخن الجوال فخفّض سرعته تلقائيًا (أبعده عن الشحن والكفر لفصل أسرع).")
+            case .fair: r += " " + L("الجوال دافئ قليلًا.")
+            default: break
+            }
+            return r
         }
 
         /// بعد التنزيل: حساب أين يعمل كل جزء من النموذج (بلا تجهيز طويل للمحرك العصبي)

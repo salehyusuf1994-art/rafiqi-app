@@ -11,7 +11,7 @@ struct SepModelCard: View {
             case .ready:
                 Label("النموذج عالي الدقة جاهز", systemImage: "checkmark.seal.fill")
                     .font(Theme.f(.subheadline, .semibold)).foregroundStyle(Color(red: 0.45, green: 0.80, blue: 0.62))
-                Text("يُستخدم تلقائيًا: أدق نموذج مفتوح متاح لعزل الصوت البشري (BS-RoFormer). يعمل على جوالك بدون إنترنت.")
+                Text("أدق نموذج مفتوح متاح لعزل الصوت البشري (BS-RoFormer). يعمل على جوالك بدون إنترنت.")
                     .font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
                 if let plan = store.planSummary {
                     Label(LF("يعمل على: %@", plan), systemImage: "cpu").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
@@ -35,7 +35,7 @@ struct SepModelCard: View {
                         .background(Capsule().fill(Theme.gold))
                 }
                 .buttonStyle(PressStyle())
-                Text("بدون تنزيل: يُستخدم النموذج المضمّن (أقل دقة).").font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
+                Text("أو اختر «السريع» بالأعلى (مضمّن، أقل دقة).").font(Theme.f(.caption2)).foregroundStyle(Theme.sub)
             case .downloading(let v):
                 ProgressView(value: v).tint(Theme.gold)
                 HStack {
@@ -56,6 +56,31 @@ struct SepModelCard: View {
             Button("حذف", role: .destructive) { store.delete() }
         } message: {
             Text("يمكنك تنزيله مرة أخرى في أي وقت. حتى ذلك يُستخدم النموذج المضمّن.")
+        }
+    }
+}
+
+/// اختيار النموذج وقت الفصل: عالي الدقة (BS-RoFormer) أو السريع (المضمّن)
+struct SepEngineCard: View {
+    @AppStorage("sep.engine") private var engine = "high"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("النموذج").font(Theme.f(.headline)).foregroundStyle(.white)
+            Picker(L("النموذج"), selection: $engine) {
+                Text("عالي الدقة").tag("high")
+                Text("السريع").tag("fast")
+            }
+            .pickerStyle(.segmented)
+            if engine == "high" {
+                Text("أدق فصل: يبقي الصوت البشري كاملًا ولا يترك موسيقى. أبطأ، ويُنزَّل مرة واحدة.")
+                    .font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+                Divider().overlay(Theme.stroke)
+                SepModelCard()
+            } else {
+                Text("أسرع بكثير ومضمّن في التطبيق (بتمريرتين لكل جزء)، لكنه أقل دقة: قد يخفت الصوت البشري لثوانٍ أحيانًا أو تبقى آثار موسيقى.")
+                    .font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

@@ -33,18 +33,13 @@ enum Separator {
         progress(0.01)
         // المعالج الرسومي لا المحرك العصبي: تجهيز هذا النموذج الكبير للمحرك العصبي في أول مرة يأخذ دقائق
         // (تبقى النسبة ٠٪ ويسخن الجوال). المعالج الرسومي يبدأ فورًا، وإن تعذّر نرجع للمعالج العادي
-        let model: MLModel
-        do {
-            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuAndGPU
-            model = try MLModel(contentsOf: murl, configuration: cfg)
-        } catch {
-            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuOnly
-            model = try MLModel(contentsOf: murl, configuration: cfg)
-        }
+        // نفس مشغّل النموذج عالي الدقة: كرت الشاشة، والمعالج في الخلفية أو عند الفشل
+        let t0 = Date()
+        let model = try await Roformer.Runner.make(url: murl, plan: false)
         try Task.checkCancellation()
         progress(0.02)
-        let inName = model.modelDescription.inputDescriptionsByName.keys.first ?? "input"
-        let outName = model.modelDescription.outputDescriptionsByName.keys.first ?? "output"
+        let inName = model.description?.inputDescriptionsByName.keys.first ?? "input"
+        let outName = model.description?.outputDescriptionsByName.keys.first ?? "output"
 
         // ١) قراءة الصوت ستيريو ٤٤١٠٠ هرتز
         let (lch, rch) = try await readPCM(src)
@@ -113,7 +108,7 @@ enum Separator {
                 let input = try MLMultiArray(shape: [1, 4, NSNumber(value: bins), NSNumber(value: frames)], dataType: .float16)
                 let ip = input.dataPointer.bindMemory(to: Float16.self, capacity: 4 * plane)
                 for k in 0..<(4 * plane) { ip[k] = Float16(spec[k] * sign) }
-                let out = try await model.prediction(from: MLDictionaryFeatureProvider(dictionary: [inName: input]))
+                let out = try await model.predict(MLDictionaryFeatureProvider(dictionary: [inName: input]))
                 guard let y = out.featureValue(for: outName)?.multiArrayValue, y.count >= 4 * plane else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
                 // ربط الذاكرة مرة واحدة لكل دفعة (كان يتكرر لكل قيمة: ملايين المرات)
                 let w = sign / Float(signs.count)
@@ -153,6 +148,8 @@ enum Separator {
         // ٣) الحفظ
         let out = MediaTools.output(for: src, suffix: keep == .vocals ? L("بدون موسيقى") : L("بدون صوت بشري"), ext: "m4a")
         try writeM4A(outL, outR, to: out)
+        let report = LF("استغرق الفصل %@ بالنموذج السريع.", durationText(Date().timeIntervalSince(t0))) + model.extraReport
+        await MainActor.run { Roformer.lastReport = report }
         progress(1)
         return out
     }
