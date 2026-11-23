@@ -11,14 +11,14 @@ import CryptoKit
 
 /// ملفات النموذج المنشورة في صفحة Releases للمستودع
 enum SepModelFiles {
-    static let tag = "sep-model-v1"
+    static let tag = "sep-model-v3"
     static let base = "https://github.com/salehyusuf1994-art/rafiqi-app/releases/download/\(tag)/"
     struct Part { let asset: String; let path: String; let sha256: String; let size: Int64 }
     /// تُملأ من files.json الناتج عن التحويل (البصمة تمنع استبدال الملف)
     static let parts: [Part] = [
-        Part(asset: "Manifest.json", path: "Manifest.json", sha256: "cd5d1233b940f0f83577cebf05e20df1398f21a013284fb5297bcfacf9e8b0ac", size: 617),
-        Part(asset: "model.mlmodel", path: "Data/com.apple.CoreML/model.mlmodel", sha256: "be105ee7738a131a87e5fbbec2532bb9fd87db451d3687c916c70d3006e0ee2f", size: 884_497),
-        Part(asset: "weight.bin", path: "Data/com.apple.CoreML/weights/weight.bin", sha256: "f8d4e6cd3b1a8a97bf34308c659a63940d5a30e5680fa73563028e7d3abedf33", size: 319_782_992),
+        Part(asset: "Manifest.json", path: "Manifest.json", sha256: "1785a75736243f1bd90346672c6021e5d7ba6832388dcfd2ddc622ed09b99430", size: 617),
+        Part(asset: "model.mlmodel", path: "Data/com.apple.CoreML/model.mlmodel", sha256: "38d78605cb230de699614be7d5b8bd2c5ed07ccc3d9fbc5a588138f351ff4b5a", size: 569_456),
+        Part(asset: "weight.bin", path: "Data/com.apple.CoreML/weights/weight.bin", sha256: "61ba536f66eb05ca18bfc4502c66df3ca5a034f6fead89588710acd102c22440", size: 319_758_224),
     ]
     static var totalSize: Int64 { parts.reduce(0) { $0 + $1.size } }
 }
@@ -29,6 +29,8 @@ final class SepModelStore: NSObject, ObservableObject {
     static let shared = SepModelStore()
 
     enum State: Equatable { case missing, downloading(Double), preparing, ready, failed(String) }
+    /// أين يعمل النموذج (من خطة الحساب): «المحرك العصبي ٩٧٪» — للتشخيص
+    @Published var planSummary: String? = UserDefaults.standard.string(forKey: "sepmodel.plan")
     @Published private(set) var state: State = .missing
 
     nonisolated static var dir: URL {
@@ -134,6 +136,13 @@ final class SepModelStore: NSObject, ObservableObject {
         try? fm.removeItem(at: Self.compiledURL)
         try fm.moveItem(at: compiled, to: Self.compiledURL)
         try? fm.removeItem(at: work)
+        // نسخ أقدم من النموذج: تُحذف (لا تبقى مساحة ضائعة)
+        for old in (try? fm.contentsOfDirectory(at: Self.dir, includingPropertiesForKeys: nil)) ?? []
+        where old.pathExtension == "mlmodelc" && old.lastPathComponent != Self.compiledURL.lastPathComponent {
+            try? fm.removeItem(at: old)
+        }
+        // تجهيز المحرك العصبي مرة واحدة (يحفظه النظام بعدها)، وخطة الحساب للتشخيص
+        await Roformer.Runner.warmUp()
         var u = Self.dir
         var rv = URLResourceValues(); rv.isExcludedFromBackup = true
         try? u.setResourceValues(rv)
@@ -187,8 +196,15 @@ enum Roformer {
     static let nfft = 2048, hop = 441, bins = 1025, frames = 801, chunk = 352_800, rate = 44_100.0
 
     /// يفصل المقطع ويرجع ملف M4A بالجزء المطلوب (والآخر عند الطلب)
-    static func separate(_ src: URL, keep: Separator.Keep, alsoOther: Bool = false,
+    /// تقرير آخر فصل: المدة ووقت كل قطعة وأين عمل النموذج (يظهر للمستخدم بعد الفصل)
+    @MainActor static var lastReport: String?
+
+    /// edges: تداخل عند الحواف فقط (كل ثانية تُحسب مرة واحدة تقريبًا)، half: تداخل النصف (كل ثانية مرتين)
+    enum Overlap { case edges, half }
+
+    static func separate(_ src: URL, keep: Separator.Keep, alsoOther: Bool = false, overlap: Overlap = .edges,
                          progress: @escaping (Double) -> Void) async throws -> (URL, URL?) {
+        let t0 = Date()
         guard SepModelStore.isReady else { throw ToolError.failed(L("نموذج الفصل عالي الدقة غير منزّل.")) }
         progress(0.01)
         let model = try await Runner.make()
@@ -198,7 +214,8 @@ enum Roformer {
         guard n > nfft else { throw ToolError.failed(L("المقطع قصير جدًا.")) }
         guard Double(n) / rate <= 20 * 60 else { throw ToolError.failed(L("المقطع أطول من ٢٠ دقيقة.")) }
         progress(0.04)
-        let (vl, vr) = try await vocals(model: model, lch, rch, progress: { progress(0.04 + 0.9 * $0) })
+        var chunks = 0
+        let (vl, vr) = try await vocals(model: model, lch, rch, overlap: overlap, chunks: &chunks, progress: { progress(0.04 + 0.9 * $0) })
         var ml = [Float](repeating: 0, count: n), mr = ml
         for i in 0..<n { ml[i] = lch[i] - vl[i]; mr[i] = rch[i] - vr[i] }
         let vName = L("بدون موسيقى"), mName = L("بدون صوت بشري")
@@ -211,13 +228,24 @@ enum Roformer {
             other = o
         }
         progress(1)
+        let secs = Date().timeIntervalSince(t0)
+        let plan = await MainActor.run { SepModelStore.shared.planSummary }
+        var report = LF("استغرق الفصل %@ (%@ ثانية لكل ٨ ثوانٍ من المقطع).", durationText(secs),
+                        ar(String(format: "%.1f", secs / Double(max(1, chunks)))))
+        if let plan { report += " " + LF("يعمل على: %@.", plan) }
+        if model.fallbacks > 0 { report += " " + LF("%@ من الأجزاء عملت على بديل أبطأ (خرجت من التطبيق؟).", ar(model.fallbacks)) }
+        await MainActor.run { lastReport = report }
         return (mainOut, other)
     }
 
     /// الصوت البشري للمقطع كاملًا: قطع ٨ ثوانٍ بتداخل النصف، وحواف متلاشية، وانعكاس عند طرفي المقطع
-    static func vocals(model: Runner, _ lch: [Float], _ rch: [Float], progress: @escaping (Double) -> Void) async throws -> ([Float], [Float]) {
+    static func vocals(model: Runner, _ lch: [Float], _ rch: [Float], overlap: Overlap, chunks: inout Int,
+                       progress: @escaping (Double) -> Void) async throws -> ([Float], [Float]) {
         let n = lch.count
-        let step = chunk / 2, border = chunk - step, fade = chunk / 10
+        let fade = chunk / 10
+        // الحواف: القطع تتداخل بطول التلاشي فقط (مجموع النافذتين ١)، النصف: كما في البرنامج الأصلي
+        let step = overlap == .half ? chunk / 2 : chunk - fade
+        let border = chunk - step
         // الحشو بالانعكاس كي تأخذ الأطراف تغطية كاملة (بلا نسخ المقطع: قراءة مباشرة بالانعكاس)
         let padded = n > 2 * border
         let off = padded ? border : 0
@@ -236,6 +264,7 @@ enum Roformer {
         var starts: [Int] = []
         var i = 0
         while i < len { starts.append(i); i += step }
+        chunks = starts.count
         for (ci, s) in starts.enumerated() {
             try Task.checkCancellation()
             let length = min(chunk, len - s)
@@ -306,36 +335,89 @@ enum Roformer {
         return (res[0], res[1])
     }
 
-    /// النموذج على كرت الشاشة، ومعالج احتياطي: iOS يمنع كرت الشاشة حين يخرج المستخدم من التطبيق
-    /// (فيفشل التنبؤ برسالة «Unable to compute…»)، فتُعاد القطعة نفسها على المعالج العادي ويكمل الفصل
+    /// النموذج على المحرك العصبي وكرت الشاشة (الأسرع)، وبدائل تلقائية لكل قطعة:
+    /// iOS يمنع كرت الشاشة حين يخرج المستخدم من التطبيق (رسالة «Unable to compute…»)، فتُعاد القطعة نفسها
+    /// على كرت الشاشة ثم المعالج العادي ويكمل الفصل
     final class Runner {
-        private let gpu: MLModel?
-        private var cpu: MLModel?
-        private init(gpu: MLModel?, cpu: MLModel?) { self.gpu = gpu; self.cpu = cpu }
+        private var tiers: [(units: MLComputeUnits, model: MLModel?)] = [(.all, nil), (.cpuAndGPU, nil), (.cpuOnly, nil)]
+        /// عدد القطع التي احتاجت بديلًا (للتشخيص)
+        private(set) var fallbacks = 0
+        /// بدائل جُرّب تحميلها (لا يُعاد التحميل المكلف مع كل قطعة)
+        private var tried: Set<Int> = []
 
         static func make() async throws -> Runner {
-            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuAndGPU
-            if let g = try? await MLModel.load(contentsOf: SepModelStore.compiledURL, configuration: cfg) { return Runner(gpu: g, cpu: nil) }
-            return Runner(gpu: nil, cpu: try await cpuModel())
+            let r = Runner()
+            if UserDefaults.standard.string(forKey: "sepmodel.plan") == nil, let p = await planSummary() {
+                UserDefaults.standard.set(p, forKey: "sepmodel.plan")
+                await MainActor.run { SepModelStore.shared.planSummary = p }
+            }
+            for k in r.tiers.indices {
+                r.tried.insert(k)
+                if let m = try? await load(r.tiers[k].units) { r.tiers[k].model = m; return r }
+            }
+            throw ToolError.failed(L("تعذّرت المعالجة."))
         }
 
-        private static func cpuModel() async throws -> MLModel {
-            let cfg = MLModelConfiguration(); cfg.computeUnits = .cpuOnly
+        private static func load(_ units: MLComputeUnits) async throws -> MLModel {
+            let cfg = MLModelConfiguration(); cfg.computeUnits = units
             return try await MLModel.load(contentsOf: SepModelStore.compiledURL, configuration: cfg)
         }
 
         func predict(_ input: MLFeatureProvider) async throws -> MLFeatureProvider {
-            if let gpu {
-                do { return try await gpu.prediction(from: input) }
-                catch { try Task.checkCancellation() }
+            // كل قطعة تبدأ بالأسرع (قد يعود المستخدم للتطبيق)، وعند الفشل تنتقل للبديل التالي
+            for k in tiers.indices {
+                if tiers[k].model == nil && !tried.contains(k) {
+                    tried.insert(k)
+                    tiers[k].model = try? await Self.load(tiers[k].units)
+                }
+                guard let m = tiers[k].model else { continue }
+                do {
+                    let out = try await m.prediction(from: input)
+                    if k > 0 && tiers[0].model != nil { fallbacks += 1 }
+                    return out
+                } catch {
+                    try Task.checkCancellation()
+                }
             }
-            do {
-                if cpu == nil { cpu = try await Self.cpuModel() }
-                return try await cpu!.prediction(from: input)
-            } catch {
-                try Task.checkCancellation()
-                throw ToolError.failed(L("تعذّرت المعالجة. أبقِ التطبيق مفتوحًا أثناء الفصل وحاول مرة أخرى."))
+            throw ToolError.failed(L("تعذّرت المعالجة. أبقِ التطبيق مفتوحًا أثناء الفصل وحاول مرة أخرى."))
+        }
+
+        /// بعد التنزيل: تحميل على المحرك العصبي وتنبؤ واحد (تجهيز يحفظه النظام)، وحساب أين يعمل كل جزء من النموذج
+        static func warmUp() async {
+            if let m = try? await load(.all),
+               let input = try? MLMultiArray(shape: [1, NSNumber(value: 2 * bins), NSNumber(value: frames), 2], dataType: .float32) {
+                _ = try? await m.prediction(from: MLDictionaryFeatureProvider(dictionary: ["spec": input]))
             }
+            let summary = await planSummary()
+            UserDefaults.standard.set(summary, forKey: "sepmodel.plan")
+            await MainActor.run { SepModelStore.shared.planSummary = summary }
+        }
+
+        /// «المحرك العصبي ٩٥٪ · كرت الشاشة ٥٪» حسب الكلفة التقديرية لكل عملية
+        static func planSummary() async -> String? {
+            guard #available(iOS 17.4, *) else { return nil }
+            let cfg = MLModelConfiguration(); cfg.computeUnits = .all
+            guard let plan = try? await MLComputePlan.load(contentsOf: SepModelStore.compiledURL, configuration: cfg),
+                  case .program(let program) = plan.modelStructure,
+                  let main = program.functions["main"] else { return nil }
+            var ane = 0.0, gpu = 0.0, cpu = 0.0
+            for op in main.block.operations {
+                guard let use = plan.deviceUsage(for: op) else { continue }
+                let w = plan.estimatedCost(of: op)?.weight ?? 0
+                switch use.preferred {
+                case .neuralEngine: ane += w
+                case .gpu: gpu += w
+                case .cpu: cpu += w
+                @unknown default: cpu += w
+                }
+            }
+            let total = ane + gpu + cpu
+            guard total > 0 else { return nil }
+            var parts: [String] = []
+            for (name, v) in [(L("المحرك العصبي"), ane), (L("كرت الشاشة"), gpu), (L("المعالج"), cpu)] where v / total >= 0.01 {
+                parts.append("\(name) \(ar(Int((100 * v / total).rounded())))٪")
+            }
+            return parts.joined(separator: " · ")
         }
     }
 

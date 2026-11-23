@@ -2450,6 +2450,15 @@
 "يمكنك تنزيله مرة أخرى في أي وقت. حتى ذلك يُستخدم النموذج المضمّن." = "You can download it again any time. Until then, the built-in model is used.";
 "المساحة المتاحة لا تكفي لتنزيل النموذج: يحتاج تقريبًا %@، والمتاح %@." = "Not enough free space to download the model: about %@ is needed and %@ is available.";
 "تعذّر التنزيل." = "Download failed.";
+"استغرق الفصل %@ (%@ ثانية لكل ٨ ثوانٍ من المقطع)." = "Separation took %@ (%@ s per 8 s of audio).";
+"يعمل على: %@." = "Runs on: %@.";
+"يعمل على: %@" = "Runs on: %@";
+"%@ من الأجزاء عملت على بديل أبطأ (خرجت من التطبيق؟)." = "%@ parts ran on a slower fallback (did you leave the app?).";
+"المحرك العصبي" = "Neural Engine";
+"كرت الشاشة" = "GPU";
+"المعالج" = "CPU";
+"جارٍ تجهيز النموذج لأول مرة…" = "Preparing the model for the first time…";
+"قد يستغرق بضع دقائق، ومرة واحدة فقط. أبقِ التطبيق مفتوحًا." = "This can take a few minutes, only once. Keep the app open.";
 "تعذّرت المعالجة. أبقِ التطبيق مفتوحًا أثناء الفصل وحاول مرة أخرى." = "Processing failed. Keep the app open while separating and try again.";
 "ملف النموذج المنزّل غير سليم. حاول مرة أخرى." = "The downloaded model file is damaged. Please try again.";
 "نموذج الفصل عالي الدقة غير منزّل." = "The high-accuracy separation model isn’t downloaded.";

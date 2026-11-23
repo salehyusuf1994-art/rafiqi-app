@@ -343,13 +343,14 @@ enum Separator {
             let (tn, _) = try await readPCM(toneURL)
             var res: [String: Double] = [:]
             var clean: [URL] = [mixURL, speechURL, toneURL]
-            // old: الأداة كما كانت عند المستخدم، mdx: نفس النموذج بالتحسينات، rof: النموذج عالي الدقة
+            // old: الأداة كما كانت عند المستخدم، mdx: نفس النموذج بالتحسينات،
+            // rof: النموذج عالي الدقة بالتداخل الخفيف (الأسرع)، rofh: بتداخل النصف (كل ثانية مرتين) للمقارنة
             try await SepModelStore.shared.ensureReady()
-            for name in ["old", "mdx", "rof"] {
+            for name in ["old", "mdx", "rof", "rofh"] {
                 let voc: URL, mus: URL
                 let t0 = Date()
-                if name == "rof" {
-                    let (v, m) = try await Roformer.separate(mixURL, keep: .vocals, alsoOther: true, progress: { _ in })
+                if name.hasPrefix("rof") {
+                    let (v, m) = try await Roformer.separate(mixURL, keep: .vocals, alsoOther: true, overlap: name == "rof" ? .edges : .half, progress: { _ in })
                     voc = v; mus = m ?? v
                 } else {
                     let q: Quality = name == "old" ? .standard : .high
@@ -388,7 +389,7 @@ enum Separator {
             clean.forEach { try? FileManager.default.removeItem(at: $0) }
             var r = String(format: "SEPTEST vocals~speech=%.2f music~tone=%.2f", res["vs"] ?? 0, res["mt"] ?? 0)
             for k in ["sdrV", "sdrM", "keepV", "leakV", "keepM", "leakM", "sec"] {
-                for e in ["old", "mdx", "rof"] { r += String(format: " %@_%@=%.2f", k, e, res[k + "_" + e] ?? 0) }
+                for e in ["old", "mdx", "rof", "rofh"] { r += String(format: " %@_%@=%.2f", k, e, res[k + "_" + e] ?? 0) }
             }
             return r
         } catch {

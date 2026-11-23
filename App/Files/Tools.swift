@@ -645,6 +645,10 @@ struct ToolHost: View {
                 }
             }
             note("حُفظ الملف في المجلد نفسه بجانب الملف الأصلي.")
+            if tool == .removeMusic || tool == .removeVocals, let rep = Roformer.lastReport {
+                Label(rep, systemImage: "gauge.with.dots.needle.67percent").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -764,6 +768,7 @@ struct ToolHost: View {
             case .toMP3: result = try await MediaTools.toMP3(url, progress: p)
             case .removeMusic, .removeVocals:
                 let keep: Separator.Keep = tool == .removeMusic ? .vocals : .music
+                Roformer.lastReport = nil
                 let video = MediaTools.isVideo(url)
                 let stem = try await Separator.separate(url, keep: keep, progress: { v in Task { @MainActor in progress = video ? v * 0.8 : v } })
                 if video {

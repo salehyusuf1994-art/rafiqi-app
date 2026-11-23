@@ -14,7 +14,7 @@ permissions:
 jobs:
   uitest:
     runs-on: ${{ inputs.runner || 'macos-15' }}
-    timeout-minutes: ${{ inputs.runner == 'macos-15-intel' && 180 || 75 }}
+    timeout-minutes: ${{ inputs.runner == 'macos-15-intel' && 240 || 150 }}
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1

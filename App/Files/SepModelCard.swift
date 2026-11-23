@@ -13,6 +13,9 @@ struct SepModelCard: View {
                     .font(Theme.f(.subheadline, .semibold)).foregroundStyle(Color(red: 0.45, green: 0.80, blue: 0.62))
                 Text("يُستخدم تلقائيًا: أدق نموذج مفتوح متاح لعزل الصوت البشري (BS-RoFormer). يعمل على جوالك بدون إنترنت.")
                     .font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
+                if let plan = store.planSummary {
+                    Label(LF("يعمل على: %@", plan), systemImage: "cpu").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
+                }
                 Button(role: .destructive) { confirmDelete = true } label: {
                     Label(LF("حذف النموذج (%@)", sizeText(SepModelFiles.totalSize)), systemImage: "trash").font(Theme.f(.caption, .semibold))
                 }
@@ -44,8 +47,9 @@ struct SepModelCard: View {
             case .preparing:
                 HStack(spacing: 10) {
                     ProgressView().tint(Theme.gold)
-                    Text("جارٍ تجهيز النموذج لجوالك…").font(Theme.f(.subheadline)).foregroundStyle(.white)
+                    Text("جارٍ تجهيز النموذج لأول مرة…").font(Theme.f(.subheadline)).foregroundStyle(.white)
                 }
+                Text("قد يستغرق بضع دقائق، ومرة واحدة فقط. أبقِ التطبيق مفتوحًا.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
             }
         }
         .confirmationDialog("حذف النموذج عالي الدقة؟", isPresented: $confirmDelete, titleVisibility: .visible) {

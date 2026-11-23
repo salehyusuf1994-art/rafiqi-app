@@ -170,7 +170,7 @@ final class TVTapTests: XCTestCase {
         app.launchArguments = ["-shot", "home", "-sepTest"]
         app.launch()
         let t = app.alerts.firstMatch
-        let ok = t.waitForExistence(timeout: 2400)
+        let ok = t.waitForExistence(timeout: 6000)
         let label = ok ? t.label : "timeout"
         print("TVTEST separator:", label)
         shot(app, "12_separator")
@@ -189,6 +189,9 @@ final class TVTapTests: XCTestCase {
         XCTAssertLessThan(val("leakV_rof"), 10, "music left in the vocals")
         XCTAssertGreaterThan(val("keepM_rof"), 70, "music lost while removing voice")
         XCTAssertLessThan(val("leakM_rof"), 10, "voice left in the music")
+        // التداخل الخفيف (الأسرع) لا يقلّل الجودة عن تداخل النصف
+        XCTAssertGreaterThan(val("sdrV_rof"), val("sdrV_rofh") - 0.2, "lighter overlap lowered vocal quality")
+        XCTAssertGreaterThan(val("sdrM_rof"), val("sdrM_rofh") - 0.2, "lighter overlap lowered music quality")
     }
 
     /// الإشعارات: الضغط على بطاقة صلاة يفتح صفحتها
