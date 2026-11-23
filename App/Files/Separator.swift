@@ -21,7 +21,14 @@ enum Separator {
     static var available: Bool { modelURL != nil }
 
     /// يرجع ملف M4A فيه الجزء المطلوب
-    static func separate(_ src: URL, keep: Keep, quality: Quality = .high, progress: @escaping (Double) -> Void) async throws -> URL {
+    /// auto: النموذج عالي الدقة (BS-RoFormer) إن كان منزّلًا، وإلا النموذج المضمّن
+    enum Engine { case auto, builtIn, roformer }
+
+    static func separate(_ src: URL, keep: Keep, quality: Quality = .high, engine: Engine = .auto,
+                         progress: @escaping (Double) -> Void) async throws -> URL {
+        if engine == .roformer || (engine == .auto && SepModelStore.isReady) {
+            return try await Roformer.separate(src, keep: keep, progress: progress).0
+        }
         guard let murl = modelURL else { throw ToolError.failed(L("نموذج الفصل غير موجود في هذه النسخة.")) }
         progress(0.01)
         // المعالج الرسومي لا المحرك العصبي: تجهيز هذا النموذج الكبير للمحرك العصبي في أول مرة يأخذ دقائق
@@ -151,7 +158,7 @@ enum Separator {
     }
 
     /// المعامل الذي يعيد الإشارة بعد تحويل ذهابًا وإيابًا (يختلف حسب اصطلاح vDSP)
-    private static func calibrate(_ fwd: vDSP_DFT_Setup, _ inv: vDSP_DFT_Setup) -> Float {
+    static func calibrate(_ fwd: vDSP_DFT_Setup, _ inv: vDSP_DFT_Setup) -> Float {
         var x = [Float](repeating: 0, count: nfft)
         for i in 0..<nfft { x[i] = Float(sin(Double(i) * 0.37) + 0.5 * cos(Double(i) * 1.3)) }
         var re = [Float](repeating: 0, count: nfft / 2), im = re, y = x
@@ -162,14 +169,14 @@ enum Separator {
         return den != 0 ? num / den : 1
     }
 
-    private static func forward(_ s: vDSP_DFT_Setup, _ x: [Float], _ re: inout [Float], _ im: inout [Float]) {
+    static func forward(_ s: vDSP_DFT_Setup, _ x: [Float], _ re: inout [Float], _ im: inout [Float]) {
         let half = nfft / 2
         var er = [Float](repeating: 0, count: half), ei = er
         for k in 0..<half { er[k] = x[2 * k]; ei[k] = x[2 * k + 1] }
         vDSP_DFT_Execute(s, er, ei, &re, &im)
     }
 
-    private static func inverse(_ s: vDSP_DFT_Setup, _ re: [Float], _ im: [Float], _ x: inout [Float]) {
+    static func inverse(_ s: vDSP_DFT_Setup, _ re: [Float], _ im: [Float], _ x: inout [Float]) {
         let half = nfft / 2
         var orr = [Float](repeating: 0, count: half), oi = orr
         vDSP_DFT_Execute(s, re, im, &orr, &oi)
@@ -200,7 +207,7 @@ enum Separator {
         return (lch, rch)
     }
 
-    private static func writeM4A(_ lch: [Float], _ rch: [Float], to out: URL) throws {
+    static func writeM4A(_ lch: [Float], _ rch: [Float], to out: URL) throws {
         guard let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2) else { throw ToolError.failed(L("تعذّر الحفظ.")) }
         let f = try AVAudioFile(forWriting: out, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate,
                                                              AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000])
@@ -336,9 +343,20 @@ enum Separator {
             let (tn, _) = try await readPCM(toneURL)
             var res: [String: Double] = [:]
             var clean: [URL] = [mixURL, speechURL, toneURL]
-            for (name, q) in [("std", Quality.standard), ("hq", Quality.high)] {
-                let voc = try await separate(mixURL, keep: .vocals, quality: q, progress: { _ in })
-                let mus = try await separate(mixURL, keep: .music, quality: q, progress: { _ in })
+            // old: الأداة كما كانت عند المستخدم، mdx: نفس النموذج بالتحسينات، rof: النموذج عالي الدقة
+            try await SepModelStore.shared.ensureReady()
+            for name in ["old", "mdx", "rof"] {
+                let voc: URL, mus: URL
+                let t0 = Date()
+                if name == "rof" {
+                    let (v, m) = try await Roformer.separate(mixURL, keep: .vocals, alsoOther: true, progress: { _ in })
+                    voc = v; mus = m ?? v
+                } else {
+                    let q: Quality = name == "old" ? .standard : .high
+                    voc = try await separate(mixURL, keep: .vocals, quality: q, engine: .builtIn, progress: { _ in })
+                    mus = try await separate(mixURL, keep: .music, quality: q, engine: .builtIn, progress: { _ in })
+                }
+                res["sec_" + name] = Date().timeIntervalSince(t0)
                 clean += [voc, mus]
                 let (vo, _) = try await readPCM(voc)
                 let (mu, _) = try await readPCM(mus)
@@ -351,7 +369,7 @@ enum Separator {
                 let sm = align(mu, tn)
                 res["keepM_" + name] = 100 * max(0, share(mu, tn, shift: sm))
                 res["leakM_" + name] = 100 * pow(share(mu, sp, shift: sm), 2)
-                if name == "hq" {
+                if name == "rof" {
                     // التشابه (للتوافق مع الفحص السابق)
                     func corr(_ a: [Float], _ b: [Float]) -> Double {
                         var best = 0.0
@@ -369,8 +387,8 @@ enum Separator {
             }
             clean.forEach { try? FileManager.default.removeItem(at: $0) }
             var r = String(format: "SEPTEST vocals~speech=%.2f music~tone=%.2f", res["vs"] ?? 0, res["mt"] ?? 0)
-            for k in ["sdrV", "sdrM", "keepV", "leakV", "keepM", "leakM"] {
-                r += String(format: " %@_std=%.2f %@_hq=%.2f", k, res[k + "_std"] ?? 0, k, res[k + "_hq"] ?? 0)
+            for k in ["sdrV", "sdrM", "keepV", "leakV", "keepM", "leakM", "sec"] {
+                for e in ["old", "mdx", "rof"] { r += String(format: " %@_%@=%.2f", k, e, res[k + "_" + e] ?? 0) }
             }
             return r
         } catch {

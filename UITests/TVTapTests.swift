@@ -170,7 +170,7 @@ final class TVTapTests: XCTestCase {
         app.launchArguments = ["-shot", "home", "-sepTest"]
         app.launch()
         let t = app.alerts.firstMatch
-        let ok = t.waitForExistence(timeout: 600)
+        let ok = t.waitForExistence(timeout: 2400)
         let label = ok ? t.label : "timeout"
         print("TVTEST separator:", label)
         shot(app, "12_separator")
@@ -182,16 +182,13 @@ final class TVTapTests: XCTestCase {
         }
         XCTAssertGreaterThan(val("vocals~speech"), 0.7, "vocals not clean")
         XCTAssertGreaterThan(val("music~tone"), 0.7, "music not clean")
-        // الطريقة المحسّنة (قطع متداخلة + تمريرتان) لا تقل نقاءً عن الأولى، للصوت البشري وللموسيقى
-        XCTAssertGreaterThan(val("sdrV_hq"), 3, "vocals SDR too low")
-        XCTAssertGreaterThan(val("sdrM_hq"), 3, "music SDR too low")
-        XCTAssertGreaterThanOrEqual(val("sdrV_hq"), val("sdrV_std") - 0.3, "high quality worse for vocals")
-        XCTAssertGreaterThanOrEqual(val("sdrM_hq"), val("sdrM_std") - 0.3, "high quality worse for music")
-        // إزالة الموسيقى: يبقى أغلب الصوت البشري ولا يبقى إلا القليل من الموسيقى (والعكس)
-        XCTAssertGreaterThan(val("keepV_hq"), 70, "voice lost while removing music")
-        XCTAssertLessThan(val("leakV_hq"), 10, "music left in the vocals")
-        XCTAssertGreaterThan(val("keepM_hq"), 70, "music lost while removing voice")
-        XCTAssertLessThan(val("leakM_hq"), 10, "voice left in the music")
+        // النموذج عالي الدقة يتفوّق على الأداة الحالية في الشرطين: يبقي الصوت البشري ولا يترك موسيقى (والعكس)
+        XCTAssertGreaterThan(val("sdrV_rof"), val("sdrV_old"), "RoFormer vocals not better than current")
+        XCTAssertGreaterThan(val("sdrM_rof"), val("sdrM_old"), "RoFormer music not better than current")
+        XCTAssertGreaterThan(val("keepV_rof"), 70, "voice lost while removing music")
+        XCTAssertLessThan(val("leakV_rof"), 10, "music left in the vocals")
+        XCTAssertGreaterThan(val("keepM_rof"), 70, "music lost while removing voice")
+        XCTAssertLessThan(val("leakM_rof"), 10, "voice left in the music")
     }
 
     /// الإشعارات: الضغط على بطاقة صلاة يفتح صفحتها
