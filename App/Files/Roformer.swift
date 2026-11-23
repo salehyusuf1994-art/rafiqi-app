@@ -234,7 +234,8 @@ enum Roformer {
                         ar(String(format: "%.1f", secs / Double(max(1, chunks)))))
         if let plan { report += " " + LF("يعمل على: %@.", plan) }
         if model.fallbacks > 0 { report += " " + LF("%@ من الأجزاء عملت على بديل أبطأ (خرجت من التطبيق؟).", ar(model.fallbacks)) }
-        await MainActor.run { lastReport = report }
+        let finalReport = report
+        await MainActor.run { lastReport = finalReport }
         return (mainOut, other)
     }
 
