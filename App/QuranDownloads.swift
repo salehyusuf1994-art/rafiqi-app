@@ -301,6 +301,8 @@ struct SurahsView: View {
     /// عرض السور مقسّمة على الأجزاء
     @State private var byJuz = false
     @State private var confirmDelete = false
+    /// رسالة قصيرة بعد الحفظ في إدارة الملفات
+    @State private var note: String?
 
     var body: some View {
         let st = dl.stats(reciter)
@@ -313,7 +315,7 @@ struct SurahsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(reciter.name).font(Theme.title(17)).foregroundStyle(.white)
                             Text(verbatim: LF("منزّل %@ من %@ سورة", ar(st.count), ar(avail.count))
-                                 + (st.bytes > 0 ? " · " + ByteCountFormatter.string(fromByteCount: st.bytes, countStyle: .file) : ""))
+                                 + (st.bytes > 0 ? " · " + sizeText(st.bytes) : ""))
                                 .font(Theme.f(.caption)).foregroundStyle(Theme.sub)
                         }
                         Spacer(minLength: 0)
@@ -380,6 +382,16 @@ struct SurahsView: View {
         .searchable(text: $q, prompt: "ابحث عن سورة")
         .navigationTitle("القرآن الكريم")
         .navigationBarTitleDisplayMode(.large)
+        .overlay(alignment: .bottom) {
+            if let note {
+                Text(note).font(Theme.f(.subheadline)).foregroundStyle(.white).multilineTextAlignment(.center)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .background(Capsule().fill(.black.opacity(0.8)))
+                    .padding(.horizontal, 20).padding(.bottom, 110)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+        }
         .confirmationDialog("حذف كل السور المنزّلة لهذا القارئ؟", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("حذف", role: .destructive) { dl.deleteAll(reciter) }
         }
@@ -417,7 +429,59 @@ struct SurahsView: View {
         .swipeActions {
             if dl.isDownloaded(reciter, n) {
                 Button(role: .destructive) { dl.delete(reciter, n) } label: { Label("حذف", systemImage: "trash") }
+                Button { share(n) } label: { Label("مشاركة", systemImage: "square.and.arrow.up") }.tint(Theme.gold)
             }
+        }
+        // السورة المنزّلة ملف عادي: تُشارك أو تُحفظ في «إدارة الملفات»
+        .contextMenu {
+            if dl.isDownloaded(reciter, n) {
+                Button { share(n) } label: { Label("مشاركة", systemImage: "square.and.arrow.up") }
+                Button { saveToFiles(n) } label: { Label("حفظ في إدارة الملفات", systemImage: "folder.badge.plus") }
+                Button(role: .destructive) { dl.delete(reciter, n) } label: { Label("حذف التنزيل", systemImage: "trash") }
+            }
+        }
+    }
+
+    /// اسم واضح للملف: «البقرة - سعود الشريم.mp3» (الاسم المخزّن رقمي «002.mp3»)
+    private func niceName(_ n: Int) -> String {
+        let bad = CharacterSet(charactersIn: "/:\\?%*|\"<>")
+        let r = reciter.name.components(separatedBy: bad).joined()
+        return "\(Surahs.name(n)) - \(r).mp3"
+    }
+
+    private func share(_ n: Int) {
+        guard let src = QuranDownloads.local(reciter, n) else { return }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("quran-share", isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let out = dir.appendingPathComponent(niceName(n))
+        do { try FileManager.default.copyItem(at: src, to: out); FileOpener.share([out]) }
+        catch { FileOpener.share([src]) }
+    }
+
+    /// نسخة في «إدارة الملفات ← التنزيلات ← القرآن الكريم ← اسم القارئ» (تبقى حتى لو حُذف التنزيل من هنا)
+    private func saveToFiles(_ n: Int) {
+        guard let src = QuranDownloads.local(reciter, n) else { return }
+        let store = FileStore.shared
+        let bad = CharacterSet(charactersIn: "/:\\?%*|\"<>")
+        let dir = store.root.appendingPathComponent(L("التنزيلات"), isDirectory: true)
+            .appendingPathComponent(L("القرآن الكريم"), isDirectory: true)
+            .appendingPathComponent(reciter.name.components(separatedBy: bad).joined(), isDirectory: true)
+        let name = niceName(n)
+        Task {
+            let ok: Bool = await Task.detached {
+                do {
+                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    let out = dir.appendingPathComponent(name)
+                    if FileManager.default.fileExists(atPath: out.path) { return true }
+                    try FileManager.default.copyItem(at: src, to: out)
+                    return true
+                } catch { return false }
+            }.value
+            store.touch()
+            withAnimation { note = ok ? LF("حُفظت «%@» في إدارة الملفات ← التنزيلات ← القرآن الكريم.", Surahs.name(n)) : L("تعذّر الحفظ.") }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            withAnimation { note = nil }
         }
     }
 

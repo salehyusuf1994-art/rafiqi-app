@@ -107,6 +107,20 @@ enum FilePrefs {
         get { d.object(forKey: "files.asc") as? Bool ?? false }
         set { d.set(newValue, forKey: "files.asc") }
     }
+    /// ترتيب خاص بكل مجلد (المفتاح المنطقي للمجلد ← «name|1»)؛ المجلد بلا ترتيب خاص يتبع آخر ترتيب اختير
+    static func folderSort(_ key: String) -> (FileSort, Bool)? {
+        guard let v = (d.dictionary(forKey: "files.sortByDir") as? [String: String])?[key] else { return nil }
+        let p = v.split(separator: "|")
+        guard p.count == 2, let s = FileSort(rawValue: String(p[0])) else { return nil }
+        return (s, p[1] == "1")
+    }
+    static func setFolderSort(_ s: FileSort, _ asc: Bool, for key: String) {
+        var m = (d.dictionary(forKey: "files.sortByDir") as? [String: String]) ?? [:]
+        m[key] = "\(s.rawValue)|\(asc ? 1 : 0)"
+        // حد أعلى: لا يكبر بلا نهاية مع المجلدات المحذوفة
+        if m.count > 800 { for k in m.keys.prefix(m.count - 800) where k != key { m[k] = nil } }
+        d.set(m, forKey: "files.sortByDir")
+    }
     static var grid: Bool {
         get { d.object(forKey: "files.grid") as? Bool ?? true }
         set { d.set(newValue, forKey: "files.grid") }

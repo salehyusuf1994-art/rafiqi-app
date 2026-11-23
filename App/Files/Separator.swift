@@ -12,11 +12,16 @@ enum Separator {
 
     enum Keep { case vocals, music }
 
+    /// standard: الطريقة الأولى (قطع متتالية، تمريرة واحدة) — تبقى للمقارنة في الفحص الآلي فقط.
+    /// high: قطع متداخلة يُؤخذ وسطها النظيف (حواف القطع كانت تترك عيوبًا خفيفة كل ٦ ثوانٍ تقريبًا)،
+    /// وتمريرتان للمقطع وعكسه ثم المتوسط (يلغي التشويش الذي يتركه النموذج) — نفس طريقة برنامج UVR
+    enum Quality { case standard, high }
+
     static var modelURL: URL? { Bundle.main.url(forResource: "UVR_MDXNET_9482", withExtension: "mlmodelc") }
     static var available: Bool { modelURL != nil }
 
     /// يرجع ملف M4A فيه الجزء المطلوب
-    static func separate(_ src: URL, keep: Keep, progress: @escaping (Double) -> Void) async throws -> URL {
+    static func separate(_ src: URL, keep: Keep, quality: Quality = .high, progress: @escaping (Double) -> Void) async throws -> URL {
         guard let murl = modelURL else { throw ToolError.failed(L("نموذج الفصل غير موجود في هذه النسخة.")) }
         progress(0.01)
         // المعالج الرسومي لا المحرك العصبي: تجهيز هذا النموذج الكبير للمحرك العصبي في أول مرة يأخذ دقائق
@@ -69,38 +74,57 @@ enum Separator {
 
         var re = [Float](repeating: 0, count: half), im = [Float](repeating: 0, count: half)
         var tmp = [Float](repeating: 0, count: nfft)
+        // هامش كل قطعة (إطارات تُحسب للسياق ولا تُستخدم) والإشارات: ‎+١ للمقطع و‎−١ لعكسه
+        let margin = quality == .high ? 16 : 0
+        let keepFrames = frames - 2 * margin
+        let signs: [Float] = quality == .high ? [1, -1] : [1]
+        let plane = bins * frames
+        // طيف القطعة مرة واحدة لكل قناة (يُعاد استخدامه للتمريرتين)، وناتج النموذج المتوسط
+        var spec = [Float](repeating: 0, count: 4 * plane)
+        var acc = [Float](repeating: 0, count: 4 * plane)
         var chunkStart = 0
         while chunkStart < totalFrames {
             try Task.checkCancellation()
-            let count = min(frames, totalFrames - chunkStart)
-            let input = try MLMultiArray(shape: [1, 4, NSNumber(value: bins), NSNumber(value: frames)], dataType: .float16)
-            let ip = input.dataPointer.bindMemory(to: Float16.self, capacity: 4 * bins * frames)
-            for k in 0..<(4 * bins * frames) { ip[k] = 0 }
-            for f in 0..<count {
+            let t0 = chunkStart - margin
+            let count = min(keepFrames, totalFrames - chunkStart)
+            // الإطارات المحسوبة: من t0 حتى آخر إطار مستخدم + الهامش (ما بعد نهاية المقطع يبقى صفرًا كما كان)
+            let used = min(frames, count + 2 * margin)
+            for k in 0..<spec.count { spec[k] = 0; acc[k] = 0 }
+            for f in 0..<used {
                 for (c, x) in [lch, rch].enumerated() {
-                    frame(x, chunkStart + f, &tmp)
+                    frame(x, t0 + f, &tmp)
                     forward(fwd, tmp, &re, &im)
                     for b in 0..<bins {
                         // الصندوق ٠: الجزء الحقيقي هو DC، والتخيلي صفر (المكان المحزوم فيه Nyquist يُهمل)
-                        let r = re[b] / 2, i = b == 0 ? 0 : im[b] / 2
-                        ip[((c * 2) * bins + b) * frames + f] = Float16(r)
-                        ip[((c * 2 + 1) * bins + b) * frames + f] = Float16(i)
+                        spec[((c * 2) * bins + b) * frames + f] = re[b] / 2
+                        spec[((c * 2 + 1) * bins + b) * frames + f] = b == 0 ? 0 : im[b] / 2
                     }
                 }
             }
-            let out = try await model.prediction(from: MLDictionaryFeatureProvider(dictionary: [inName: input]))
-            guard let y = out.featureValue(for: outName)?.multiArrayValue, y.count >= 4 * bins * frames else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
-            // ربط الذاكرة مرة واحدة لكل دفعة (كان يتكرر لكل قيمة: ملايين المرات)
-            let half16 = y.dataType == .float16
-            let p16 = half16 ? y.dataPointer.bindMemory(to: Float16.self, capacity: y.count) : nil
-            let p32 = half16 ? nil : y.dataPointer.bindMemory(to: Float.self, capacity: y.count)
-            func val(_ idx: Int) -> Float { p16.map { Float($0[idx]) } ?? p32![idx] }
-            for f in 0..<count {
-                let t = chunkStart + f
+            for sign in signs {
+                try Task.checkCancellation()
+                let input = try MLMultiArray(shape: [1, 4, NSNumber(value: bins), NSNumber(value: frames)], dataType: .float16)
+                let ip = input.dataPointer.bindMemory(to: Float16.self, capacity: 4 * plane)
+                for k in 0..<(4 * plane) { ip[k] = Float16(spec[k] * sign) }
+                let out = try await model.prediction(from: MLDictionaryFeatureProvider(dictionary: [inName: input]))
+                guard let y = out.featureValue(for: outName)?.multiArrayValue, y.count >= 4 * plane else { throw ToolError.failed(L("تعذّرت المعالجة.")) }
+                // ربط الذاكرة مرة واحدة لكل دفعة (كان يتكرر لكل قيمة: ملايين المرات)
+                let w = sign / Float(signs.count)
+                if y.dataType == .float16 {
+                    let p16 = y.dataPointer.bindMemory(to: Float16.self, capacity: y.count)
+                    for k in 0..<(4 * plane) { acc[k] += Float(p16[k]) * w }
+                } else {
+                    let p32 = y.dataPointer.bindMemory(to: Float.self, capacity: y.count)
+                    for k in 0..<(4 * plane) { acc[k] += p32[k] * w }
+                }
+            }
+            // التركيب العكسي للإطارات الوسطى فقط (كل إطار يأتي من قطعة واحدة)
+            for f in margin..<(margin + count) {
+                let t = t0 + f
                 for c in 0..<2 {
                     for b in 0..<bins {
-                        re[b] = val(((c * 2) * bins + b) * frames + f) * 2
-                        im[b] = b == 0 ? 0 : val(((c * 2 + 1) * bins + b) * frames + f) * 2
+                        re[b] = acc[((c * 2) * bins + b) * frames + f] * 2
+                        im[b] = b == 0 ? 0 : acc[((c * 2 + 1) * bins + b) * frames + f] * 2
                     }
                     inverse(inv, re, im, &tmp)
                     let start = t * hop - half
@@ -192,16 +216,44 @@ enum Separator {
         }
     }
 
-    // MARK: اختبار ذاتي (للفحص الآلي فقط): كلام + نغمة ← فصل ← قياس التشابه
+    // MARK: اختبار ذاتي (للفحص الآلي فقط): كلام + موسيقى (وتر، نغمات، باص، طبول) ← فصل ← قياس النقاء
+
+    /// SI-SDR بالديسيبل بعد محاذاة التأخير (كلما زاد كان الفصل أنقى)
+    static func sdr(_ est: [Float], _ ref: [Float]) -> Double {
+        func dot(_ a: [Float], _ b: [Float], _ shift: Int, _ step: Int) -> (Double, Double, Double) {
+            let n = min(a.count - shift, b.count)
+            guard n > 1000 else { return (0, 0, 0) }
+            var ab = 0.0, aa = 0.0, bb = 0.0
+            for i in stride(from: 0, to: n, by: step) { let x = Double(a[i + shift]), y = Double(b[i]); ab += x * y; aa += x * x; bb += y * y }
+            return (ab, aa, bb)
+        }
+        // تأخير الترميز: بحث خشن ثم دقيق
+        var best = 0, bestC = -1.0
+        for sh in stride(from: 0, through: 4096, by: 32) {
+            let (ab, aa, bb) = dot(est, ref, sh, 4)
+            if aa > 0, bb > 0, ab / sqrt(aa * bb) > bestC { bestC = ab / sqrt(aa * bb); best = sh }
+        }
+        for sh in max(0, best - 32)...(best + 32) {
+            let (ab, aa, bb) = dot(est, ref, sh, 2)
+            if aa > 0, bb > 0, ab / sqrt(aa * bb) > bestC { bestC = ab / sqrt(aa * bb); best = sh }
+        }
+        let (ab, aa, bb) = dot(est, ref, best, 1)
+        guard bb > 0, aa > 0 else { return -99 }
+        // الهدف = إسقاط التقدير على المرجع؛ والباقي تشويش
+        let alpha = ab / bb
+        let target = alpha * alpha * bb
+        let noise = max(1e-12, aa - 2 * alpha * ab + alpha * alpha * bb)
+        return 10 * log10(target / noise)
+    }
 
     static func selfTest() async -> String {
         do {
             let tmp = FileManager.default.temporaryDirectory
-            // ١) كلام مولّد
+            // ١) كلام مولّد (أطول من قطعتين ليظهر أثر حواف القطع)
             let speechURL = tmp.appendingPathComponent("sep_speech.caf")
             try? FileManager.default.removeItem(at: speechURL)
             let synth = AVSpeechSynthesizer()
-            let u = AVSpeechUtterance(string: "بسم الله الرحمن الرحيم. هذا اختبار لفصل الصوت البشري عن الموسيقى في تطبيق رفيقي. الحمد لله رب العالمين.")
+            let u = AVSpeechUtterance(string: "بسم الله الرحمن الرحيم. هذا اختبار لفصل الصوت البشري عن الموسيقى في تطبيق رفيقي. نقرأ جملة طويلة حتى نتأكد أن الفصل نظيف من البداية إلى النهاية، وأن الانتقال بين أجزاء المقطع لا يترك أي أثر. الحمد لله رب العالمين.")
             u.voice = AVSpeechSynthesisVoice(language: "ar-SA")
             var file: AVAudioFile?
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
@@ -214,8 +266,8 @@ enum Separator {
                 }
             }
             file = nil
-            // ٢) نغمة (وتر موسيقي بسيط) بطول الكلام
-            let speechDur = (try? await AVURLAsset(url: speechURL).load(.duration).seconds) ?? 6
+            // ٢) موسيقى بطول الكلام: وتر بتوافقيات، نغمات متقطعة، باص، طبل وصنج (ستيريو)
+            let speechDur = (try? await AVURLAsset(url: speechURL).load(.duration).seconds) ?? 12
             let toneURL = tmp.appendingPathComponent("sep_tone.caf")
             try? FileManager.default.removeItem(at: toneURL)
             let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2)!
@@ -223,10 +275,26 @@ enum Separator {
             let total = Int(speechDur * rate)
             let tb = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(total))!
             tb.frameLength = AVAudioFrameCount(total)
+            let chords: [[Double]] = [[220, 261.6, 329.6], [174.6, 220, 261.6], [261.6, 329.6, 392], [196, 246.9, 293.7]]
+            var seed: UInt32 = 12345
             for i in 0..<total {
                 let t = Double(i) / rate
-                let v = Float(0.12 * (sin(2 * .pi * 220 * t) + sin(2 * .pi * 277.2 * t) + sin(2 * .pi * 329.6 * t)) * (0.6 + 0.4 * sin(2 * .pi * 2 * t)))
-                tb.floatChannelData![0][i] = v; tb.floatChannelData![1][i] = v
+                let ch = chords[Int(t / 2) % chords.count]
+                var pad = 0.0
+                for f in ch { for k in 1...6 { pad += sin(2 * .pi * f * Double(k) * t) / Double(k * k) } }
+                pad *= 0.05
+                let beat = t.truncatingRemainder(dividingBy: 0.25)
+                let note = ch[Int(t / 0.25) % 3] * 2
+                let pluck = 0.10 * sin(2 * .pi * note * t) * exp(-beat * 12)
+                let bass = 0.10 * (sin(2 * .pi * ch[0] / 2 * t) + 0.4 * sin(2 * .pi * ch[0] * t))
+                let kt = t.truncatingRemainder(dividingBy: 0.5)
+                let kick = 0.25 * sin(2 * .pi * (50 + 70 * exp(-kt * 30)) * kt) * exp(-kt * 9)
+                seed = seed &* 1664525 &+ 1013904223
+                let noise = Double(Int32(bitPattern: seed)) / Double(Int32.max)
+                let hat = 0.05 * noise * exp(-beat * 60)
+                let l = pad * 1.1 + pluck * 0.7 + bass + kick + hat * 0.6
+                let r = pad * 0.9 + pluck * 1.3 + bass + kick + hat * 1.4
+                tb.floatChannelData![0][i] = Float(l); tb.floatChannelData![1][i] = Float(r)
             }
             try tf.write(from: tb)
             // ٣) المزج
@@ -240,30 +308,40 @@ enum Separator {
                 }
             }
             let mixURL = tmp.appendingPathComponent("sep_mix.m4a")
+            try? FileManager.default.removeItem(at: mixURL)
             _ = try await MediaTools.export(comp, preset: AVAssetExportPresetAppleM4A, to: mixURL, type: .m4a, progress: { _ in })
-            // ٤) الفصل والقياس
-            let voc = try await separate(mixURL, keep: .vocals, progress: { _ in })
-            let mus = try await separate(mixURL, keep: .music, progress: { _ in })
+            // ٤) الفصل بالطريقتين والقياس
             let (sp, _) = try await readPCM(speechURL)
             let (tn, _) = try await readPCM(toneURL)
-            let (vo, _) = try await readPCM(voc)
-            let (mu, _) = try await readPCM(mus)
-            func corr(_ a: [Float], _ b: [Float]) -> Double {
-                // AAC يضيف تأخيرًا صغيرًا: نجرّب إزاحات حتى ٤٠٩٦ عيّنة ونأخذ الأعلى
-                var best = 0.0
-                for shift in stride(from: 0, through: 4096, by: 64) {
-                    let n = min(a.count - shift, b.count)
-                    guard n > 1000 else { continue }
-                    var ab = 0.0, aa = 0.0, bb = 0.0
-                    for i in stride(from: 0, to: n, by: 2) { let x = Double(a[i + shift]), y = Double(b[i]); ab += x * y; aa += x * x; bb += y * y }
-                    if aa > 0, bb > 0 { best = max(best, abs(ab / sqrt(aa * bb))) }
+            var res: [String: Double] = [:]
+            var clean: [URL] = [mixURL, speechURL, toneURL]
+            for (name, q) in [("std", Quality.standard), ("hq", Quality.high)] {
+                let voc = try await separate(mixURL, keep: .vocals, quality: q, progress: { _ in })
+                let mus = try await separate(mixURL, keep: .music, quality: q, progress: { _ in })
+                clean += [voc, mus]
+                let (vo, _) = try await readPCM(voc)
+                let (mu, _) = try await readPCM(mus)
+                res["sdrV_" + name] = sdr(vo, sp)
+                res["sdrM_" + name] = sdr(mu, tn)
+                if name == "hq" {
+                    // التشابه (للتوافق مع الفحص السابق)
+                    func corr(_ a: [Float], _ b: [Float]) -> Double {
+                        var best = 0.0
+                        for shift in stride(from: 0, through: 4096, by: 64) {
+                            let n = min(a.count - shift, b.count)
+                            guard n > 1000 else { continue }
+                            var ab = 0.0, aa = 0.0, bb = 0.0
+                            for i in stride(from: 0, to: n, by: 2) { let x = Double(a[i + shift]), y = Double(b[i]); ab += x * y; aa += x * x; bb += y * y }
+                            if aa > 0, bb > 0 { best = max(best, abs(ab / sqrt(aa * bb))) }
+                        }
+                        return best
+                    }
+                    res["vs"] = corr(vo, sp); res["mt"] = corr(mu, tn)
                 }
-                return best
             }
-            let r = String(format: "SEPTEST vocals~speech=%.2f vocals~tone=%.2f music~tone=%.2f music~speech=%.2f",
-                           corr(vo, sp), corr(vo, tn), corr(mu, tn), corr(mu, sp))
-            [voc, mus, mixURL, speechURL, toneURL].forEach { try? FileManager.default.removeItem(at: $0) }
-            return r
+            clean.forEach { try? FileManager.default.removeItem(at: $0) }
+            return String(format: "SEPTEST vocals~speech=%.2f music~tone=%.2f sdrV_std=%.2f sdrV_hq=%.2f sdrM_std=%.2f sdrM_hq=%.2f",
+                          res["vs"] ?? 0, res["mt"] ?? 0, res["sdrV_std"] ?? 0, res["sdrV_hq"] ?? 0, res["sdrM_std"] ?? 0, res["sdrM_hq"] ?? 0)
         } catch {
             return "SEPTEST error: \(error.localizedDescription)"
         }

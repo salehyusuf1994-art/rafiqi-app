@@ -251,6 +251,8 @@ struct FolderContent: View {
     @State private var showScanner = false
     @State private var showScannerHome = SHOT == "scanner"
     @State private var addingToPlaylist: [URL]? = nil
+    /// شاشة الدمج (ترتيب ثم دمج)
+    @State private var merging: [URL]? = nil
     @State private var reminding: FileItem?
     @State private var toast: String?
     @State private var busy = false
@@ -286,6 +288,7 @@ struct FolderContent: View {
                 if !isTrash { actionsRow }
             }
             filterBar
+            if !isTrash && !list.isEmpty { sortRow }
             if isTrash && !list.isEmpty {
                 HStack {
                     Text("تُحذف الملفات نهائيًا بعد ٣٠ يومًا من نقلها إلى السلة.").font(Theme.f(.caption)).foregroundStyle(Theme.sub)
@@ -391,6 +394,9 @@ struct FolderContent: View {
             AddToPlaylistSheet(urls: addingToPlaylist ?? [])
         }
         .sheet(item: $reminding) { it in ReminderSheet(item: it) { msg in show(msg) } }
+        .sheet(isPresented: Binding(get: { merging != nil }, set: { if !$0 { merging = nil; store.touch() } })) {
+            MergeSheet(urls: merging ?? []) { msg in show(msg) }
+        }
         .fullScreenCover(isPresented: $showScannerHome) { ScannerHome() }
         .onChange(of: router.openScanner, initial: true) { _, on in
             guard on, isRoot else { return }
@@ -410,8 +416,12 @@ struct FolderContent: View {
             }
             .ignoresSafeArea()
         }
-        .onChange(of: sort) { _, v in FilePrefs.sort = v }
-        .onChange(of: ascending) { _, v in FilePrefs.ascending = v }
+        .onAppear {
+            // كل مجلد يتذكّر ترتيبه
+            if let fs = FilePrefs.folderSort(store.key(dir)) { sort = fs.0; ascending = fs.1 }
+        }
+        .onChange(of: sort) { _, _ in saveSort() }
+        .onChange(of: ascending) { _, _ in saveSort() }
         .onChange(of: grid) { _, v in FilePrefs.grid = v }
     }
 
@@ -472,22 +482,73 @@ struct FolderContent: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.edge, lineWidth: 1))
     }
 
-    private var sortMenu: some View {
-        Menu {
-            Section(L("الترتيب حسب")) {
-                ForEach(FileSort.allCases) { s in
-                    Button { sort = s; reordering = false } label: {
-                        if sort == s { Label(s.title, systemImage: "checkmark") } else { Text(s.title) }
+    /// اسم الاتجاه بلغة الترتيب نفسه: «من أ إلى ي»، «الأحدث أولًا»، «الأكبر أولًا»
+    private func directionTitle(_ s: FileSort, _ asc: Bool) -> String {
+        switch s {
+        case .name: return asc ? L("من أ إلى ي") : L("من ي إلى أ")
+        case .date: return asc ? L("الأقدم أولًا") : L("الأحدث أولًا")
+        case .size: return asc ? L("الأصغر أولًا") : L("الأكبر أولًا")
+        case .type, .manual: return asc ? L("تصاعدي") : L("تنازلي")
+        }
+    }
+
+    @ViewBuilder private var sortItems: some View {
+        Section(L("الترتيب حسب")) {
+            ForEach(FileSort.allCases) { s in
+                Button {
+                    // كل ترتيب يبدأ باتجاهه الطبيعي: الاسم من أ، والتاريخ الأحدث، والحجم الأكبر
+                    if sort != s { ascending = (s == .name || s == .type) }
+                    sort = s; reordering = false
+                } label: {
+                    if sort == s { Label(s.title, systemImage: "checkmark") } else { Text(s.title) }
+                }
+            }
+        }
+        if sort != .manual {
+            Section(L("الاتجاه")) {
+                ForEach([true, false], id: \.self) { asc in
+                    Button { ascending = asc } label: {
+                        if ascending == asc { Label(directionTitle(sort, asc), systemImage: "checkmark") } else { Text(directionTitle(sort, asc)) }
                     }
                 }
             }
-            if sort != .manual {
-                Button { ascending.toggle() } label: {
-                    Label(ascending ? L("تصاعدي") : L("تنازلي"), systemImage: ascending ? "arrow.up" : "arrow.down")
+        } else {
+            Button { reordering.toggle() } label: { Label(reordering ? L("إنهاء الترتيب") : L("ترتيب يدوي بالسحب"), systemImage: "arrow.up.arrow.down") }
+        }
+    }
+
+    /// سطر ظاهر فوق الملفات يبيّن الترتيب الحالي ويغيّره (كان مخفيًا داخل خانة البحث)
+    private var sortRow: some View {
+        HStack {
+            Menu { sortItems } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.arrow.down").font(Theme.f(.caption, .semibold))
+                    Text(verbatim: sort == .manual ? LF("الترتيب: %@", sort.title) : LF("الترتيب: %@، %@", sort.title, directionTitle(sort, ascending)))
+                        .font(Theme.f(.footnote, .semibold))
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold))
                 }
-            } else {
-                Button { reordering.toggle() } label: { Label(reordering ? L("إنهاء الترتيب") : L("ترتيب يدوي بالسحب"), systemImage: "arrow.up.arrow.down") }
+                .foregroundStyle(Theme.gold)
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(Capsule().fill(Theme.card))
+                .overlay(Capsule().strokeBorder(Theme.edge, lineWidth: 1))
             }
+            .accessibilityLabel(L("الترتيب"))
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// يحفظ ترتيب هذا المجلد (ويصير الافتراضي للمجلدات التي لم يُختر لها ترتيب)
+    private func saveSort() {
+        let k = store.key(dir)
+        if let cur = FilePrefs.folderSort(k), cur == (sort, ascending) { return }
+        FilePrefs.setFolderSort(sort, ascending, for: k)
+        FilePrefs.sort = sort
+        FilePrefs.ascending = ascending
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            sortItems
             Section(L("العرض")) {
                 Button { grid = true } label: { Label("شبكة", systemImage: grid ? "checkmark" : "square.grid.2x2") }
                 Button { grid = false } label: { Label("قائمة", systemImage: !grid ? "checkmark" : "list.bullet") }
@@ -633,7 +694,7 @@ struct FolderContent: View {
                     Button { copying = urls } label: { Label("نسخ إلى", systemImage: "plus.square.on.square") }
                     let kinds = Set(urls.map { FileKind.of($0, isDir: store.item($0)?.isDir ?? false) })
                     if urls.count >= 2, kinds == [.video] || kinds == [.audio] {
-                        Button { runMulti { try await MediaTools.merge(sortedSel(urls), progress: { _ in }) } } label: { Label("دمج بالترتيب", systemImage: "rectangle.stack.badge.plus") }
+                        Button { merging = urls; endSelection() } label: { Label("دمج…", systemImage: "rectangle.stack.badge.plus") }
                     }
                     if kinds == [.audio] {
                         Button { AudioPlayer.shared.playFiles(sortedSel(urls), start: 0); endSelection() } label: { Label("تشغيل المحدد", systemImage: "play.fill") }

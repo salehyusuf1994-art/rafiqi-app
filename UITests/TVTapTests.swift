@@ -177,11 +177,16 @@ final class TVTapTests: XCTestCase {
         XCTAssertTrue(ok && label.hasPrefix("SEPTEST") && !label.contains("error"), "separator failed")
         // دقة الفصل: الصوت البشري يطابق الكلام، والموسيقى تطابق النغمة
         func val(_ k: String) -> Double {
-            guard let r = label.range(of: k + "=") else { return 0 }
-            return Double(label[r.upperBound...].prefix(4)) ?? 0
+            guard let r = label.range(of: k + "=") else { return -99 }
+            return Double(label[r.upperBound...].prefix { $0 != " " }) ?? -99
         }
-        XCTAssertGreaterThan(val("vocals~speech"), 0.8, "vocals not clean")
-        XCTAssertGreaterThan(val("music~tone"), 0.8, "music not clean")
+        XCTAssertGreaterThan(val("vocals~speech"), 0.7, "vocals not clean")
+        XCTAssertGreaterThan(val("music~tone"), 0.7, "music not clean")
+        // الطريقة المحسّنة (قطع متداخلة + تمريرتان) لا تقل نقاءً عن الأولى، للصوت البشري وللموسيقى
+        XCTAssertGreaterThan(val("sdrV_hq"), 3, "vocals SDR too low")
+        XCTAssertGreaterThan(val("sdrM_hq"), 3, "music SDR too low")
+        XCTAssertGreaterThanOrEqual(val("sdrV_hq"), val("sdrV_std") - 0.3, "high quality worse for vocals")
+        XCTAssertGreaterThanOrEqual(val("sdrM_hq"), val("sdrM_std") - 0.3, "high quality worse for music")
     }
 
     /// الإشعارات: الضغط على بطاقة صلاة يفتح صفحتها

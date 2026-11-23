@@ -79,6 +79,27 @@ final class SplitTests: XCTestCase {
         XCTAssertEqual(dirs.count, 2)
     }
 
+    /// أجزاء التقسيم تُدمج سريعًا (بلا إعادة ترميز) وبالترتيب المعطى، والناتج بطول الأصل
+    func testMergeSplitPartsFast() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("merge-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let src = dir.appendingPathComponent("tone.m4a")
+        try makeTone(src, seconds: 6)
+        let parts = try await MediaTools.split(src, every: 2, exact: false, part: { _, _ in }, progress: { _ in })
+        XCTAssertEqual(parts.count, 3)
+        let fast = await MediaTools.canMergeFast(parts)
+        XCTAssertTrue(fast, "split parts should merge without re-encoding")
+        let out = try await MediaTools.merge(parts, fast: fast, progress: { _ in })
+        let d = try await AVURLAsset(url: out).load(.duration).seconds
+        XCTAssertEqual(d, 6, accuracy: 0.3)
+        // ملف مختلف الصيغة: لا دمج سريع
+        let other = dir.appendingPathComponent("other.wav")
+        try makeTone(other, seconds: 1, wav: true)
+        let mixed = await MediaTools.canMergeFast([parts[0], other])
+        XCTAssertFalse(mixed)
+    }
+
     /// مدة أطول من المقطع: خطأ واضح، ولا يُنشأ مجلد
     func testSplitRejectsTooLongSegment() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("split-\(UUID().uuidString)")
@@ -94,11 +115,14 @@ final class SplitTests: XCTestCase {
     }
 
     /// نغمة AAC قصيرة
-    private func makeTone(_ url: URL, seconds: Double) throws {
+    private func makeTone(_ url: URL, seconds: Double, wav: Bool = false) throws {
         let rate = 44_100.0
         let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
-        let file = try AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate,
-                                                               AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 96_000])
+        let settings: [String: Any] = wav
+            ? [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 16,
+               AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false]
+            : [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1, AVEncoderBitRateKey: 96_000]
+        let file = try AVAudioFile(forWriting: url, settings: settings)
         let frames = AVAudioFrameCount(rate * seconds)
         let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: frames)!
         buf.frameLength = frames

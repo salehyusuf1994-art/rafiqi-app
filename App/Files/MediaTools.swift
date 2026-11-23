@@ -251,6 +251,8 @@ enum MediaTools {
             folder = dir.appendingPathComponent("\(stem) (\(k))", isDirectory: true); k += 1
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        // مجلد الأجزاء يُفتح مرتبًا بالاسم: ١، ٢، ٣ … (لا بالتاريخ فيظهر مقلوبًا)
+        await MainActor.run { FilePrefs.setFolderSort(.name, true, for: FileStore.shared.key(folder)) }
         folderReady(folder)
         var parts: [URL] = []
         do {
@@ -418,19 +420,103 @@ enum MediaTools {
         return try await export(c, preset: AVAssetExportPresetHighestQuality, to: output(for: src, suffix: L("صوت جديد"), ext: "mp4"), type: .mp4, progress: progress)
     }
 
-    /// دمج عدة مقاطع (فيديو أو صوت) بالتتابع
-    static func merge(_ urls: [URL], progress: @escaping (Double) -> Void) async throws -> URL {
-        guard let first = urls.first else { throw ToolError.failed(L("اختر ملفين على الأقل.")) }
+    /// بصمة المسار: الترميز والمقاس والاتجاه (فيديو) أو التردد والقنوات (صوت)
+    private static func trackSignature(_ t: AVAssetTrack?) async -> String {
+        guard let t else { return "none" }
+        let fds = (try? await t.load(.formatDescriptions)) ?? []
+        guard let fd = fds.first, fds.count == 1 else { return "mixed-\(UUID())" }
+        var sig = "\(CMFormatDescriptionGetMediaSubType(fd))"
+        if t.mediaType == .video {
+            let d = CMVideoFormatDescriptionGetDimensions(fd)
+            let tr = (try? await t.load(.preferredTransform)) ?? .identity
+            sig += "|\(d.width)x\(d.height)|\(tr.a),\(tr.b),\(tr.c),\(tr.d)"
+        } else if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fd)?.pointee {
+            sig += "|\(asbd.mSampleRate)|\(asbd.mChannelsPerFrame)"
+        }
+        return sig
+    }
+
+    /// تُدمج بلا إعادة ترميز؟ (كلها بنفس الترميز والمقاس والاتجاه والصوت — مثل أجزاء «تقسيم المقطع»): سريع وبالجودة نفسها
+    static func canMergeFast(_ urls: [URL]) async -> Bool {
+        guard urls.count >= 2 else { return false }
         let video = urls.allSatisfy(isVideo)
+        var first: (String, String)?
+        for u in urls {
+            let a = AVURLAsset(url: u)
+            let v = video ? await trackSignature(videoTrack(a)) : "-"
+            let tracks = await audioTracks(a)
+            guard tracks.count <= 1 else { return false }
+            let au = await trackSignature(tracks.first)
+            if video, v == "none" { return false }
+            if !video, au == "none" { return false }
+            if let first { if first != (v, au) { return false } } else { first = (v, au) }
+        }
+        return true
+    }
+
+    /// دمج عدة مقاطع (فيديو أو صوت) بالتتابع وبالترتيب المعطى.
+    /// fast: بلا إعادة ترميز (يُتحقق منه بـ canMergeFast)، وإن تعذّر يرجع تلقائيًا لإعادة الترميز.
+    static func merge(_ urls: [URL], fast: Bool = false, progress: @escaping (Double) -> Void) async throws -> URL {
+        guard urls.count >= 2, let first = urls.first else { throw ToolError.failed(L("اختر ملفين على الأقل.")) }
+        let video = urls.allSatisfy(isVideo)
+        // المساحة: الناتج بحجم المجموع تقريبًا
+        let total = urls.reduce(Int64(0)) { $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        let need = total + total / 10 + 100_000_000
+        if let free = (try? first.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage,
+           free < need {
+            throw ToolError.failed(LF("المساحة المتاحة لا تكفي للدمج: يحتاج تقريبًا %@، والمتاح %@.", sizeText(need), sizeText(free)))
+        }
+        if fast {
+            do { return try await mergeFast(urls, video: video, progress: progress) }
+            catch is CancellationError { throw CancellationError() }
+            catch { progress(0) }   // صيغة لا تقبل النسخ المباشر: إعادة ترميز
+        }
+        return try await mergeReencode(urls, video: video, progress: progress)
+    }
+
+    private static func mergeFast(_ urls: [URL], video: Bool, progress: @escaping (Double) -> Void) async throws -> URL {
+        let c = AVMutableComposition()
+        let vt = video ? c.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) : nil
+        var at: AVMutableCompositionTrack?
+        var cursor = CMTime.zero
+        for u in urls {
+            try Task.checkCancellation()
+            let a = AVURLAsset(url: u)
+            let d = await duration(a)
+            let range = CMTimeRange(start: .zero, duration: d)
+            if let vt, let v = await videoTrack(a) {
+                if cursor == .zero { vt.preferredTransform = (try? await v.load(.preferredTransform)) ?? .identity }
+                try vt.insertTimeRange(range, of: v, at: cursor)
+            }
+            if let t = await audioTracks(a).first {
+                if at == nil { at = c.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) }
+                try at?.insertTimeRange(range, of: t, at: cursor)
+            }
+            cursor = cursor + d
+        }
+        let first = urls[0]
+        let candidates: [AVFileType] = video
+            ? (first.pathExtension.lowercased() == "mov" ? [.mov, .mp4] : [.mp4, .mov])
+            : [.m4a]
+        for t in candidates {
+            guard await AVAssetExportSession.compatibility(ofExportPreset: AVAssetExportPresetPassthrough, with: c, outputFileType: t) else { continue }
+            let ext = t == .mov ? "mov" : (t == .m4a ? "m4a" : "mp4")
+            return try await export(c, preset: AVAssetExportPresetPassthrough, to: output(for: first, suffix: L("مدمج"), ext: ext), type: t, progress: progress)
+        }
+        throw ToolError.failed(L("تعذّر الدمج."))
+    }
+
+    private static func mergeReencode(_ urls: [URL], video: Bool, progress: @escaping (Double) -> Void) async throws -> URL {
+        let first = urls[0]
         let c = AVMutableComposition()
         let vt = video ? c.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) : nil
         let at = c.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         var cursor = CMTime.zero
-        var layers: [AVMutableVideoCompositionLayerInstruction] = []
         var render = CGSize(width: 1280, height: 720)
         var instructions: [AVMutableVideoCompositionInstruction] = []
         if video, let v0 = await videoTrack(AVURLAsset(url: first)) { render = await displaySize(v0) }
         for u in urls {
+            try Task.checkCancellation()
             let a = AVURLAsset(url: u)
             let d = await duration(a)
             let range = CMTimeRange(start: .zero, duration: d)
@@ -447,7 +533,6 @@ enum MediaTools {
                 ins.timeRange = CMTimeRange(start: cursor, duration: d)
                 ins.layerInstructions = [li]
                 instructions.append(ins)
-                layers.append(li)
             }
             if let t = await audioTracks(a).first { try at?.insertTimeRange(range, of: t, at: cursor) }
             cursor = cursor + d
