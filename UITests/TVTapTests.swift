@@ -431,6 +431,9 @@ final class TVTapTests: XCTestCase {
             for i in 1...3 { search.typeText(XCUIKeyboardKey.delete.rawValue); usleep(250_000) }
             print("TVTEST search value=\(search.value ?? "nil")")
             shot(app, "r09_search_back")
+            // المحاذاة ثابتة: النص الإنجليزي يبقى في جهة البداية (اليمين) ولا يقفز لليسار
+            let w = app.windows.firstMatch.frame.width
+            print("TVTEST search field frame=\(search.frame) window=\(w)")
         }
     }
 

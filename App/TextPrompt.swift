@@ -53,9 +53,14 @@ enum TextDirection {
         guard tf.markedTextRange == nil else { return }   // لا نلمس الحقل أثناء تركيب حرف (لوحات مفاتيح آسيوية)
         let rtl = firstStrongIsRTL(tf.text ?? "") ?? !Lang.isEN
         let want: NSWritingDirection = rtl ? .rightToLeft : .leftToRight
+        // المحاذاة «الطبيعية» تتبع اتجاه الفقرة فيقفز النص يمينًا ويسارًا مع أول حرف: نثبّتها بلغة الواجهة
+        // (المحاذاة المقصودة مثل التوسيط تبقى كما هي)
+        let fixed: NSTextAlignment = Lang.isEN ? .left : .right
+        if tf.textAlignment == .natural { tf.textAlignment = fixed }
         guard tf.baseWritingDirection(for: tf.beginningOfDocument, in: .forward) != want,
               let r = tf.textRange(from: tf.beginningOfDocument, to: tf.endOfDocument) else { return }
         tf.setBaseWritingDirection(want, for: r)
+        if tf.textAlignment == .natural { tf.textAlignment = fixed }
     }
 
     /// اتجاه أول حرف «قوي» في النص: true عربي/عبري، false لاتيني وغيره، nil لا حروف (أرقام ورموز فقط أو فارغ)
