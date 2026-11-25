@@ -75,5 +75,5 @@ jobs:
           if grep -qE "Test Case .* failed" ui.log; then echo "::error::UI test failures"; grep -E "Test Case .* failed" ui.log; exit 1; fi
           # رمز خروج xcodebuild نفسه: أي فشل لم يظهر في الأسطر أعلاه (انهيار، مهلة) يوقف الحكم
           test "$(cat ui.rc 2>/dev/null)" = "0" || { echo "::error::xcodebuild test exited with $(cat ui.rc 2>/dev/null)"; tail -30 ui.log; exit 1; }
-          grep -q "\*\* TEST SUCCEEDED \*\*" ui.log || { echo "::error::no TEST SUCCEEDED"; exit 1; }
+          grep -qE "\*\* TEST (EXECUTE )?SUCCEEDED \*\*" ui.log || { echo "::error::no TEST SUCCEEDED"; exit 1; }
           echo "all UI tests passed"
