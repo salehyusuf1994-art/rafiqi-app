@@ -212,7 +212,7 @@ jobs:
           # الحكم على السطر الأخير (المجموع الكلي)، لا على أي مجموعة فرعية نجحت
           last=$(grep -E "Executed [0-9]+ test" unit.log | tail -1)
           echo "$last"
-          [ "$rc" -eq 0 ] && echo "$last" | grep -q "with 0 failures" || { echo "::error::Unit tests failed or did not run (exit $rc)"; exit 1; }
+          [ "$rc" -eq 0 ] && echo "$last" | grep -qE "with ([0-9]+ tests? skipped and )?0 failures" || { echo "::error::Unit tests failed or did not run (exit $rc)"; exit 1; }
 
       - name: Collect outputs
         if: always()
