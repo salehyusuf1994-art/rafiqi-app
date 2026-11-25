@@ -373,8 +373,6 @@ struct ContentView: View {
             _ = DownloadManager.shared
             // بقايا فصل منقطع لم يُكمل منذ ٧ أيام، أو حُذف ملفه الأصلي
             SepLong.purgeStaleInBackground()
-            // اتجاه النص في كل خانات الكتابة يتبع أول حرف فيها
-            TextDirection.installForAllTextFields()
             // وضع الفحص فقط: يفتح «تقسيم المقطع» على نغمة تجريبية
             if ProcessInfo.processInfo.arguments.contains("-splitTest") { ToolRunner.splitSelfTest() }
             if ProcessInfo.processInfo.arguments.contains("-sepTest") {
