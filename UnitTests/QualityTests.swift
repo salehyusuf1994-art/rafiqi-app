@@ -94,9 +94,9 @@ final class QualityTests: XCTestCase {
 
     /// الطقس: الموقع يُرسل مقرّبًا لحوالي كيلو، بنقطة إنجليزية
     func testWeatherCoordinatesAreCoarse() {
-        XCTAssertEqual(WeatherData.coarse(24.467891), "24.47")
-        XCTAssertEqual(WeatherData.coarse(39.614321), "39.61")
-        XCTAssertEqual(WeatherData.coarse(-0.003), "0.00")
-        XCTAssertEqual(WeatherData.coarse(-33.86882), "-33.87")
+        XCTAssertEqual(Weather.coarse(24.467891), "24.47")
+        XCTAssertEqual(Weather.coarse(39.614321), "39.61")
+        XCTAssertEqual(Weather.coarse(-0.003), "0.00")
+        XCTAssertEqual(Weather.coarse(-33.86882), "-33.87")
     }
 }
