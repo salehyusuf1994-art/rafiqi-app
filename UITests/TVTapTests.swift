@@ -352,7 +352,7 @@ final class TVTapTests: XCTestCase {
         XCTAssertTrue(title, "x post title missing")
     }
 
-    /// إعادة التسمية: مسح الاسم القديم حرفًا حرفًا ثم كتابة اسم مختلط (عربي/لاتيني/أرقام) والحفظ
+    /// إعادة التسمية: الاسم محدد عند الفتح، والمسح والكتابة لا يقلبان النص، والامتداد يبقى ولو في الاسم نقطة
     func testRenameField() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-shot", "files"]
@@ -360,46 +360,50 @@ final class TVTapTests: XCTestCase {
         sleep(3)
         let file = app.buttons.containing(NSPredicate(format: "label CONTAINS 'نغمة'")).firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 15), "seeded file missing")
-        shot(app, "r00_list")
         file.press(forDuration: 1.3)
         let item = app.buttons["إعادة التسمية"].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 5), "rename menu item missing")
         item.tap()
         let alert = app.alerts.firstMatch
         XCTAssertTrue(alert.waitForExistence(timeout: 5), "rename alert missing")
-        let tf = alert.textFields.firstMatch
+        let tf = alert.textFields["promptField"].firstMatch
         XCTAssertTrue(tf.waitForExistence(timeout: 5), "rename field missing")
         sleep(1)
-        print("TVTEST rename open value=\(tf.value ?? "nil") frame=\(tf.frame) alert=\(alert.frame)")
+        print("TVTEST rename open value=\(tf.value ?? "nil")")
         shot(app, "r01_open")
-        for i in 1...5 {
-            let t0 = Date()
+        // الاسم محدد كله: ضغطة مسح واحدة تفرّغه
+        var t0 = Date()
+        tf.typeText(XCUIKeyboardKey.delete.rawValue)
+        print("TVTEST rename clear value=\(tf.value ?? "nil") dt=\(String(format: "%.2f", Date().timeIntervalSince(t0)))")
+        shot(app, "r02_cleared")
+        let save = alert.buttons["حفظ"].firstMatch
+        print("TVTEST rename save enabled when empty:", save.isEnabled)
+        XCTAssertFalse(save.isEnabled, "save must be disabled for an empty name")
+        tf.typeText("Part 1 (2)")
+        usleep(400_000)
+        shot(app, "r03_typed")
+        for i in 1...4 {
+            t0 = Date()
             tf.typeText(XCUIKeyboardKey.delete.rawValue)
             let dt = Date().timeIntervalSince(t0)
             usleep(300_000)
-            print("TVTEST rename del\(i) value=\(tf.value ?? "nil") dt=\(String(format: "%.2f", dt)) alerts=\(app.alerts.count) frame=\(tf.frame) alert=\(alert.frame)")
-            shot(app, "r02_del\(i)")
-        }
-        tf.typeText("Part 1 (2)")
-        usleep(400_000)
-        print("TVTEST rename typed value=\(tf.value ?? "nil") alerts=\(app.alerts.count)")
-        shot(app, "r03_typed")
-        for i in 1...3 {
-            tf.typeText(XCUIKeyboardKey.delete.rawValue)
-            usleep(300_000)
-            print("TVTEST rename back\(i) value=\(tf.value ?? "nil") alerts=\(app.alerts.count)")
+            print("TVTEST rename back\(i) value=\(tf.value ?? "nil") dt=\(String(format: "%.2f", dt))")
             shot(app, "r04_back\(i)")
         }
-        let save = alert.buttons["حفظ"].firstMatch
-        XCTAssertTrue(save.exists, "save missing")
+        tf.typeText("1.2")
+        usleep(300_000)
+        shot(app, "r05_dot")
         save.tap()
         sleep(2)
-        let renamed = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Part 1'")).firstMatch
-        print("TVTEST rename saved:", renamed.exists, renamed.exists ? renamed.label : "")
-        shot(app, "r05_saved")
+        let renamed = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Part 1 1.2'")).firstMatch
+        let ok = renamed.waitForExistence(timeout: 5)
+        print("TVTEST rename saved:", ok, ok ? renamed.label : "")
+        shot(app, "r06_saved")
+        XCTAssertTrue(ok, "rename did not apply")
+        XCTAssertTrue(renamed.label.contains("WAV"), "extension lost: \(renamed.label)")
 
-        // مجلد جديد: الحقل نفسه في نافذة الإنشاء
-        let plus = app.buttons["plus"].firstMatch.exists ? app.buttons["plus"].firstMatch : app.images["plus"].firstMatch
+        // مجلد جديد: نفس الحقل
+        let plus = app.buttons["إضافة"].firstMatch
         if plus.waitForExistence(timeout: 3) {
             plus.tap()
             let nf = app.buttons["مجلد جديد"].firstMatch
@@ -407,15 +411,26 @@ final class TVTapTests: XCTestCase {
                 nf.tap()
                 let a2 = app.alerts.firstMatch
                 if a2.waitForExistence(timeout: 5) {
-                    let f2 = a2.textFields.firstMatch
-                    f2.typeText("ab 12")
-                    for i in 1...3 { f2.typeText(XCUIKeyboardKey.delete.rawValue); usleep(250_000); print("TVTEST newfolder del\(i) value=\(f2.value ?? "nil") alerts=\(app.alerts.count)") }
-                    shot(app, "r06_newfolder")
+                    let f2 = a2.textFields["promptField"].firstMatch
+                    f2.typeText("ab (12)")
+                    for i in 1...3 { f2.typeText(XCUIKeyboardKey.delete.rawValue); usleep(250_000); print("TVTEST newfolder del\(i) value=\(f2.value ?? "nil")") }
+                    shot(app, "r07_newfolder")
                     a2.buttons["إلغاء"].firstMatch.tap()
                 }
             }
+        } else { print("TVTEST plus button not found") }
+
+        // حقل البحث العادي (ليس نافذة): هل فيه القلب نفسه؟
+        let search = app.textFields.firstMatch
+        if search.waitForExistence(timeout: 3) {
+            search.tap()
+            search.typeText("Part 1 (2)")
+            usleep(300_000)
+            shot(app, "r08_search_typed")
+            for i in 1...3 { search.typeText(XCUIKeyboardKey.delete.rawValue); usleep(250_000) }
+            print("TVTEST search value=\(search.value ?? "nil")")
+            shot(app, "r09_search_back")
         }
-        XCTAssertTrue(renamed.exists, "rename did not apply")
     }
 
 }

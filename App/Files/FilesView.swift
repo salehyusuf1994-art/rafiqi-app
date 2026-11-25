@@ -239,7 +239,6 @@ struct FolderContent: View {
     @State private var selection: Set<URL> = []
     @State private var actionItem: FileItem?
     @State private var renaming: FileItem?
-    @State private var newName = ""
     @State private var askNewFolder = false
     @State private var askNewNote = false
     @State private var moving: [URL]? = nil
@@ -351,20 +350,22 @@ struct FolderContent: View {
                 copying = nil; endSelection()
             }
         }
-        .alert(L("إعادة التسمية"), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField(L("الاسم"), text: $newName)
-            Button(L("حفظ")) { if let r = renaming { store.rename(r.url, to: newName) }; renaming = nil }
-            Button(L("إلغاء"), role: .cancel) { renaming = nil }
+        .textPrompt(isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextPromptSpec(title: L("إعادة التسمية"), placeholder: L("الاسم"), initial: renaming?.base ?? "", confirm: L("حفظ"))
+        } onConfirm: { name in
+            guard let r = renaming else { return }
+            renaming = nil
+            renameItem(r, to: name)
         }
-        .alert(L("مجلد جديد"), isPresented: $askNewFolder) {
-            TextField(L("اسم المجلد"), text: $newName)
-            Button(L("إنشاء")) { store.createFolder(newName, in: dir) }
-            Button(L("إلغاء"), role: .cancel) {}
+        .textPrompt(isPresented: $askNewFolder) {
+            TextPromptSpec(title: L("مجلد جديد"), placeholder: L("اسم المجلد"), confirm: L("إنشاء"), allowEmpty: true)
+        } onConfirm: { name in
+            if store.createFolder(name, in: dir) == nil { show(L("تعذّر إنشاء المجلد")) }
         }
-        .alert(L("ملاحظة نصية جديدة"), isPresented: $askNewNote) {
-            TextField(L("اسم الملاحظة"), text: $newName)
-            Button(L("إنشاء")) { if let u = store.createText(newName, in: dir) { FileOpener.open(u) } }
-            Button(L("إلغاء"), role: .cancel) {}
+        .textPrompt(isPresented: $askNewNote) {
+            TextPromptSpec(title: L("ملاحظة نصية جديدة"), placeholder: L("اسم الملاحظة"), confirm: L("إنشاء"), allowEmpty: true)
+        } onConfirm: { name in
+            if let u = store.createText(name, in: dir) { FileOpener.open(u) } else { show(L("تعذّر إنشاء الملاحظة")) }
         }
         .confirmationDialog(L("حذف نهائي؟"), isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
                             titleVisibility: .visible) {
@@ -433,8 +434,8 @@ struct FolderContent: View {
             circle("doc.viewfinder", L("الماسح")) { showScannerHome = true }
             Menu {
                 Section {
-                    Button { newName = ""; askNewFolder = true } label: { Label("مجلد جديد", systemImage: "folder.badge.plus") }
-                    Button { newName = ""; askNewNote = true } label: { Label("ملاحظة نصية", systemImage: "note.text.badge.plus") }
+                    Button { askNewFolder = true } label: { Label("مجلد جديد", systemImage: "folder.badge.plus") }
+                    Button { askNewNote = true } label: { Label("ملاحظة نصية", systemImage: "note.text.badge.plus") }
                 }
                 Section {
                     Button { showPhotos = true } label: { Label("استيراد من الصور", systemImage: "photo.on.rectangle") }
@@ -665,7 +666,7 @@ struct FolderContent: View {
         .contextMenu {
             if !isTrash {
                 Button { open(it, all) } label: { Label("فتح", systemImage: "arrow.up.forward.app") }
-                Button { newName = it.base; renaming = it } label: { Label("إعادة التسمية", systemImage: "pencil") }
+                Button { renaming = it } label: { Label("إعادة التسمية", systemImage: "pencil") }
                 Button { moving = [it.url] } label: { Label("نقل", systemImage: "folder") }
                 Button { store.copy([it.url]) } label: { Label("إنشاء نسخة", systemImage: "plus.square.on.square") }
                 Button { store.togglePin(it.url) } label: {
@@ -782,6 +783,17 @@ struct FolderContent: View {
     }
 
     private func show(_ s: String) { withAnimation { toast = s } }
+
+    /// إعادة التسمية مع إخبار المستخدم إن لم تتم أو أخذ العنصر اسمًا آخر (الاسم مستخدم)
+    private func renameItem(_ it: FileItem, to name: String) {
+        guard let out = store.rename(it.url, to: name) else { return show(L("تعذّرت إعادة التسمية")) }
+        guard out != it.url else { return }
+        let final = it.isDir ? FileStore.plainName(out) : (FileStore.plainName(out) as NSString).deletingPathExtension
+        let wanted = store.sanitize(name)
+        let wantedBase = it.isDir ? wanted : (wanted.lowercased().hasSuffix("." + it.url.pathExtension.lowercased()) && !it.url.pathExtension.isEmpty
+                                              ? (wanted as NSString).deletingPathExtension : wanted)
+        if final != wantedBase { show(LF("الاسم مستخدم، فسُمّي «%@»", final)) }
+    }
     private func endSelection() { selecting = false; selection = [] }
 
     private func open(_ it: FileItem, _ all: [FileItem]) {
@@ -816,7 +828,7 @@ struct FolderContent: View {
         case .move: moving = [it.url]
         case .copyTo: copying = [it.url]
         case .share: FileOpener.share([it.url])
-        case .rename: newName = it.base; renaming = it
+        case .rename: renaming = it
         case .delete: store.moveToTrash([it.url]); show(L("نُقل إلى السلة"))
         case .openIn: FileOpener.openIn(it.url)
         case .pin: store.togglePin(it.url)
@@ -1068,7 +1080,6 @@ struct FolderPicker: View {
     @ObservedObject private var store = FileStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var askNew = false
-    @State private var name = ""
     @State private var base: URL?
 
     var body: some View {
@@ -1077,7 +1088,7 @@ struct FolderPicker: View {
                 Button { pick(store.root); dismiss() } label: { row(L("ملفاتي"), "house", 0) }
                 ForEach(tree(), id: \.0) { (u, depth) in
                     Button { pick(u); dismiss() } label: { row(FileStore.plainName(u), store.isLocked(u) ? "lock.fill" : "folder", depth) }
-                        .swipeActions { Button { base = u; name = ""; askNew = true } label: { Label("مجلد داخله", systemImage: "folder.badge.plus") }.tint(Theme.goldDeep) }
+                        .swipeActions { Button { base = u; askNew = true } label: { Label("مجلد داخله", systemImage: "folder.badge.plus") }.tint(Theme.goldDeep) }
                 }
                 .listRowBackground(Theme.card)
             }
@@ -1087,13 +1098,13 @@ struct FolderPicker: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(L("إلغاء")) { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { base = store.root; name = ""; askNew = true } label: { Image(systemName: "folder.badge.plus") }
+                    Button { base = store.root; askNew = true } label: { Image(systemName: "folder.badge.plus") }
                 }
             }
-            .alert(L("مجلد جديد"), isPresented: $askNew) {
-                TextField(L("اسم المجلد"), text: $name)
-                Button(L("إنشاء")) { store.createFolder(name, in: base ?? store.root) }
-                Button(L("إلغاء"), role: .cancel) {}
+            .textPrompt(isPresented: $askNew) {
+                TextPromptSpec(title: L("مجلد جديد"), placeholder: L("اسم المجلد"), confirm: L("إنشاء"), allowEmpty: true)
+            } onConfirm: { name in
+                store.createFolder(name, in: base ?? store.root)
             }
         }
     }

@@ -873,14 +873,14 @@ struct ScanEditor: View {
                 }
             }.ignoresSafeArea()
         }
-        .alert(L("علامة مائية"), isPresented: $watermark) {
-            TextField(L("النص، مثل: نسخة لـ…"), text: $watermarkText)
-            Button(L("إضافة لكل الصفحات")) {
-                for i in pages.indices { pages[i].overlays.removeAll { if case .text = $0.kind { return true }; return false }
-                    if !watermarkText.isEmpty { pages[i].overlays.append(ScanOverlay(kind: .text(watermarkText))) } }
-                refresh()
-            }
-            Button(L("إلغاء"), role: .cancel) {}
+        .textPrompt(isPresented: $watermark) {
+            TextPromptSpec(title: L("علامة مائية"), placeholder: L("النص، مثل: نسخة لـ…"), initial: watermarkText,
+                           confirm: L("إضافة لكل الصفحات"), allowEmpty: true)
+        } onConfirm: { text in
+            watermarkText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            for i in pages.indices { pages[i].overlays.removeAll { if case .text = $0.kind { return true }; return false }
+                if !watermarkText.isEmpty { pages[i].overlays.append(ScanOverlay(kind: .text(watermarkText))) } }
+            refresh()
         }
     }
 

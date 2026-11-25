@@ -2528,3 +2528,7 @@
 "يفصل الذكاء الاصطناعي الصوت البشري ويحذف الموسيقى والإيقاعات بأعلى دقة (تمريرتان لكل جزء). تتم المعالجة على جوالك بدون إنترنت، وتأخذ تقريبًا دقيقتين لكل خمس دقائق من المقطع." = "AI separates the human voice and removes music and beats at the highest accuracy (two passes per part). Processing happens on your phone without internet and takes about two minutes for every five minutes of audio.";
 "يحذف الذكاء الاصطناعي الصوت البشري ويبقي الموسيقى بأعلى دقة (تمريرتان لكل جزء). تتم المعالجة على جوالك بدون إنترنت، وتأخذ تقريبًا دقيقتين لكل خمس دقائق من المقطع." = "AI removes the human voice and keeps the music at the highest accuracy (two passes per part). Processing happens on your phone without internet and takes about two minutes for every five minutes of audio.";
 "أُلغي التقسيم. بقيت الأجزاء المكتملة (%@ من %@) في مجلد «%@»." = "Splitting was cancelled. The finished parts (%@ of %@) are in the “%@” folder.";
+"تعذّرت إعادة التسمية" = "Couldn’t rename";
+"الاسم مستخدم، فسُمّي «%@»" = "That name is taken, so it was named “%@”";
+"تعذّر إنشاء المجلد" = "Couldn’t create the folder";
+"تعذّر إنشاء الملاحظة" = "Couldn’t create the note";

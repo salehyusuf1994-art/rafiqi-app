@@ -57,12 +57,11 @@ struct AddToPlaylistSheet: View {
     @ObservedObject private var lists = FilePlaylists.shared
     @Environment(\.dismiss) private var dismiss
     @State private var askNew = false
-    @State private var name = ""
 
     var body: some View {
         NavigationStack {
             List {
-                Button { name = ""; askNew = true } label: { Label("قائمة جديدة…", systemImage: "plus").foregroundStyle(Theme.gold) }
+                Button { askNew = true } label: { Label("قائمة جديدة…", systemImage: "plus").foregroundStyle(Theme.gold) }
                 ForEach(lists.all) { p in
                     Button { lists.add(urls, to: p.id); dismiss() } label: {
                         HStack { Badge(name: "music.note.list", size: 32); Text(verbatim: p.name).foregroundStyle(.white); Spacer()
@@ -75,10 +74,10 @@ struct AddToPlaylistSheet: View {
             .navigationTitle("إضافة إلى قائمة تشغيل")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("إلغاء") { dismiss() } } }
-            .alert(L("قائمة تشغيل جديدة"), isPresented: $askNew) {
-                TextField(L("اسم القائمة"), text: $name)
-                Button(L("إنشاء")) { let id = lists.create(name); lists.add(urls, to: id); dismiss() }
-                Button(L("إلغاء"), role: .cancel) {}
+            .textPrompt(isPresented: $askNew) {
+                TextPromptSpec(title: L("قائمة تشغيل جديدة"), placeholder: L("اسم القائمة"), confirm: L("إنشاء"), allowEmpty: true)
+            } onConfirm: { name in
+                let id = lists.create(name.trimmingCharacters(in: .whitespacesAndNewlines)); lists.add(urls, to: id); dismiss()
             }
         }
         .presentationDetents([.medium, .large])
@@ -89,7 +88,6 @@ struct AddToPlaylistSheet: View {
 struct PlaylistsView: View {
     @ObservedObject private var lists = FilePlaylists.shared
     @State private var askNew = false
-    @State private var name = ""
 
     var body: some View {
         List {
@@ -115,11 +113,11 @@ struct PlaylistsView: View {
         .navigationTitle("قوائم التشغيل")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
-        .toolbar { ToolbarItem(placement: .primaryAction) { Button { name = ""; askNew = true } label: { Image(systemName: "plus") } } }
-        .alert(L("قائمة تشغيل جديدة"), isPresented: $askNew) {
-            TextField(L("اسم القائمة"), text: $name)
-            Button(L("إنشاء")) { lists.create(name) }
-            Button(L("إلغاء"), role: .cancel) {}
+        .toolbar { ToolbarItem(placement: .primaryAction) { Button { askNew = true } label: { Image(systemName: "plus") } } }
+        .textPrompt(isPresented: $askNew) {
+            TextPromptSpec(title: L("قائمة تشغيل جديدة"), placeholder: L("اسم القائمة"), confirm: L("إنشاء"), allowEmpty: true)
+        } onConfirm: { name in
+            lists.create(name.trimmingCharacters(in: .whitespacesAndNewlines))
         }
     }
 }

@@ -493,22 +493,33 @@ final class FileStore: ObservableObject {
 
     @discardableResult
     func createFolder(_ name: String, in dir: URL) -> URL? {
-        let clean = sanitize(name.isEmpty ? L("مجلد جديد") : name)
+        let clean = sanitize(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L("مجلد جديد") : name)
         let u = unique(clean, in: dir)
         do { try fm.createDirectory(at: u, withIntermediateDirectories: true); touch(); return u } catch { return nil }
     }
 
     @discardableResult
     func createText(_ name: String, text: String = "", in dir: URL) -> URL? {
-        var n = sanitize(name.isEmpty ? L("ملاحظة") : name)
-        if (n as NSString).pathExtension.isEmpty { n += ".txt" }
+        var n = sanitize(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L("ملاحظة") : name)
+        // «ملاحظة 1.2» ليست امتدادًا: تبقى ملفًا نصيًا
+        if !["txt", "md", "markdown"].contains((n as NSString).pathExtension.lowercased()) { n += ".txt" }
         let u = unique(n, in: dir)
         do { try text.write(to: u, atomically: true, encoding: .utf8); touch(); return u } catch { return nil }
     }
 
+    /// علامات اتجاه خفية وأسطر وأحرف تحكم: لا مكان لها في اسم ملف (تُربك عرض الاسم، وقد تُخفي امتداده الحقيقي)
+    nonisolated static let invisibleInNames: CharacterSet = {
+        var c = CharacterSet(charactersIn: "\u{200E}\u{200F}\u{061C}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}\u{FEFF}")
+        c.formUnion(CharacterSet(charactersIn: Unicode.Scalar(UInt8(0))...Unicode.Scalar(UInt8(0x1F))))
+        c.insert(Unicode.Scalar(UInt8(0x7F)))
+        c.formUnion(.newlines)
+        return c
+    }()
+
     func sanitize(_ s: String) -> String {
         let bad = CharacterSet(charactersIn: "/:\\")
-        let t = s.components(separatedBy: bad).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
+        let visible = String(String.UnicodeScalarView(s.unicodeScalars.filter { !Self.invisibleInNames.contains($0) }))
+        let t = visible.components(separatedBy: bad).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
         return Self.capName(t.hasPrefix(".") ? "_" + t.dropFirst() : t)
     }
 
@@ -531,7 +542,11 @@ final class FileStore: ObservableObject {
         var n = sanitize(newName)
         guard !n.isEmpty, !isVaultTrashRoot(url) else { return nil }
         let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-        if !isDir, (n as NSString).pathExtension.isEmpty, !url.pathExtension.isEmpty { n += "." + url.pathExtension }
+        // الحقل يعرض الاسم بلا امتداد: الامتداد الأصلي يبقى دائمًا، حتى لو كان في الاسم الجديد نقطة (مثل «جزء 1.2»)
+        // — وإلا صار «.2» امتدادًا وضاع نوع الملف. لا يُكرَّر إن كتبه المستخدم بنفسه
+        if !isDir, !url.pathExtension.isEmpty, (n as NSString).pathExtension.lowercased() != url.pathExtension.lowercased() {
+            n += "." + url.pathExtension
+        }
         if url.lastPathComponent.hasPrefix(Self.lockPrefix) { n = Self.lockPrefix + n }
         guard n != url.lastPathComponent else { return url }
         let dest = unique(n, in: url.deletingLastPathComponent())

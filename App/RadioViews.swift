@@ -475,7 +475,6 @@ struct FavoritesManager: View {
     @Binding var saved: [Station]
     @State private var adding = false
     @State private var renaming: Station?
-    @State private var newName = ""
 
     var body: some View {
         List {
@@ -496,7 +495,7 @@ struct FavoritesManager: View {
                         Spacer(minLength: 0)
                     }
                     .swipeActions(edge: .leading) {
-                        Button { newName = s.name; renaming = s } label: { Label("تعديل الاسم", systemImage: "pencil") }.tint(.blue)
+                        Button { renaming = s } label: { Label("تعديل الاسم", systemImage: "pencil") }.tint(.blue)
                     }
                 }
                 .onMove { from, to in var l = saved; l.move(fromOffsets: from, toOffset: to); Stations.saved = l; saved = l }
@@ -514,15 +513,12 @@ struct FavoritesManager: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar { if !saved.isEmpty { EditButton().tint(Theme.gold) } }
         .sheet(isPresented: $adding) { AddStationSheet(saved: $saved) }
-        .alert("تعديل الاسم", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("الاسم", text: $newName)
-            Button("حفظ") {
-                if let r = renaming, !newName.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Stations.rename(r, to: newName.trimmingCharacters(in: .whitespaces)); saved = Stations.saved
-                }
-                renaming = nil
-            }
-            Button("إلغاء", role: .cancel) { renaming = nil }
+        .textPrompt(isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextPromptSpec(title: L("تعديل الاسم"), placeholder: L("الاسم"), initial: renaming?.name ?? "", confirm: L("حفظ"))
+        } onConfirm: { name in
+            let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let r = renaming, !n.isEmpty { Stations.rename(r, to: n); saved = Stations.saved }
+            renaming = nil
         }
     }
 }
@@ -764,18 +760,16 @@ final class PlaylistStore: ObservableObject {
 /// حقل اسم القائمة الجديدة (يُعرض من الصفحة الرئيسية للإذاعات)
 struct NewPlaylistAlert: ViewModifier {
     @ObservedObject private var store = PlaylistStore.shared
-    @State private var name = ""
     func body(content: Content) -> some View {
-        content.alert("قائمة تشغيل جديدة", isPresented: $store.askingNew) {
-            TextField("اسم القائمة", text: $name)
-            Button("إنشاء") {
-                let n = name.trimmingCharacters(in: .whitespaces)
-                store.create(n.isEmpty ? L("قائمتي") : n, with: store.newFor)
-                name = ""; store.newFor = nil
-            }
-            Button("إلغاء", role: .cancel) { name = ""; store.newFor = nil }
-        } message: {
-            if let s = store.newFor { Text(verbatim: LF("وتُضاف إليها «%@»", s.name)) }
+        content.textPrompt(isPresented: $store.askingNew) {
+            TextPromptSpec(title: L("قائمة تشغيل جديدة"), message: store.newFor.map { LF("وتُضاف إليها «%@»", $0.name) },
+                           placeholder: L("اسم القائمة"), confirm: L("إنشاء"), allowEmpty: true)
+        } onConfirm: { name in
+            let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            store.create(n.isEmpty ? L("قائمتي") : n, with: store.newFor)
+            store.newFor = nil
+        } onCancel: {
+            store.newFor = nil
         }
     }
 }
@@ -787,7 +781,6 @@ struct PlaylistView: View {
     @ObservedObject private var store = PlaylistStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var renaming = false
-    @State private var newName = ""
     @State private var confirmDelete = false
 
     var body: some View {
@@ -823,18 +816,16 @@ struct PlaylistView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if !(pl?.stations.isEmpty ?? true) { EditButton().tint(Theme.gold) }
                 Menu {
-                    Button { newName = pl?.name ?? ""; renaming = true } label: { Label("إعادة التسمية", systemImage: "pencil") }
+                    Button { renaming = true } label: { Label("إعادة التسمية", systemImage: "pencil") }
                     Button(role: .destructive) { confirmDelete = true } label: { Label("حذف القائمة", systemImage: "trash") }
                 } label: { Image(systemName: "ellipsis.circle").foregroundStyle(Theme.gold) }
             }
         }
-        .alert("إعادة التسمية", isPresented: $renaming) {
-            TextField("اسم القائمة", text: $newName)
-            Button("حفظ") {
-                let n = newName.trimmingCharacters(in: .whitespaces)
-                if !n.isEmpty { store.rename(id, n) }
-            }
-            Button("إلغاء", role: .cancel) {}
+        .textPrompt(isPresented: $renaming) {
+            TextPromptSpec(title: L("إعادة التسمية"), placeholder: L("اسم القائمة"), initial: pl?.name ?? "", confirm: L("حفظ"))
+        } onConfirm: { name in
+            let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !n.isEmpty { store.rename(id, n) }
         }
         .confirmationDialog("حذف هذه القائمة؟", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("حذف", role: .destructive) { store.delete(id); dismiss() }

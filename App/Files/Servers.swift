@@ -292,7 +292,6 @@ struct RemoteBrowser: View {
     @State private var status: String?
     @State private var uploading = false
     @State private var askFolder = false
-    @State private var folderName = ""
     @State private var client: RemoteClient?
     /// حذف ملف من الخادم نهائي (لا سلة هناك): يُطلب تأكيد
     @State private var confirmDelete: RemoteItem?
@@ -341,7 +340,7 @@ struct RemoteBrowser: View {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button { uploading = true } label: { Label("رفع ملفات إلى هنا", systemImage: "square.and.arrow.up") }
-                        Button { folderName = ""; askFolder = true } label: { Label("مجلد جديد", systemImage: "folder.badge.plus") }
+                        Button { askFolder = true } label: { Label("مجلد جديد", systemImage: "folder.badge.plus") }
                     } label: { Image(systemName: "plus") }
                 }
             }
@@ -359,10 +358,12 @@ struct RemoteBrowser: View {
                 await load()
             }
         }
-        .alert(L("مجلد جديد"), isPresented: $askFolder) {
-            TextField(L("اسم المجلد"), text: $folderName)
-            Button(L("إنشاء")) { Task { try? await client?.mkdir((path == "/" ? "" : path) + "/" + folderName); await load() } }
-            Button(L("إلغاء"), role: .cancel) {}
+        .textPrompt(isPresented: $askFolder) {
+            TextPromptSpec(title: L("مجلد جديد"), placeholder: L("اسم المجلد"), confirm: L("إنشاء"))
+        } onConfirm: { name in
+            let clean = FileStore.shared.sanitize(name)
+            guard !clean.isEmpty else { return }
+            Task { try? await client?.mkdir((path == "/" ? "" : path) + "/" + clean); await load() }
         }
         .task { await load() }
         .refreshable { await load() }
