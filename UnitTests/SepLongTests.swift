@@ -155,6 +155,7 @@ final class SepLongTests: XCTestCase {
         for (k, f) in flashes.enumerated() {
             XCTAssertEqual(frames[safe: k] ?? -1, f, accuracy: 0.001, "flash \(k)")
             XCTAssertEqual(onsets[k], f, accuracy: 0.02, "beep \(k) at \(onsets[k]) vs flash \(f)")
+            print(String(format: "SYNCTEST beep %d at %.0f s: offset %.1f ms", k, f, (onsets[k] - f) * 1000))
         }
     }
 
