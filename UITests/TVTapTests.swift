@@ -390,8 +390,9 @@ final class TVTapTests: XCTestCase {
             print("TVTEST rename back\(i) value=\(tf.value ?? "nil") dt=\(String(format: "%.2f", dt))")
             shot(app, "r04_back\(i)")
         }
-        tf.typeText("1.2")
+        tf.typeText(" 1.2")
         usleep(300_000)
+        print("TVTEST rename typed value=\(tf.value ?? "nil")")
         shot(app, "r05_dot")
         save.tap()
         sleep(2)
