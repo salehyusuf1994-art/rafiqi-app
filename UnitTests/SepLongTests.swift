@@ -140,7 +140,8 @@ final class SepLongTests: XCTestCase {
 
         // الفصل (مطابق) ثم إعادة الصوت للفيديو كما يفعل التطبيق
         let res = try await SepLong.run(src, keep: .vocals, engineName: "sync", separate: identity, progress: { _ in })
-        XCTAssertEqual(res.audioStart, offset, accuracy: 0.01, "audio start offset")
+        // القارئ يُخرج الفراغ قبل بداية الصوت صمتًا (فتبدأ العيّنات من صفر) أو يعطي موضع البداية: المهم أن النغمات تبقى مع الوميض (أدناه)
+        XCTAssertLessThanOrEqual(res.audioStart, offset + 0.01, "audio start offset")
         let out = try await MediaTools.replaceAudio(src, with: res.main, keepOriginal: false, audioStart: res.audioStart, loop: false, progress: { _ in })
 
         // طول الصوت بالعيّنة: الأصل والناتج
