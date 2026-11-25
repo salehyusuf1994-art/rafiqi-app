@@ -62,6 +62,36 @@ final class SecurityTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: locked.appendingPathComponent("a.txt").path), "المحتوى لم يضِع")
     }
 
+    // MARK: الخزنة: تشفير أشد (مشفّرة كلما قُفل الجوال)، وما يخرج منها يرجع للفئة العادية
+
+    private func protection(_ u: URL) -> FileProtectionType? {
+        (try? FileManager.default.attributesOfItem(atPath: u.path))?[.protectionKey] as? FileProtectionType
+    }
+
+    func testVaultFilesGetStrongerProtection() async throws {
+        let store = FileStore.shared
+        let name = "ProtTest-\(UUID().uuidString.prefix(6))"
+        let folder = try XCTUnwrap(store.createFolder(name, in: store.root))
+        let f = folder.appendingPathComponent("a.txt")
+        try "x".write(to: f, atomically: true, encoding: .utf8)
+        // بعض أجهزة الفحص (المحاكي) لا تحفظ فئة التشفير أصلًا
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: f.path)
+        guard protection(f) == .complete else {
+            try? FileManager.default.removeItem(at: folder)
+            throw XCTSkip("data protection classes are not kept on this simulator")
+        }
+        let locked = store.setLocked(folder, true)
+        let inside = locked.appendingPathComponent("a.txt")
+        for _ in 0..<60 where protection(inside) != FileStore.vaultProtection { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertEqual(protection(inside), FileStore.vaultProtection, "داخل الخزنة: مشفّر كلما قُفل الجوال")
+        XCTAssertEqual(protection(locked), FileStore.vaultProtection, "والمجلد نفسه (ما يُنشأ داخله يرث الفئة)")
+        let back = store.setLocked(locked, false)
+        defer { try? FileManager.default.removeItem(at: back) }
+        let out = back.appendingPathComponent("a.txt")
+        for _ in 0..<60 where protection(out) != FileStore.normalProtection { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertEqual(protection(out), FileStore.normalProtection, "خارج الخزنة: الفئة العادية (تعمل في الخلفية)")
+    }
+
     // MARK: ZIP: لا كتابة خارج مجلد الفك (ZIP slip) ولا عبر رابط رمزي
 
     private let slipZip = "UEsDBBQAAAAAAAAAIQCSVKm+BAAAAAQAAAAGAAAAb2sudHh0ZmluZVBLAwQUAAAAAAAAACEAflME2QUAAAAFAAAACwAAAC4uL2V2aWwudHh0cHduZWRQSwECFAMUAAAAAAAAACEAklSpvgQAAAAEAAAABgAAAAAAAAAAAAAApIEAAAAAb2sudHh0UEsBAhQDFAAAAAAAAAAhAH5TBNkFAAAABQAAAAsAAAAAAAAAAAAAAKSBKAAAAC4uL2V2aWwudHh0UEsFBgAAAAACAAIAbQAAAFYAAAAAAA=="

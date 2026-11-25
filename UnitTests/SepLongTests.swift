@@ -57,6 +57,39 @@ final class SepLongTests: XCTestCase {
     }
 
     /// كتل متعددة: الناتج الخام = الأصل عيّنة بعيّنة (التلاشي بين الكتل لا يغيّر شيئًا)، والطول مطابق
+    /// بقايا الفصل المنقطع: تُحذف بعد ٧ أيام أو إن حُذف الأصل، ويبقى الحديث الذي أصله موجود
+    func testStaleJobsArePurged() throws {
+        let fm = FileManager.default
+        let root = dir.appendingPathComponent("jobs")
+        let home = URL(fileURLWithPath: NSHomeDirectory())
+        let keepSrc = home.appendingPathComponent("tmp/seplong-src-\(UUID().uuidString).m4a")
+        try Data([1]).write(to: keepSrc)
+        defer { try? fm.removeItem(at: keepSrc) }
+        func job(_ name: String, src: String?) throws {
+            let d = root.appendingPathComponent(name)
+            try fm.createDirectory(at: d, withIntermediateDirectories: true)
+            let st = SepLong.State(keep: "vocals", engine: "x", alsoOther: false, block: 1, nextBlock: 1, written: 10,
+                                   audioStart: 0, estTotal: 100, src: src)
+            try JSONEncoder().encode(st).write(to: d.appendingPathComponent("state.json"))
+            try Data(count: 64).write(to: d.appendingPathComponent("main.raw"))
+        }
+        try job("fresh", src: SepLong.relativeToHome(keepSrc))
+        try job("gone", src: "Documents/لا-يوجد-\(UUID().uuidString).mp4")
+        try job("old-format", src: nil)
+        XCTAssertNotNil(SepLong.relativeToHome(keepSrc))
+        // الآن: يُحذف فقط ما حُذف أصله
+        XCTAssertEqual(SepLong.purgeStale(in: root), 1)
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("fresh").path))
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("old-format").path))
+        XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("gone").path))
+        // العمل الجاري لا يُلمس ولو قديمًا
+        XCTAssertEqual(SepLong.purgeStale(in: root, now: Date().addingTimeInterval(8 * 86_400), skip: ["fresh"]), 1)
+        XCTAssertTrue(fm.fileExists(atPath: root.appendingPathComponent("fresh").path))
+        // بعد ٧ أيام بلا تقدّم: يُحذف
+        XCTAssertEqual(SepLong.purgeStale(in: root, now: Date().addingTimeInterval(8 * 86_400)), 1)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: root.path).count, 0)
+    }
+
     func testBlocksReproduceInputExactly() async throws {
         SepLong.block = 20 * 44_100
         let src = dir.appendingPathComponent("a.m4a")

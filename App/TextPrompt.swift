@@ -32,6 +32,32 @@ extension View {
 }
 
 enum TextDirection {
+    @MainActor private static var installed = false
+
+    /// كل خانات الكتابة ذات السطر الواحد في التطبيق (البحث، الروابط، الأسماء…):
+    /// اتجاه الفقرة يتبع أول حرف في النص، لا لغة لوحة المفاتيح — فلا تظهر مسافة أو قوس في آخر نص إنجليزي على الجهة الغلط.
+    /// المحاذاة لا تتغيّر (تبقى بلغة الواجهة)
+    @MainActor static func installForAllTextFields() {
+        guard !installed else { return }
+        installed = true
+        for name in [UITextField.textDidBeginEditingNotification, UITextField.textDidChangeNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { n in
+                guard let tf = n.object as? UITextField else { return }
+                MainActor.assumeIsolated { apply(tf) }
+            }
+        }
+    }
+
+    /// يضبط اتجاه فقرة الحقل بأول حرف فيه (بدون لمس المحاذاة ولا موضع المؤشر)
+    @MainActor static func apply(_ tf: UITextField) {
+        guard tf.markedTextRange == nil else { return }   // لا نلمس الحقل أثناء تركيب حرف (لوحات مفاتيح آسيوية)
+        let rtl = firstStrongIsRTL(tf.text ?? "") ?? !Lang.isEN
+        let want: NSWritingDirection = rtl ? .rightToLeft : .leftToRight
+        guard tf.baseWritingDirection(for: tf.beginningOfDocument, in: .forward) != want,
+              let r = tf.textRange(from: tf.beginningOfDocument, to: tf.endOfDocument) else { return }
+        tf.setBaseWritingDirection(want, for: r)
+    }
+
     /// اتجاه أول حرف «قوي» في النص: true عربي/عبري، false لاتيني وغيره، nil لا حروف (أرقام ورموز فقط أو فارغ)
     static func firstStrongIsRTL(_ s: String) -> Bool? {
         for u in s.unicodeScalars {
@@ -174,6 +200,7 @@ private struct TextPromptHost: UIViewControllerRepresentable {
 
         /// محاذاة ثابتة بلغة الواجهة، واتجاه الفقرة بأول حرف في النص
         static func applyDirection(_ tf: UITextField) {
+            guard tf.markedTextRange == nil else { return }
             let rtl = TextDirection.firstStrongIsRTL(tf.text ?? "") ?? !Lang.isEN
             if let r = tf.textRange(from: tf.beginningOfDocument, to: tf.endOfDocument) {
                 tf.setBaseWritingDirection(rtl ? .rightToLeft : .leftToRight, for: r)

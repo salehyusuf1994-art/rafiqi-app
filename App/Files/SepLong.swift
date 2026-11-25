@@ -39,6 +39,48 @@ enum SepLong {
         var written: Int
         var audioStart: Double
         var estTotal: Int
+        /// مسار الملف الأصلي نسبةً لمجلد التطبيق (لحذف البقايا إن حُذف الأصل). nil في الأعمال القديمة
+        var src: String? = nil
+    }
+
+    // MARK: تنظيف البقايا
+
+    /// الأعمال الجارية الآن (لا تُحذف أثناء التنظيف)
+    @MainActor static var active: Set<String> = []
+    static let staleAge: TimeInterval = 7 * 86_400
+
+    /// المسار نسبةً لمجلد التطبيق (مجلد التطبيق نفسه يتغيّر مساره مع التحديثات)
+    static func relativeToHome(_ u: URL) -> String? {
+        let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path
+        let p = u.resolvingSymlinksInPath().path
+        return p.hasPrefix(home + "/") ? String(p.dropFirst(home.count + 1)) : nil
+    }
+
+    /// فصل منقطع لم يُكمل: نسخة الصوت الخام تبقى مخفية وقد تبلغ عدة جيجابايت.
+    /// تُحذف إن مرّ عليها ٧ أيام بلا تقدّم، أو حُذف الملف الأصلي (أو نُقل أو غُيّر اسمه: مفتاحه تغيّر فلن تُستأنف أصلًا).
+    /// - returns: عدد الأعمال المحذوفة
+    @discardableResult
+    static func purgeStale(in root: URL = jobsDir, now: Date = Date(), skip: Set<String> = []) -> Int {
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else { return 0 }
+        let home = URL(fileURLWithPath: NSHomeDirectory())
+        var n = 0
+        for d in dirs where !skip.contains(d.lastPathComponent) {
+            let stateURL = d.appendingPathComponent("state.json")
+            let st = (try? Data(contentsOf: stateURL)).flatMap { try? JSONDecoder().decode(State.self, from: $0) }
+            let last = (try? stateURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? (try? d.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            var stale = now.timeIntervalSince(last) > staleAge
+            if let src = st?.src, !fm.fileExists(atPath: home.appendingPathComponent(src).path) { stale = true }
+            if stale, (try? fm.removeItem(at: d)) != nil { n += 1 }
+        }
+        return n
+    }
+
+    /// يُستدعى عند فتح التطبيق، بعيدًا عن الواجهة
+    @MainActor static func purgeStaleInBackground() {
+        let skip = active
+        Task.detached(priority: .background) { _ = purgeStale(skip: skip) }
     }
 
     // MARK: حفظ التقدّم
@@ -156,6 +198,8 @@ enum SepLong {
         let fm = FileManager.default
         let k = key(src, keep: keep, engine: engineName)
         let jd = dir(k)
+        await MainActor.run { _ = active.insert(k) }
+        defer { Task { @MainActor in active.remove(k) } }
         let asset = AVURLAsset(url: src)
         let dur = (try? await asset.load(.duration).seconds) ?? 0
         guard dur.isFinite, dur > 0 else { throw ToolError.failed(L("هذا الملف لا يدعم هذه العملية.")) }
@@ -169,11 +213,12 @@ enum SepLong {
         if let old = loadState(k), old.alsoOther == alsoOther, old.block == block,
            fm.fileExists(atPath: jd.appendingPathComponent("main.raw").path) {
             st = old; resumed = st.written > 0
+            if st.src == nil { st.src = relativeToHome(src) }
         } else {
             try? fm.removeItem(at: jd)
             try fm.createDirectory(at: jd, withIntermediateDirectories: true)
             st = State(keep: keep == .vocals ? "vocals" : "music", engine: engineName, alsoOther: alsoOther, block: block,
-                       nextBlock: 0, written: 0, audioStart: 0, estTotal: est)
+                       nextBlock: 0, written: 0, audioStart: 0, estTotal: est, src: relativeToHome(src))
         }
         var noBackup = URLResourceValues(); noBackup.isExcludedFromBackup = true
         var jdv = jobsDir; try? fm.createDirectory(at: jdv, withIntermediateDirectories: true); try? jdv.setResourceValues(noBackup)

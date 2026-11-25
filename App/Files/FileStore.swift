@@ -212,6 +212,7 @@ final class FileStore: ObservableObject {
             UserDefaults.standard.set(true, forKey: "files_vault_v1")
         }
         reconcileVault()
+        protectVault()
         // مجلدات العرض التجريبي (للمراجعة الآلية فقط)
         if SHOT.hasPrefix("files") || SHOT == "scanner" || ProcessInfo.processInfo.arguments.contains("-seedFiles") { seedDemo() }
     }
@@ -313,6 +314,50 @@ final class FileStore: ObservableObject {
         if isTrash(dir) { return nil }
         let t = vault.appendingPathComponent(key(dir), isDirectory: true)
         return fm.fileExists(atPath: t.path) ? t : nil
+    }
+
+    // MARK: تشفير الخزنة
+    // ملفات الجوال كلها مشفّرة، لكن الفئة العادية تبقى مفتوحة للنظام بعد أول فتح للجوال.
+    // الخزنة بفئة أشد: مشفّرة كلما قُفل الجوال (ما كان مفتوحًا لحظة القفل — مقطع يعمل — يكمل).
+    // خارج الخزنة تبقى الفئة العادية حتى تعمل التنزيلات والتشغيل والأدوات في الخلفية والجوال مقفل.
+    nonisolated static let vaultProtection = FileProtectionType.completeUnlessOpen
+    nonisolated static let normalProtection = FileProtectionType.completeUntilFirstUserAuthentication
+
+    /// يضبط فئة التشفير للعنصر وكل ما تحته (ما كان مضبوطًا يُترك). يرجع عدد ما تغيّر
+    @discardableResult
+    nonisolated static func setProtection(_ top: URL, _ type: FileProtectionType) -> Int {
+        let fm = FileManager.default
+        var n = 0
+        func apply(_ u: URL) {
+            if (try? fm.attributesOfItem(atPath: u.path))?[.protectionKey] as? FileProtectionType == type { return }
+            if (try? fm.setAttributes([.protectionKey: type], ofItemAtPath: u.path)) != nil { n += 1 }
+        }
+        guard fm.fileExists(atPath: top.path) else { return 0 }
+        apply(top)
+        if let e = fm.enumerator(at: top, includingPropertiesForKeys: nil) {
+            for case let u as URL in e { apply(u) }
+        }
+        return n
+    }
+
+    /// بعد نقل أو نسخ أو استرجاع: الفئة بحسب المكان الجديد (بعيدًا عن الواجهة)
+    func fixProtection(_ urls: [URL]) {
+        let pairs = urls.map { ($0, inVault($0) ? Self.vaultProtection : Self.normalProtection) }
+        guard !pairs.isEmpty else { return }
+        Task.detached(priority: .utility) { for (u, t) in pairs { Self.setProtection(u, t) } }
+    }
+
+    private var protecting = false
+    /// مراجعة الخزنة كلها (عند فتح التطبيق وعند الخروج منه): أي ملف دخلها بأي طريق يأخذ الفئة الأشد
+    func protectVault() {
+        guard !protecting, UIApplication.shared.isProtectedDataAvailable else { return }
+        protecting = true
+        let v = vault
+        let bg = KeepAwake.Background("rafiqi.vault.protect")
+        Task.detached(priority: .utility) {
+            Self.setProtection(v, Self.vaultProtection)
+            await MainActor.run { FileStore.shared.protecting = false; bg.finish() }
+        }
     }
 
     // MARK: القفل الحقيقي للمجلدات
@@ -562,6 +607,7 @@ final class FileStore: ObservableObject {
     /// نقل إلى مجلد (يتجاهل نقل المجلد داخل نفسه)
     func move(_ urls: [URL], to dir: URL) -> Int {
         var n = 0
+        var moved: [URL] = []
         for u in urls where !isVaultTrashRoot(u) {
             // المقارنة بالمفتاح المنطقي (المجلد وتوأمه في الخزنة مكان واحد)
             let ku = key(u), kd = key(dir)
@@ -575,9 +621,11 @@ final class FileStore: ObservableObject {
                 moveMetaTree(from: u, to: dest)
                 if inVault(u) { pruneVault(u.deletingLastPathComponent()) }
                 if isDir, isUnderRoot(dest) { migrateToVault(in: dest) }
+                if inVault(u) != inVault(dest) { moved.append(dest) }
                 n += 1
             }
         }
+        fixProtection(moved)
         touch()
         return n
     }
@@ -596,6 +644,7 @@ final class FileStore: ObservableObject {
                 if isUnderRoot(dest) { migrateToVault(in: dest) }
             }
         }
+        fixProtection(out)
         touch()
         return out
     }
@@ -616,6 +665,7 @@ final class FileStore: ObservableObject {
                 if Self.streamCopy(u, to: dest) { out.append(dest) }
             }
         }
+        fixProtection(out)
         touch()
         return out
     }
@@ -727,6 +777,7 @@ final class FileStore: ObservableObject {
                     }
                 }
                 if isUnderRoot(dest) { migrateToVault(in: dest) }
+                fixProtection([dest])
                 if top {
                     meta.trashOrigin.removeValue(forKey: name)
                     meta.trashDate.removeValue(forKey: name)
@@ -823,6 +874,7 @@ final class FileStore: ObservableObject {
         }
         if on { meta.locked.insert(key(out)) } else { meta.locked.remove(key(out)); unlocked.remove(key(out)) }
         saveMeta()
+        fixProtection([out])
         return out
     }
 
@@ -841,7 +893,7 @@ final class FileStore: ObservableObject {
         return false
     }
 
-    func relockAll() { unlocked.removeAll(); reconcileVault() }
+    func relockAll() { unlocked.removeAll(); reconcileVault(); protectVault() }
 
     /// أول مجلد مقفل (من الأعلى) في مسار هذا الرابط يحتاج تحققًا — nil إن كان المسار كله مفتوحًا
     func lockedAncestor(_ u: URL) -> URL? {

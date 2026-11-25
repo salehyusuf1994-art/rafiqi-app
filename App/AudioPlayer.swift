@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import MediaPlayer
+import UIKit
 import WidgetKit
 
 // MARK: - مشغّل الصوتيات (داخل التطبيق): القرآن والإذاعات، والتحكم في Apple Music
@@ -515,8 +516,31 @@ final class AudioPlayer: ObservableObject {
         state.source = .files
         state.title = u.deletingPathExtension().lastPathComponent
         state.subtitle = FileStore.plainName(u.deletingLastPathComponent())
+        // ملف من مجلد مقفل والجوال مقفل: الملف مشفّر الآن، فيبدأ أول ما يُفتح الجوال
+        if FileStore.isProtectedPath(u), !UIApplication.shared.isProtectedDataAvailable {
+            waitForUnlock(u, index: i)
+            return
+        }
         start(u)
         if rate != 1 { player.rate = rate }
+    }
+
+    private var unlockObserver: NSObjectProtocol?
+    private func waitForUnlock(_ u: URL, index i: Int) {
+        if let unlockObserver { NotificationCenter.default.removeObserver(unlockObserver) }
+        player.replaceCurrentItem(with: nil)
+        state.playing = false
+        save()
+        unlockObserver = NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                                                                object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                let a = AudioPlayer.shared
+                if let o = a.unlockObserver { NotificationCenter.default.removeObserver(o); a.unlockObserver = nil }
+                // ما زالت القائمة نفسها والمقطع نفسه (لم يُغيّر المستخدم شيئًا)
+                guard a.state.source == .files, a.fileQueue.indices.contains(i), a.fileQueue[i] == u, a.fileIndex == i else { return }
+                a.playFile(at: i)
+            }
+        }
     }
 
     private func stepFile(_ d: Int, manual: Bool) {
