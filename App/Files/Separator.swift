@@ -24,31 +24,60 @@ enum Separator {
     /// auto: النموذج عالي الدقة (BS-RoFormer) إن كان منزّلًا، وإلا النموذج المضمّن
     enum Engine { case auto, builtIn, roformer }
 
+    /// يفصل المقطع (حتى ٤ ساعات) ويرجع ملف M4A بالجزء المطلوب — انظر SepLong (دفعات، ذاكرة ثابتة، إكمال بعد الانقطاع)
     static func separate(_ src: URL, keep: Keep, quality: Quality = .high, engine: Engine = .auto,
                          progress: @escaping (Double) -> Void) async throws -> URL {
-        if engine == .roformer || (engine == .auto && SepModelStore.isReady) {
-            return try await Roformer.separate(src, keep: keep, progress: progress).0
+        try await run(src, keep: keep, quality: quality, engine: engine, progress: progress).main
+    }
+
+    /// الفصل الكامل: الناتج، والجزء الآخر عند الطلب، وبداية الصوت في الملف الأصلي (لمزامنة الفيديو)
+    static func run(_ src: URL, keep: Keep, quality: Quality = .high, engine: Engine = .auto, alsoOther: Bool = false,
+                    progress: @escaping (Double) -> Void) async throws -> SepLong.Result {
+        let t0 = Date()
+        let high = engine == .roformer || (engine == .auto && SepModelStore.isReady)
+        progress(0.005)
+        if high {
+            guard SepModelStore.isReady else { throw ToolError.failed(L("نموذج الفصل عالي الدقة غير منزّل.")) }
+            let runner = try await Roformer.Runner.make()
+            var chunks = 0
+            let res = try await SepLong.run(src, keep: keep, engineName: "high", alsoOther: alsoOther, separate: { l, r, p in
+                var c = 0
+                let out = try await Roformer.vocals(model: runner, l, r, overlap: .edges, chunks: &c, progress: p)
+                chunks += c
+                return out
+            }, progress: progress)
+            let secs = Date().timeIntervalSince(t0)
+            let plan = await MainActor.run { SepModelStore.shared.planSummary }
+            var report = LF("استغرق الفصل %@ (%@ ثانية لكل ٨ ثوانٍ من المقطع).", durationText(secs),
+                            ar(String(format: "%.1f", secs / Double(max(1, chunks)))))
+            report += " " + LF("النموذج وحده %@ ثانية لكل جزء.", ar(String(format: "%.1f", runner.modelSeconds / Double(max(1, chunks)))))
+            if let plan { report += " " + LF("يعمل على: %@.", plan) }
+            report += runner.extraReport
+            if res.resumed { report += " " + L("أُكمل من حيث توقف سابقًا.") }
+            let final = report
+            await MainActor.run { Roformer.lastReport = final }
+            return res
         }
         guard let murl = modelURL else { throw ToolError.failed(L("نموذج الفصل غير موجود في هذه النسخة.")) }
-        progress(0.01)
-        // المعالج الرسومي لا المحرك العصبي: تجهيز هذا النموذج الكبير للمحرك العصبي في أول مرة يأخذ دقائق
-        // (تبقى النسبة ٠٪ ويسخن الجوال). المعالج الرسومي يبدأ فورًا، وإن تعذّر نرجع للمعالج العادي
         // نفس مشغّل النموذج عالي الدقة: كرت الشاشة، والمعالج في الخلفية أو عند الفشل
-        let t0 = Date()
-        let model = try await Roformer.Runner.make(url: murl, plan: false)
-        try Task.checkCancellation()
-        progress(0.02)
+        let runner = try await Roformer.Runner.make(url: murl, plan: false)
+        let res = try await SepLong.run(src, keep: keep, engineName: quality == .high ? "fast" : "fast-std", alsoOther: alsoOther, separate: { l, r, p in
+            try await mdxVocals(model: runner, l, r, quality: quality, progress: p)
+        }, progress: progress)
+        var report = LF("استغرق الفصل %@ بالنموذج السريع.", durationText(Date().timeIntervalSince(t0))) + runner.extraReport
+        if res.resumed { report += " " + L("أُكمل من حيث توقف سابقًا.") }
+        let final = report
+        await MainActor.run { Roformer.lastReport = final }
+        return res
+    }
+
+    /// النموذج المضمّن (MDX-Net) على نافذة صوت في الذاكرة: يرجع الصوت البشري بنفس الطول
+    static func mdxVocals(model: Roformer.Runner, _ lch: [Float], _ rch: [Float], quality: Quality,
+                          progress: @escaping (Double) -> Void) async throws -> ([Float], [Float]) {
         let inName = model.description?.inputDescriptionsByName.keys.first ?? "input"
         let outName = model.description?.outputDescriptionsByName.keys.first ?? "output"
-
-        // ١) قراءة الصوت ستيريو ٤٤١٠٠ هرتز
-        let (lch, rch) = try await readPCM(src)
-        try Task.checkCancellation()
-        progress(0.05)
         let n = lch.count
         guard n > nfft else { throw ToolError.failed(L("المقطع قصير جدًا.")) }
-        guard Double(n) / rate <= 20 * 60 else { throw ToolError.failed(L("المقطع أطول من ٢٠ دقيقة.")) }
-
         // ٢) إعداد التحويل
         let log2n = vDSP_Length(12)
         guard let fwd = vDSP_DFT_zrop_CreateSetup(nil, vDSP_Length(nfft), .FORWARD),
@@ -139,19 +168,10 @@ enum Separator {
                 }
             }
             chunkStart += count
-            progress(0.05 + 0.85 * Double(chunkStart) / Double(totalFrames))
+            progress(Double(chunkStart) / Double(totalFrames))
         }
         for j in 0..<n where wsum[j] > 1e-6 { outL[j] /= wsum[j]; outR[j] /= wsum[j] }
-        if keep == .music {
-            for j in 0..<n { outL[j] = lch[j] - outL[j]; outR[j] = rch[j] - outR[j] }
-        }
-        // ٣) الحفظ
-        let out = MediaTools.output(for: src, suffix: keep == .vocals ? L("بدون موسيقى") : L("بدون صوت بشري"), ext: "m4a")
-        try writeM4A(outL, outR, to: out)
-        let report = LF("استغرق الفصل %@ بالنموذج السريع.", durationText(Date().timeIntervalSince(t0))) + model.extraReport
-        await MainActor.run { Roformer.lastReport = report }
-        progress(1)
-        return out
+        return (outL, outR)
     }
 
     /// المعامل الذي يعيد الإشارة بعد تحويل ذهابًا وإيابًا (يختلف حسب اصطلاح vDSP)
@@ -359,17 +379,12 @@ enum Separator {
             // rof: النموذج عالي الدقة بالتداخل الخفيف (الأسرع)، rofh: بتداخل النصف (كل ثانية مرتين) للمقارنة
             try await SepModelStore.shared.ensureReady()
             // (mdx وتداخل النصف قيسا سابقًا: نفس الجودة؛ يبقى الأساسي فقط لتقصير الفحص)
-            for name in ["old", "rof"] {
-                let voc: URL, mus: URL
+            // نفس مسار الإنتاج (SepLong): old الأداة الأولى، mdx «السريع» بتحسيناته، rof «عالي الدقة»
+            for name in ["old", "mdx", "rof"] {
                 let t0 = Date()
-                if name.hasPrefix("rof") {
-                    let (v, m) = try await Roformer.separate(mixURL, keep: .vocals, alsoOther: true, overlap: name == "rof" ? .edges : .half, progress: { _ in })
-                    voc = v; mus = m ?? v
-                } else {
-                    let q: Quality = name == "old" ? .standard : .high
-                    voc = try await separate(mixURL, keep: .vocals, quality: q, engine: .builtIn, progress: { _ in })
-                    mus = try await separate(mixURL, keep: .music, quality: q, engine: .builtIn, progress: { _ in })
-                }
+                let q: Quality = name == "old" ? .standard : .high
+                let r = try await run(mixURL, keep: .vocals, quality: q, engine: name == "rof" ? .roformer : .builtIn, alsoOther: true, progress: { _ in })
+                let voc = r.main, mus = r.other ?? r.main
                 res["sec_" + name] = Date().timeIntervalSince(t0)
                 clean += [voc, mus]
                 let (vo, _) = try await readPCM(voc)
@@ -402,7 +417,7 @@ enum Separator {
             clean.forEach { try? FileManager.default.removeItem(at: $0) }
             var r = String(format: "SEPTEST vocals~speech=%.2f music~tone=%.2f", res["vs"] ?? 0, res["mt"] ?? 0)
             for k in ["sdrV", "sdrM", "keepV", "leakV", "keepM", "leakM", "sec"] {
-                for e in ["old", "rof"] { r += String(format: " %@_%@=%.2f", k, e, res[k + "_" + e] ?? 0) }
+                for e in ["old", "mdx", "rof"] { r += String(format: " %@_%@=%.2f", k, e, res[k + "_" + e] ?? 0) }
             }
             return r
         } catch {

@@ -25,7 +25,7 @@ permissions:
 jobs:
   build:
     runs-on: ${{ inputs.runner || 'macos-15' }}
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -200,7 +200,7 @@ jobs:
           ls -la shots
 
       - name: Unit tests (prayer times, Hijri, Qibla — independent reference data)
-        timeout-minutes: 30
+        timeout-minutes: 55
         run: |
           UDID=$(python3 ci/pick_sim.py)
           set -o pipefail

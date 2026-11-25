@@ -240,6 +240,11 @@ struct ToolHost: View {
     @State private var splitFolder: URL?
     @State private var splitStep: (Int, Int)?
     @AppStorage("sep.engine") private var sepEngine = "high"
+    /// فصل سابق منقطع لهذا الملف (نسبته) — «إكمال» يتابع من حيث توقف
+    @State private var sepPending: Double?
+    @State private var runStart = Date()
+    @State private var batteryAsk = false
+    @State private var mediaSeconds: Double = 0
     @ObservedObject private var sepStore = SepModelStore.shared
     @FocusState private var splitFocus: Bool
 
@@ -427,6 +432,17 @@ struct ToolHost: View {
                 if !Separator.available { note("نموذج الفصل غير مضمّن في هذه النسخة.") }
             }
             card { SepEngineCard() }
+                .onChange(of: sepEngine) { _, _ in refreshPending() }
+            if let f = sepPending {
+                card {
+                    Label(LF("فصل غير مكتمل لهذا الملف (%@٪). «إكمال» يتابع من حيث توقف.", ar(Int(f * 100))), systemImage: "arrow.clockwise.circle.fill")
+                        .font(Theme.f(.subheadline, .semibold)).foregroundStyle(Theme.gold).fixedSize(horizontal: false, vertical: true)
+                    pill("البدء من جديد", "trash") {
+                        SepLong.discard(url, keep: tool == .removeMusic ? .vocals : .music, engine: sepEngine == "fast" ? "fast" : "high")
+                        refreshPending()
+                    }
+                }
+            }
         case .pdfPages:
             PDFPagesEditor(url: url) { dismiss() }
         case .metadata:
@@ -489,13 +505,47 @@ struct ToolHost: View {
     private func seekPreview(_ t: Double) { player?.seek(to: CMTime(seconds: max(0, t), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
 
     private var runButton: some View {
-        Button { job = Task { await go() } } label: {
-            Text(tool == .editText ? L("حفظ") : L("تنفيذ")).font(Theme.f(.headline)).foregroundStyle(.black)
+        Button {
+            if needsBatteryWarning { batteryAsk = true } else { job = Task { await go() } }
+        } label: {
+            Text(tool == .editText ? L("حفظ") : (isSeparation && sepPending != nil ? L("إكمال") : L("تنفيذ"))).font(Theme.f(.headline)).foregroundStyle(.black)
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.gold))
         }
         .disabled(runBlocked)
         .opacity(runBlocked ? 0.5 : 1)
+        .confirmationDialog(LF("البطارية %@٪ والمقطع طويل", ar(batteryPercent)), isPresented: $batteryAsk, titleVisibility: .visible) {
+            Button("ابدأ على أي حال") { job = Task { await go() } }
+            Button("إلغاء", role: .cancel) {}
+        } message: {
+            Text("الفصل الطويل يستهلك البطارية بسرعة. الأفضل توصيل الجوال بالشاحن. وإن نفدت البطارية يكمل لاحقًا من حيث توقف.")
+        }
+    }
+
+    private var isSeparation: Bool { tool == .removeMusic || tool == .removeVocals }
+
+    private var batteryPercent: Int { Int((UIDevice.current.batteryLevel * 100).rounded()) }
+
+    /// تنبيه قبل فصل أطول من ٢٠ دقيقة والبطارية أقل من ٣٠٪ وليست على الشاحن
+    private var needsBatteryWarning: Bool {
+        guard isSeparation, mediaSeconds > 20 * 60 else { return false }
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let lvl = UIDevice.current.batteryLevel
+        return lvl >= 0 && lvl < 0.3 && UIDevice.current.batteryState == .unplugged
+    }
+
+    private func refreshPending() {
+        guard isSeparation else { return }
+        sepPending = SepLong.pending(url, keep: tool == .removeMusic ? .vocals : .music, engine: sepEngine == "fast" ? "fast" : "high")
+    }
+
+    /// الوقت المتبقي من سرعة الفصل الفعلية
+    private var etaText: String? {
+        let el = Date().timeIntervalSince(runStart)
+        guard progress > 0.02, progress < 0.995, el > 20 else { return nil }
+        let rem = el * (1 - progress) / progress
+        if rem < 60 { return L("أقل من دقيقة") }
+        return lengthWords(Double(Int(rem / 60 + 0.5) * 60))
     }
 
     private var runBlocked: Bool {
@@ -513,8 +563,14 @@ struct ToolHost: View {
                 Text(LF("جزء %@ من %@", ar(st.0), ar(st.1))).font(Theme.f(.headline)).foregroundStyle(.white)
             }
             Text(LF("جارٍ التنفيذ… %@٪", ar(Int(progress * 100)))).font(Theme.f(.subheadline)).foregroundStyle(.white)
+            if isSeparation, let eta = etaText {
+                Text(LF("باقي تقريبًا %@", eta)).font(Theme.f(.headline)).foregroundStyle(Theme.gold)
+            }
             note("الشاشة تبقى مضاءة حتى ينتهي. أبقِ التطبيق مفتوحًا.")
-            if tool == .split {
+            if isSeparation {
+                note("إن ألغيت أو انقطع الفصل، تكمله لاحقًا من حيث توقف.")
+            }
+            if tool == .split || isSeparation {
                 pill("إلغاء", "xmark") { job?.cancel() }
             }
         }
@@ -713,6 +769,11 @@ struct ToolHost: View {
     // MARK: التنفيذ
 
     private func prepare() async {
+        if isSeparation {
+            let d = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
+            mediaSeconds = d.isFinite ? d : 0
+            refreshPending()
+        }
         if tool == .split {
             let d = (try? await AVURLAsset(url: url).load(.duration).seconds) ?? 0
             total = d.isFinite ? d : 0
@@ -752,6 +813,7 @@ struct ToolHost: View {
         error = nil
         running = true
         progress = 0
+        runStart = Date()
         // الشاشة تبقى مضاءة طوال المهمة (فصل الصوت قد يستغرق دقائق)
         KeepAwake.begin()
         let bg = KeepAwake.Background("rafiqi.tool")
@@ -779,10 +841,13 @@ struct ToolHost: View {
                 var ok = false
                 defer { SepContinued.shared.end(success: ok) }
                 let engine: Separator.Engine = sepEngine == "fast" ? .builtIn : .roformer
-                let stem = try await Separator.separate(url, keep: keep, engine: engine, progress: { v in
-                    Task { @MainActor in progress = video ? v * 0.8 : v; SepContinued.shared.update(video ? v * 0.8 : v) } })
+                let sep = try await Separator.run(url, keep: keep, engine: engine, progress: { v in
+                    Task { @MainActor in progress = video ? v * 0.97 : v; SepContinued.shared.update(video ? v * 0.97 : v) } })
+                let stem = sep.main
                 if video {
-                    let v = try await MediaTools.replaceAudio(url, with: stem, keepOriginal: false, progress: { x in Task { @MainActor in progress = 0.8 + x * 0.2 } })
+                    // الصورة تُنسخ كما هي، والصوت الجديد يبدأ من موضع الصوت الأصلي نفسه (مزامنة مطابقة للأصل)
+                    let v = try await MediaTools.replaceAudio(url, with: stem, keepOriginal: false, audioStart: sep.audioStart, loop: false,
+                                                              progress: { x in Task { @MainActor in progress = 0.97 + x * 0.03 } })
                     try? FileManager.default.removeItem(at: stem)
                     let named = MediaTools.output(for: url, suffix: keep == .vocals ? L("بدون موسيقى") : L("بدون صوت بشري"), ext: v.pathExtension)
                     try? FileManager.default.moveItem(at: v, to: named)
@@ -858,8 +923,13 @@ struct ToolHost: View {
             if tool == .split, let st = splitStep, st.0 > 1, let f = splitFolder {
                 error = LF("أُلغي التقسيم. بقيت الأجزاء المكتملة (%@ من %@) في مجلد «%@».", ar(st.0 - 1), ar(st.1), f.lastPathComponent)
             }
+            if isSeparation {
+                refreshPending()
+                if sepPending != nil { error = L("توقف الفصل وحُفظ تقدّمه. «إكمال» يتابع من حيث توقف.") }
+            }
         } catch {
             self.error = error.localizedDescription
+            refreshPending()
         }
     }
 

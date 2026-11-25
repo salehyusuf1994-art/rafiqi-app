@@ -405,19 +405,21 @@ enum MediaTools {
     }
 
     /// استبدال صوت الفيديو بملف صوتي (أو مزجه)
-    static func replaceAudio(_ src: URL, with audio: URL, keepOriginal: Bool, progress: @escaping (Double) -> Void) async throws -> URL {
+    /// audioStart: بداية الصوت في الفيديو الأصلي (تحفظ المزامنة كما كانت)، loop: تكرار الصوت الأقصر حتى نهاية الفيديو
+    static func replaceAudio(_ src: URL, with audio: URL, keepOriginal: Bool, audioStart: Double = 0, loop: Bool = true,
+                             progress: @escaping (Double) -> Void) async throws -> URL {
         let a = AVURLAsset(url: src), b = AVURLAsset(url: audio)
         let (c, _, _) = try await composition(a, audio: keepOriginal)
         let d = await duration(a)
         guard let bt = await audioTracks(b).first else { throw ToolError.failed(L("الملف الصوتي المختار لا يحتوي على صوت.")) }
         let bd = await duration(b)
         let t = c.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-        var at = CMTime.zero
+        var at = CMTime(seconds: max(0, audioStart), preferredTimescale: 44_100)
         while at < d {
             let len = min(bd, d - at)
             try t?.insertTimeRange(CMTimeRange(start: .zero, duration: len), of: bt, at: at)
             at = at + len
-            if bd.seconds <= 0 { break }
+            if bd.seconds <= 0 || !loop { break }
         }
         // الصوت الجديد بدل الأصلي: الفيديو يُنسخ كما هو بلا إعادة ضغط (أسرع بكثير وبجودته الأصلية تمامًا)
         if !keepOriginal, let out = try await passthrough(c, for: src, suffix: L("صوت جديد"), progress: progress) { return out }

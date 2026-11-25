@@ -204,44 +204,6 @@ enum Roformer {
     /// edges: تداخل عند الحواف فقط (كل ثانية تُحسب مرة واحدة تقريبًا)، half: تداخل النصف (كل ثانية مرتين)
     enum Overlap { case edges, half }
 
-    static func separate(_ src: URL, keep: Separator.Keep, alsoOther: Bool = false, overlap: Overlap = .edges,
-                         progress: @escaping (Double) -> Void) async throws -> (URL, URL?) {
-        let t0 = Date()
-        guard SepModelStore.isReady else { throw ToolError.failed(L("نموذج الفصل عالي الدقة غير منزّل.")) }
-        progress(0.01)
-        let model = try await Runner.make()
-        try Task.checkCancellation()
-        let (lch, rch) = try await Separator.readPCM(src)
-        let n = lch.count
-        guard n > nfft else { throw ToolError.failed(L("المقطع قصير جدًا.")) }
-        guard Double(n) / rate <= 20 * 60 else { throw ToolError.failed(L("المقطع أطول من ٢٠ دقيقة.")) }
-        progress(0.04)
-        var chunks = 0
-        let (vl, vr) = try await vocals(model: model, lch, rch, overlap: overlap, chunks: &chunks, progress: { progress(0.04 + 0.9 * $0) })
-        var ml = [Float](repeating: 0, count: n), mr = ml
-        vDSP_vsub(vl, 1, lch, 1, &ml, 1, vDSP_Length(n))     // ml = lch − vl
-        vDSP_vsub(vr, 1, rch, 1, &mr, 1, vDSP_Length(n))
-        let vName = L("بدون موسيقى"), mName = L("بدون صوت بشري")
-        let mainOut = MediaTools.output(for: src, suffix: keep == .vocals ? vName : mName, ext: "m4a")
-        if keep == .vocals { try Separator.writeM4A(vl, vr, to: mainOut) } else { try Separator.writeM4A(ml, mr, to: mainOut) }
-        var other: URL?
-        if alsoOther {
-            let o = MediaTools.output(for: src, suffix: keep == .vocals ? mName : vName, ext: "m4a")
-            if keep == .vocals { try Separator.writeM4A(ml, mr, to: o) } else { try Separator.writeM4A(vl, vr, to: o) }
-            other = o
-        }
-        progress(1)
-        let secs = Date().timeIntervalSince(t0)
-        let plan = await MainActor.run { SepModelStore.shared.planSummary }
-        var report = LF("استغرق الفصل %@ (%@ ثانية لكل ٨ ثوانٍ من المقطع).", durationText(secs),
-                        ar(String(format: "%.1f", secs / Double(max(1, chunks)))))
-        report += " " + LF("النموذج وحده %@ ثانية لكل جزء.", ar(String(format: "%.1f", model.modelSeconds / Double(max(1, chunks)))))
-        if let plan { report += " " + LF("يعمل على: %@.", plan) }
-        report += model.extraReport
-        let finalReport = report
-        await MainActor.run { lastReport = finalReport }
-        return (mainOut, other)
-    }
 
     /// الصوت البشري للمقطع كاملًا: قطع ٨ ثوانٍ بتداخل النصف، وحواف متلاشية، وانعكاس عند طرفي المقطع
     static func vocals(model: Runner, _ lch: [Float], _ rch: [Float], overlap: Overlap, chunks: inout Int,
