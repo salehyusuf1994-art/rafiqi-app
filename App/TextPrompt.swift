@@ -46,8 +46,7 @@ enum TextDirection {
     }
 }
 
-/// مضيف خفي: عرض صغير فقط (لا متحكّم عرض) حتى لا ينقل SwiftUI عروض UIKit بين الصفحات
-private struct TextPromptHost: UIViewRepresentable {
+private struct TextPromptHost: UIViewControllerRepresentable {
     @Binding var isPresented: Bool
     let spec: () -> TextPromptSpec
     let onConfirm: (String) -> Void
@@ -55,21 +54,21 @@ private struct TextPromptHost: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView()
-        v.isUserInteractionEnabled = false
-        v.backgroundColor = .clear
-        return v
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        vc.view.isUserInteractionEnabled = false
+        vc.view.backgroundColor = .clear
+        return vc
     }
 
-    func updateUIView(_ v: UIView, context: Context) {
+    func updateUIViewController(_ vc: UIViewController, context: Context) {
         let c = context.coordinator
         c.parent = self
-        if isPresented, c.alert == nil { c.open(from: v) }
+        if isPresented, c.alert == nil { c.open(from: vc) }
         else if !isPresented, c.alert != nil { c.close() }
     }
 
-    static func dismantleUIView(_ v: UIView, coordinator: Coordinator) {
+    static func dismantleUIViewController(_ vc: UIViewController, coordinator: Coordinator) {
         coordinator.close(animated: false)
     }
 
@@ -80,7 +79,7 @@ private struct TextPromptHost: UIViewRepresentable {
         private var allowEmpty = false
         private var finished = false
 
-        func open(from host: UIView) {
+        func open(from host: UIViewController) {
             guard let p = parent else { return }
             let s = p.spec()
             finished = false
@@ -117,9 +116,9 @@ private struct TextPromptHost: UIViewRepresentable {
         }
 
         /// يُعرض بعد انتهاء أي حركة جارية (إغلاق قائمة الضغط المطوّل أو نافذة أخرى)
-        private func present(_ a: UIAlertController, from host: UIView, selectAll: Bool, attempt: Int) {
+        private func present(_ a: UIAlertController, from host: UIViewController, selectAll: Bool, attempt: Int) {
             guard alert === a, !finished else { return }
-            var top = host.window?.rootViewController
+            var top = host.view.window?.rootViewController
             while let p = top?.presentedViewController, !p.isBeingDismissed { top = p }
             guard let top, top.transitionCoordinator == nil, !top.isBeingPresented, !top.isBeingDismissed else {
                 guard attempt < 40 else { finish(nil); return }
