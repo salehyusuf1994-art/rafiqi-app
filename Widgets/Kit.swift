@@ -794,12 +794,19 @@ enum Weather {
     private static func num(_ x: Any?) -> Double? { (x as? NSNumber)?.doubleValue }
     private static func nums(_ x: Any?) -> [Double] { ((x as? [Any]) ?? []).map { num($0) ?? 0 } }
 
+    /// إحداثية مقرّبة لمنزلتين عشريتين (~١ كم) بنقطة إنجليزية دائمًا
+    static func coarse(_ v: Double) -> String {
+        let r = (v * 100).rounded() / 100
+        return String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), r == 0 ? 0 : r)
+    }
+
     static func load() async -> WeatherData? {
         let c = cached()
         if let c, c.days != nil, Date().timeIntervalSince1970 - c.t < 20 * 60,
            abs((c.la ?? Settings.lat) - Settings.lat) < 0.05, abs((c.lo2 ?? Settings.lng) - Settings.lng) < 0.05 { return c }
-        // الموقع الدقيق (اختيار صالح: بدون تقريب)
-        let s = "https://api.open-meteo.com/v1/forecast?latitude=\(Settings.lat)&longitude=\(Settings.lng)"
+        // الموقع مقرّب لحوالي كيلو (منزلتان عشريتان): خدمة الطقس تعرف الحي لا البيت، والطقس نفسه لا يتغيّر
+        // (اختيار صالح ٢٥ نوفمبر ٢٠٢٦ بدل الموقع الدقيق)
+        let s = "https://api.open-meteo.com/v1/forecast?latitude=\(coarse(Settings.lat))&longitude=\(coarse(Settings.lng))"
             + "&current=temperature_2m,apparent_temperature,weather_code,is_day,relative_humidity_2m,wind_speed_10m"
             + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max"
             + "&forecast_days=7&timezone=auto&timeformat=unixtime"

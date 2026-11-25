@@ -91,4 +91,12 @@ final class QualityTests: XCTestCase {
         i.calendar = .hijri
         XCTAssertNil(i.shamiChoice)
     }
+
+    /// الطقس: الموقع يُرسل مقرّبًا لحوالي كيلو، بنقطة إنجليزية
+    func testWeatherCoordinatesAreCoarse() {
+        XCTAssertEqual(WeatherData.coarse(24.467891), "24.47")
+        XCTAssertEqual(WeatherData.coarse(39.614321), "39.61")
+        XCTAssertEqual(WeatherData.coarse(-0.003), "0.00")
+        XCTAssertEqual(WeatherData.coarse(-33.86882), "-33.87")
+    }
 }
