@@ -1,0 +1,61 @@
+name: PC separation model (ONNX fp32, publish)
+
+# نفس نموذج الجوال (BS-RoFormer viperx، رخصة MIT) بدقة كاملة fp32 بصيغة ONNX لأداة «نقاء» على الكمبيوتر.
+# يُشغَّل يدويًا فقط. لا يحتوي على أي بيانات للمستخدم.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag"
+        type: string
+        default: sep-onnx-v1
+
+permissions:
+  contents: write   # إنشاء الإصدار ورفع ملف النموذج فقط
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0 (مثبّت بالبصمة)
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0 (مثبّت بالبصمة)
+        with:
+          python-version: "3.11"
+      - name: Validate inputs
+        run: '[[ "$TAG" =~ ^sep-onnx-v[0-9]+$ ]] || { echo "::error::bad tag"; exit 1; }'
+      - name: Install
+        run: |
+          pip install -q --index-url https://download.pytorch.org/whl/cpu "torch==2.5.1"
+          pip install -q "coremltools==8.3.0" "numpy<2.2" einops==0.8.0 rotary-embedding-torch==0.8.6 beartype==0.19.0 safetensors==0.4.5 pyyaml packaging huggingface_hub==0.26.2 onnx==1.17.0 onnxruntime==1.20.1
+      - name: Fetch model code (ZFTurbo, MIT) and weights (viperx BS-RoFormer, MIT)
+        run: |
+          set -e
+          M=tools/model/models/bs_roformer
+          mkdir -p $M && touch tools/model/models/__init__.py $M/__init__.py
+          SRC=https://raw.githubusercontent.com/ZFTurbo/Music-Source-Separation-Training/main
+          curl -sSfL $SRC/models/bs_roformer/bs_roformer.py -o $M/bs_roformer.py
+          curl -sSfL $SRC/models/bs_roformer/attend.py -o $M/attend.py
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          for f in ['bs_roformer/vocals_viperx/model.safetensors', 'bs_roformer/vocals_viperx/config.yaml']:
+              print(hf_hub_download('AEmotionStudio/roformer-models', f, local_dir='w'))
+          PY
+      - name: Export and verify
+        run: python tools/model/export_onnx.py --config w/bs_roformer/vocals_viperx/config.yaml --weights w/bs_roformer/vocals_viperx/model.safetensors --out out
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cat > out/NOTICE.txt <<'TXT'
+          BS-RoFormer vocal separation model (full fp32 precision, ONNX) for the Naqa PC tool.
+          Weights: viperx BS-RoFormer (vocals), MIT License, via huggingface.co/AEmotionStudio/roformer-models.
+          Architecture code: ZFTurbo/Music-Source-Separation-Training, MIT License (Roman Solovyev).
+          Paper: Lu et al., "Music Source Separation with Band-Split RoPE Transformer" (2023).
+          TXT
+          gh release create "$TAG" --title "PC separation model ($TAG)" --notes-file out/NOTICE.txt \
+            out/bsroformer-vocals-fp32.onnx out/files.json out/NOTICE.txt
+          cat out/files.json
