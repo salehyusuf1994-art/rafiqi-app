@@ -1,0 +1,104 @@
+name: PC tool (Naqa) build & test
+
+# يبني أداة «نقاء» لويندوز ويفحصها: الفصل على كتل، الإكمال بعد الإيقاف، مزامنة الفيديو،
+# مطابقة التحويل الطيفي للأصل، وجودة النموذج الحقيقي. المخرجات مشفّرة (ci/seal.sh) في فرع pcout.
+on:
+  workflow_dispatch:
+    inputs:
+      model_test:
+        description: "Run the real-model quality test"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write  # يرفع مخرجات مشفّرة فقط
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0 (مثبّت بالبصمة)
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0 (مثبّت بالبصمة)
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install -q --upgrade pip
+          pip install -q "numpy==2.2.6" "onnxruntime-directml==1.24.4" "pywebview==6.2.1" "pyinstaller>=6.10,<7" "pillow>=11,<13"
+          python -c "import onnxruntime as o; print(o.__version__, o.get_available_providers())"
+      - name: ffmpeg (LGPL shared build)
+        run: |
+          set -e
+          URL=$(gh api repos/BtbN/FFmpeg-Builds/releases/latest --jq '.assets[] | select(.name|test("^ffmpeg-n[0-9.]+-latest-win64-lgpl-shared-[0-9.]+\\.zip$")) | .browser_download_url' | sort -V | tail -1)
+          echo "ffmpeg: $URL"
+          curl -sSfL "$URL" -o ff.zip
+          sha256sum ff.zip
+          mkdir -p ffx && unzip -q ff.zip -d ffx
+          mkdir -p pc/naqa/ffmpeg
+          cp ffx/*/bin/ffmpeg.exe ffx/*/bin/ffprobe.exe ffx/*/bin/*.dll pc/naqa/ffmpeg/
+          cp ffx/*/LICENSE.txt pc/naqa/ffmpeg/LICENSE-ffmpeg.txt 2>/dev/null || true
+          pc/naqa/ffmpeg/ffmpeg.exe -hide_banner -version | head -1
+      - name: Self test (blocks, resume, video sync, model quality)
+        env:
+          MODEL_TEST: ${{ inputs.model_test }}
+        run: |
+          mkdir -p out
+          ARGS="x"; [ "$MODEL_TEST" = "true" ] && ARGS="x --model"
+          cd pc/naqa && python -c "import sys; from naqa import selftest; sys.exit(selftest.main(sys.argv))" $ARGS 2>&1 | tee ../../out/selftest.log
+          grep -q "NAQA TEST RESULT ALL PASS" ../../out/selftest.log
+      - name: STFT parity with the original (torch)
+        run: |
+          pip install -q --index-url https://download.pytorch.org/whl/cpu "torch==2.5.1"
+          pip install -q einops==0.8.0
+          python pc/naqa/tests/parity.py | tee out/parity.log
+          grep -q "NAQA PARITY PASS" out/parity.log
+      - name: Build app (PyInstaller)
+        run: |
+          cd pc/naqa
+          python make_icon.py naqa.ico
+          pyinstaller --noconfirm --clean --windowed --name Naqa --icon naqa.ico \
+            --add-data "ui;ui" --add-data "ffmpeg;ffmpeg" \
+            --collect-all webview --collect-binaries onnxruntime --collect-data onnxruntime \
+            --exclude-module tkinter --exclude-module matplotlib --exclude-module torch --exclude-module einops \
+            main.py 2>&1 | tail -15
+          du -sh dist/Naqa
+      - name: Built app self test (no window)
+        run: |
+          cd pc/naqa
+          export NAQA_TEST_LOG="$GITHUB_WORKSPACE/out/exe-selftest.log"
+          ./dist/Naqa/Naqa.exe --selftest; echo "exit $?"
+          cat "$NAQA_TEST_LOG"
+          grep -q "NAQA TEST RESULT ALL PASS" "$NAQA_TEST_LOG"
+      - name: Built app window smoke test
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "pc\naqa\dist\Naqa\Naqa.exe" -ArgumentList "--smoke" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); Write-Host "smoke: window did not close (timeout)"; exit 1 }
+          Write-Host "smoke exit code: $($p.ExitCode)"
+          Get-Content "$env:LOCALAPPDATA\Naqa\naqa.log" -ErrorAction SilentlyContinue | Select-Object -Last 20
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress | Out-Null
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $lang = if (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\Languages\Arabic.isl") { "arabic" } else { "english" }
+          Write-Host "installer language: $lang"
+          Push-Location pc\naqa
+          & $iscc /Qp "/DLANG=$lang" installer.iss
+          Pop-Location
+          Get-ChildItem installer | Format-Table Name, Length
+          Copy-Item installer\*.exe out\
+      - name: Seal outputs
+        if: always()
+        run: |
+          ls -la out
+          bash ci/seal.sh out pcout

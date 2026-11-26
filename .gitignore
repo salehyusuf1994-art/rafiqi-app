@@ -5,3 +5,8 @@ Payload/
 .DS_Store
 __pycache__/
 tools/model/models/
+pc/naqa/dist/
+pc/naqa/ffmpeg/
+pc/naqa/*.spec
+pc/naqa/naqa.ico
+installer/

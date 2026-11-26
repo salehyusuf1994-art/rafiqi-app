@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نقاء</title>
+<style>
+  :root {
+    --bg: #08090E; --card: rgba(255,255,255,.055); --line: rgba(255,255,255,.09);
+    --gold: #E3C280; --gold-deep: #9E804A; --text: #F4F1EA; --sub: rgba(255,255,255,.56);
+    --ok: #7BD8A8; --bad: #F08A80;
+  }
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI Variable Text", "Segoe UI", Tahoma, sans-serif;
+    background: radial-gradient(1200px 600px at 85% -10%, rgba(227,194,128,.13), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(64,120,140,.16), transparent 60%), var(--bg);
+    color: var(--text); overflow: hidden;
+  }
+  .wrap { height: 100%; display: flex; flex-direction: column; padding: 26px 34px 18px; gap: 16px; overflow-y: auto; }
+  header { display: flex; align-items: center; gap: 16px; }
+  .logo { width: 54px; height: 54px; border-radius: 16px; display: grid; place-items: center;
+          background: linear-gradient(145deg, rgba(227,194,128,.22), rgba(227,194,128,.05)); border: 1px solid rgba(227,194,128,.35); }
+  h1 { margin: 0; font-size: 28px; letter-spacing: .5px; }
+  .tag { color: var(--sub); font-size: 14px; margin-top: 2px; }
+  .chip { margin-inline-start: auto; font-size: 12.5px; color: var(--sub); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; display: flex; gap: 8px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sub); }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .dot.wait { background: var(--gold); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 20px 22px; }
+  .title { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
+  .note { color: var(--sub); font-size: 13.5px; line-height: 1.7; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  .drop { border: 1.5px dashed rgba(227,194,128,.45); border-radius: 24px; padding: 34px 20px; text-align: center; cursor: pointer;
+          transition: background .2s, border-color .2s, transform .2s; background: rgba(227,194,128,.03); }
+  .drop:hover, .drop.over { background: rgba(227,194,128,.08); border-color: var(--gold); transform: translateY(-1px); }
+  .drop .big { font-size: 18px; font-weight: 700; margin: 12px 0 6px; }
+
+  .file { display: flex; align-items: center; gap: 16px; }
+  .ficon { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; background: rgba(227,194,128,.12); color: var(--gold); flex: none; }
+  .fname { font-weight: 700; font-size: 16px; word-break: break-all; unicode-bidi: plaintext; text-align: start; }
+  .meta { color: var(--sub); font-size: 13px; margin-top: 3px; }
+
+  .seg { display: flex; background: rgba(255,255,255,.06); border-radius: 14px; padding: 4px; gap: 4px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--sub); font: inherit; font-size: 14px; padding: 11px 10px; border-radius: 11px; cursor: pointer; transition: .15s; }
+  .seg button small { display: block; font-size: 11.5px; opacity: .8; margin-top: 2px; }
+  .seg button.on { background: rgba(227,194,128,.16); color: var(--gold); font-weight: 700; box-shadow: inset 0 0 0 1px rgba(227,194,128,.35); }
+
+  .btn { border: 0; border-radius: 16px; font: inherit; font-weight: 700; cursor: pointer; transition: transform .1s, filter .2s; }
+  .btn:active { transform: scale(.985); }
+  .primary { background: linear-gradient(180deg, #EDD199, var(--gold)); color: #1A1408; width: 100%; padding: 16px; font-size: 17px; }
+  .primary:disabled { filter: grayscale(.6) brightness(.6); cursor: default; }
+  .ghost { background: rgba(255,255,255,.07); color: var(--text); padding: 10px 16px; font-size: 14px; display: inline-flex; gap: 8px; align-items: center; }
+  .ghost:hover { background: rgba(255,255,255,.11); }
+  .ghost.gold { color: var(--gold); }
+
+  .bar { height: 10px; background: rgba(255,255,255,.08); border-radius: 99px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--gold-deep), var(--gold)); transition: width .35s ease; }
+  .pct { font-size: 40px; font-weight: 800; color: var(--gold); line-height: 1; }
+  .ok-title { color: var(--ok); font-size: 20px; font-weight: 800; display: flex; gap: 10px; align-items: center; }
+  .bad { color: var(--bad); }
+  .hidden { display: none !important; }
+  footer { margin-top: auto; text-align: center; color: rgba(255,255,255,.38); font-size: 12px; padding-top: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <svg width="30" height="30" viewBox="0 0 30 30" fill="none" stroke="#E3C280" stroke-width="2.2" stroke-linecap="round">
+        <path d="M4 15v0M8.5 11v8M13 6v18M17.5 9v12M22 12.5v5M26 15v0"/>
+      </svg>
+    </div>
+    <div>
+      <h1>نقاء</h1>
+      <div class="tag">يفصل الصوت البشري عن الموسيقى بأعلى دقة، على جهازك بدون إنترنت</div>
+    </div>
+    <div class="chip" id="chip"><span class="dot" id="dot"></span><span id="chipText">…</span></div>
+  </header>
+
+  <!-- النموذج -->
+  <div class="card hidden" id="modelCard">
+    <div class="title">نموذج الفصل</div>
+    <div class="note" id="modelNote">يُنزَّل مرة واحدة فقط، وبعدها يعمل كل شيء بدون إنترنت.</div>
+    <div id="dlBox" class="hidden" style="margin-top:14px">
+      <div class="bar"><i id="dlBar"></i></div>
+      <div class="meta" id="dlText" style="margin-top:8px"></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost gold" id="dlBtn" onclick="ui.download()">تنزيل النموذج</button>
+      <button class="btn ghost hidden" id="dlStop" onclick="pywebview.api.cancel_download()">إيقاف التنزيل</button>
+    </div>
+  </div>
+
+  <!-- اختيار الملف -->
+  <div class="drop" id="drop" onclick="ui.pick()">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#E3C280" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+    </svg>
+    <div class="big">اسحب ملف صوت أو فيديو هنا</div>
+    <div class="note">أو اضغط لاختيار ملف · حتى ٤ ساعات</div>
+  </div>
+
+  <div class="card hidden" id="fileCard">
+    <div class="file">
+      <div class="ficon" id="ficon"></div>
+      <div style="flex:1; min-width:0">
+        <div class="fname" id="fname"></div>
+        <div class="meta" id="fmeta"></div>
+      </div>
+      <button class="btn ghost" id="change" onclick="ui.pick()">تغيير</button>
+    </div>
+  </div>
+
+  <div class="grid2 hidden" id="opts">
+    <div class="card">
+      <div class="title">المطلوب</div>
+      <div class="seg" id="keepSeg">
+        <button data-v="vocals">إزالة الموسيقى<small>يبقى الصوت البشري</small></button>
+        <button data-v="music">إزالة الصوت البشري<small>تبقى الموسيقى</small></button>
+      </div>
+    </div>
+    <div class="card" id="fmtCard">
+      <div class="title">صيغة الناتج</div>
+      <div class="seg" id="fmtSeg">
+        <button data-v="m4a">M4A<small>حجم صغير</small></button>
+        <button data-v="wav">WAV<small>بدون ضغط</small></button>
+        <button data-v="flac">FLAC<small>بدون فقد</small></button>
+      </div>
+    </div>
+    <div class="card hidden" id="videoNote">
+      <div class="title">فيديو</div>
+      <div class="note">الصورة تبقى كما هي بلا إعادة ترميز ولا فقد، والصوت الجديد متزامن معها تمامًا.</div>
+    </div>
+  </div>
+
+  <div class="card hidden" id="pendingCard">
+    <div class="row">
+      <div style="flex:1; color:var(--gold)" class="note" id="pendingText"></div>
+      <button class="btn ghost" onclick="ui.discard()">البدء من جديد</button>
+    </div>
+  </div>
+
+  <button class="btn primary hidden" id="runBtn" onclick="ui.start()">ابدأ الفصل</button>
+
+  <!-- التقدّم -->
+  <div class="card hidden" id="progCard">
+    <div class="row" style="justify-content:space-between; align-items:flex-end">
+      <div>
+        <div class="pct" id="pct">٠٪</div>
+        <div class="meta" id="eta" style="margin-top:8px">يبدأ…</div>
+      </div>
+      <button class="btn ghost" onclick="ui.stop()">إيقاف (يكمل لاحقًا)</button>
+    </div>
+    <div class="bar" style="margin-top:16px"><i id="progBar"></i></div>
+    <div class="note" style="margin-top:10px">تقدر تستخدم جهازك عادي أثناء الفصل. وإن أغلقت البرنامج أو انطفأ الجهاز، يكمل من حيث توقف.</div>
+  </div>
+
+  <!-- النتيجة -->
+  <div class="card hidden" id="doneCard">
+    <div class="ok-title">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7BD8A8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      تم بنجاح
+    </div>
+    <div class="fname" id="outName" style="margin-top:10px"></div>
+    <div class="meta" id="outMeta"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost gold" onclick="ui.play()">▶ تشغيل</button>
+      <button class="btn ghost" onclick="ui.reveal()">فتح المجلد</button>
+      <button class="btn ghost" onclick="ui.another()">ملف آخر</button>
+    </div>
+    <div class="note" id="report" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card hidden" id="errCard">
+    <div class="title bad" id="errText"></div>
+    <div class="row" style="margin-top:10px"><button class="btn ghost" onclick="ui.retry()">حاول مرة ثانية</button></div>
+  </div>
+
+  <footer>كل المعالجة على جهازك — لا يُرفع أي ملف لأي مكان</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const show = (id, on = true) => $(id).classList.toggle('hidden', !on);
+const ICON_VIDEO = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="14" height="14" rx="3"/><path d="m17 10 4-2.5v9L17 14"/></svg>';
+const ICON_AUDIO = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>';
+
+const ui = {
+  keep: 'vocals', fmt: 'm4a', modelReady: false, file: null, out: null, running: false,
+
+  async init() {
+    const s = await pywebview.api.init();
+    this.keep = s.keep; this.fmt = s.fmt;
+    this.seg('keepSeg', this.keep, v => { this.keep = v; this.prefs(); });
+    this.seg('fmtSeg', this.fmt, v => { this.fmt = v; this.prefs(); });
+    if (s.modelSize) $('dlBtn').textContent = `تنزيل النموذج (${s.modelSize}، مرة واحدة)`;
+    this.modelStatus(s.modelReady ? 'preparing' : 'missing', s.modelReady ? 'يجهّز النموذج…' : '');
+    const d = $('drop');
+    ['dragenter', 'dragover'].forEach(e => d.addEventListener(e, ev => { ev.preventDefault(); d.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(e => d.addEventListener(e, () => d.classList.remove('over')));
+  },
+
+  seg(id, val, onChange) {
+    const bs = [...$(id).querySelectorAll('button')];
+    const paint = v => bs.forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    paint(val);
+    bs.forEach(b => b.onclick = () => { if (this.running) return; paint(b.dataset.v); onChange(b.dataset.v); });
+  },
+
+  async prefs() {
+    const p = await pywebview.api.set_prefs(this.keep, this.fmt);
+    this.pending(p);
+  },
+
+  modelStatus(state, text) {
+    const dot = $('dot');
+    dot.className = 'dot' + (state === 'ready' ? ' ok' : state === 'preparing' ? ' wait' : '');
+    this.modelReady = state === 'ready';
+    $('chipText').textContent = state === 'ready' ? `جاهز · يعمل على ${text}` :
+      state === 'preparing' ? (text || 'يجهّز النموذج…') : state === 'failed' ? 'تعذّر تشغيل النموذج' : 'النموذج غير منزّل';
+    show('modelCard', state === 'missing' || state === 'failed');
+    if (state === 'missing' || state === 'failed') {
+      show('dlBox', false); show('dlStop', false); show('dlBtn', true);
+      if (text) $('modelNote').textContent = text;
+    }
+    this.refreshRun();
+  },
+
+  download() {
+    show('dlBox', true); show('dlStop', true); show('dlBtn', false);
+    $('modelNote').textContent = 'يُنزَّل مرة واحدة فقط، وبعدها يعمل كل شيء بدون إنترنت.';
+    pywebview.api.download_model();
+  },
+
+  dl(phase, v, done, total) {
+    $('dlBar').style.width = (v * 100).toFixed(1) + '%';
+    $('dlText').textContent = phase === 'verify' ? 'يتحقق من سلامة الملف…' : `${done} من ${total}`;
+  },
+
+  async pick() {
+    if (this.running) return;
+    const r = await pywebview.api.pick_file();
+    if (r) this.fileChosen(r);
+  },
+
+  async dropped(path) {
+    if (this.running) return;
+    this.fileChosen(await pywebview.api.select(path));
+  },
+
+  fileChosen(r) {
+    show('doneCard', false);
+    if (r.error) { this.fail(r.error); return; }
+    show('errCard', false);
+    this.file = r;
+    $('ficon').innerHTML = r.video ? ICON_VIDEO : ICON_AUDIO;
+    $('fname').textContent = r.name;
+    $('fmeta').textContent = `${r.video ? 'فيديو' : 'صوت'} · ${r.duration} · ${r.size}`;
+    show('drop', false); show('fileCard', true); show('opts', true);
+    show('fmtCard', !r.video); show('videoNote', r.video);
+    this.pending(r.pending);
+    this.refreshRun();
+  },
+
+  pending(p) {
+    show('pendingCard', !!p && !!this.file);
+    if (p) $('pendingText').textContent = `فصل غير مكتمل لهذا الملف (${p}٪). «إكمال» يتابع من حيث توقف.`;
+    $('runBtn').textContent = p ? 'إكمال' : 'ابدأ الفصل';
+  },
+
+  async discard() { await pywebview.api.discard(this.keep); this.pending(null); },
+
+  refreshRun() {
+    show('runBtn', !!this.file && !this.running);
+    $('runBtn').disabled = !this.modelReady;
+    if (!this.modelReady && this.file) $('runBtn').title = 'انتظر حتى يجهز النموذج';
+  },
+
+  async start() {
+    if (!this.modelReady || !this.file || this.running) return;
+    const ok = await pywebview.api.start(this.keep, this.fmt);
+    if (!ok) return;
+    this.running = true;
+    show('runBtn', false); show('pendingCard', false); show('errCard', false); show('doneCard', false);
+    show('progCard', true); $('change').disabled = true;
+    this.progress(0, '٠', '', '');
+  },
+
+  progress(p, pct, eta, part) {
+    $('pct').textContent = pct + '٪';
+    $('progBar').style.width = (p * 100).toFixed(1) + '%';
+    $('eta').textContent = [part, eta ? `باقي تقريبًا ${eta}` : ''].filter(Boolean).join(' · ') || 'يعمل…';
+  },
+
+  stop() { $('eta').textContent = 'يوقف ويحفظ التقدّم…'; pywebview.api.cancel(); },
+
+  finish() { this.running = false; show('progCard', false); $('change').disabled = false; },
+
+  done(r) {
+    this.finish();
+    this.out = r.path;
+    $('outName').textContent = r.name;
+    $('outMeta').textContent = `${r.size} · حُفظ في المجلد نفسه بجانب الملف الأصلي`;
+    $('report').textContent = r.report;
+    show('doneCard', true); show('runBtn', false); show('pendingCard', false);
+  },
+
+  stopped(p) { this.finish(); this.pending(p || null); this.refreshRun(); },
+
+  failed(msg) { this.finish(); this.fail(msg); this.refreshRun(); },
+
+  fail(msg) { $('errText').textContent = msg; show('errCard', true); },
+
+  retry() { show('errCard', false); if (this.file) this.start(); else this.pick(); },
+
+  play() { pywebview.api.open_path(this.out); },
+  reveal() { pywebview.api.show_in_folder(this.out); },
+  another() {
+    this.file = null; this.out = null;
+    ['doneCard', 'fileCard', 'opts', 'pendingCard', 'runBtn', 'errCard'].forEach(id => show(id, false));
+    show('drop', true);
+  },
+};
+
+window.addEventListener('pywebviewready', () => ui.init());
+</script>
+</body>
+</html>
