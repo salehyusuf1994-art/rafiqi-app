@@ -1012,4 +1012,8 @@ T.update({
  'الاسم مستخدم، فسُمّي «%@»': 'That name is taken, so it was named “%@”',
  'تعذّر إنشاء المجلد': 'Couldn’t create the folder',
  'تعذّر إنشاء الملاحظة': 'Couldn’t create the note',
+ 'النموذج عالي الدقة يفصل حتى ٣٠ دقيقة. للمقاطع الأطول اختر «السريع» أو قسّم المقطع أولًا.': 'The high-accuracy model separates clips up to 30 minutes. For longer clips choose “Fast” or split the clip first.',
+ 'المقطع %@، والنموذج عالي الدقة يفصل حتى ٣٠ دقيقة. اختر «السريع» (حتى ٤ ساعات)، أو قسّمه بأداة «تقسيم» إلى أجزاء.': 'This clip is %@, and the high-accuracy model separates up to 30 minutes. Choose “Fast” (up to 4 hours), or cut it into parts with “Split”.',
+ 'أدق فصل: يبقي الصوت البشري كاملًا ولا يترك موسيقى. أبطأ، حتى ٣٠ دقيقة للمقطع، ويُنزَّل مرة واحدة.': 'The most accurate separation: keeps the voice whole and leaves no music. Slower, up to 30 minutes per clip, downloaded once.',
+ 'أسرع بكثير ومضمّن في التطبيق (بتمريرتين لكل جزء)، حتى ٤ ساعات للمقطع، لكنه أقل دقة: قد يخفت الصوت البشري لثوانٍ أحيانًا أو تبقى آثار موسيقى.': 'Much faster and built in (two passes per part), up to 4 hours per clip, but less accurate: the voice may dip for a few seconds or traces of music may remain.',
 })

@@ -433,6 +433,13 @@ struct ToolHost: View {
             }
             card { SepEngineCard() }
                 .onChange(of: sepEngine) { _, _ in refreshPending() }
+            if highTooLong {
+                card {
+                    Label(LF("المقطع %@، والنموذج عالي الدقة يفصل حتى ٣٠ دقيقة. اختر «السريع» (حتى ٤ ساعات)، أو قسّمه بأداة «تقسيم» إلى أجزاء.", lengthWords(mediaSeconds)),
+                          systemImage: "clock.badge.exclamationmark")
+                        .font(Theme.f(.subheadline, .semibold)).foregroundStyle(Theme.gold).fixedSize(horizontal: false, vertical: true)
+                }
+            }
             if let f = sepPending {
                 card {
                     Label(LF("فصل غير مكتمل لهذا الملف (%@٪). «إكمال» يتابع من حيث توقف.", ar(Int(f * 100))), systemImage: "arrow.clockwise.circle.fill")
@@ -554,6 +561,12 @@ struct ToolHost: View {
             || (tool == .split && splitCount < 2)
             // عالي الدقة يحتاج النموذج منزّلًا (أو اختيار «السريع»)
             || ((tool == .removeMusic || tool == .removeVocals) && sepEngine == "high" && sepStore.state != .ready)
+            || highTooLong
+    }
+
+    /// النموذج عالي الدقة: حتى ٣٠ دقيقة على الجوال
+    private var highTooLong: Bool {
+        isSeparation && sepEngine == "high" && mediaSeconds > Separator.highMaxSeconds + 1
     }
 
     private var progressCard: some View {

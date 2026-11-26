@@ -31,6 +31,10 @@ enum Separator {
     }
 
     /// الفصل الكامل: الناتج، والجزء الآخر عند الطلب، وبداية الصوت في الملف الأصلي (لمزامنة الفيديو)
+    /// أطول مقطع للنموذج عالي الدقة على الجوال (اختيار صالح: الثقيل يسخّن الجوال ويستهلك البطارية في المقاطع الطويلة).
+    /// «السريع» يبقى حتى ٤ ساعات (SepLong.maxSeconds)
+    static let highMaxSeconds: Double = 30 * 60
+
     static func run(_ src: URL, keep: Keep, quality: Quality = .high, engine: Engine = .auto, alsoOther: Bool = false,
                     progress: @escaping (Double) -> Void) async throws -> SepLong.Result {
         let t0 = Date()
@@ -38,6 +42,10 @@ enum Separator {
         progress(0.005)
         if high {
             guard SepModelStore.isReady else { throw ToolError.failed(L("نموذج الفصل عالي الدقة غير منزّل.")) }
+            let dur = (try? await AVURLAsset(url: src).load(.duration).seconds) ?? 0
+            guard !dur.isFinite || dur <= highMaxSeconds + 1 else {
+                throw ToolError.failed(L("النموذج عالي الدقة يفصل حتى ٣٠ دقيقة. للمقاطع الأطول اختر «السريع» أو قسّم المقطع أولًا."))
+            }
             let runner = try await Roformer.Runner.make()
             var chunks = 0
             let res = try await SepLong.run(src, keep: keep, engineName: "high", alsoOther: alsoOther, separate: { l, r, p in

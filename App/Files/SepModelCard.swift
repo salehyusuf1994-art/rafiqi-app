@@ -73,12 +73,12 @@ struct SepEngineCard: View {
             }
             .pickerStyle(.segmented)
             if engine == "high" {
-                Text("أدق فصل: يبقي الصوت البشري كاملًا ولا يترك موسيقى. أبطأ، ويُنزَّل مرة واحدة.")
+                Text("أدق فصل: يبقي الصوت البشري كاملًا ولا يترك موسيقى. أبطأ، حتى ٣٠ دقيقة للمقطع، ويُنزَّل مرة واحدة.")
                     .font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
                 Divider().overlay(Theme.stroke)
                 SepModelCard()
             } else {
-                Text("أسرع بكثير ومضمّن في التطبيق (بتمريرتين لكل جزء)، لكنه أقل دقة: قد يخفت الصوت البشري لثوانٍ أحيانًا أو تبقى آثار موسيقى.")
+                Text("أسرع بكثير ومضمّن في التطبيق (بتمريرتين لكل جزء)، حتى ٤ ساعات للمقطع، لكنه أقل دقة: قد يخفت الصوت البشري لثوانٍ أحيانًا أو تبقى آثار موسيقى.")
                     .font(Theme.f(.caption)).foregroundStyle(Theme.sub).fixedSize(horizontal: false, vertical: true)
             }
         }
