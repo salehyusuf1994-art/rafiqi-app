@@ -281,9 +281,7 @@ class Runner:
         return out
 
     def describe(self) -> str:
-        gpu = gpu_names()
-        g = f' ({gpu[0]})' if gpu else ''
-        return {'dml': 'كرت الشاشة' + g, 'hybrid': 'المعالج وكرت الشاشة معًا' + g}.get(self.mode, 'المعالج')
+        return {'dml': 'كرت الشاشة', 'hybrid': 'المعالج وكرت الشاشة معًا'}.get(self.mode, 'المعالج')
 
     def summary(self) -> dict:
         prefs = paths.load_settings()

@@ -39,9 +39,9 @@ def words(sec: float) -> str:
     h, m = divmod(m, 60)
     parts = []
     if h:
-        parts.append('ساعة' if h == 1 else 'ساعتين' if h == 2 else f'{ar(h)} ساعات')
+        parts.append('ساعة' if h == 1 else 'ساعتين' if h == 2 else f'{ar(h)} ساعات' if h <= 10 else f'{ar(h)} ساعة')
     if m:
-        parts.append('دقيقة' if m == 1 else 'دقيقتين' if m == 2 else f'{ar(m)} دقيقة')
+        parts.append('دقيقة' if m == 1 else 'دقيقتين' if m == 2 else f'{ar(m)} دقائق' if m <= 10 else f'{ar(m)} دقيقة')
     return ' و'.join(parts)
 
 
@@ -207,10 +207,11 @@ class Api:
             res = jobs.run(src, keep, sep, fmt=fmt, progress=progress, cancelled=self._cancel.is_set, status=status)
             chunks = max(1, counter.get('chunks', 1))
             secs = res['seconds']
-            rep = f'استغرق الفصل {hms(secs)} ({ar(f"{secs / chunks:.1f}")} ثانية لكل ٨ ثوانٍ من المقطع). '
-            rep += f'النموذج وحده {ar(f"{r.seconds / max(1, r.calls):.1f}")} ثانية لكل جزء. يعمل على: {r.describe()}.'
+            rep = f'استغرق الفصل {words(secs)}، وطول المقطع {words(dur)}. يعمل على: {r.describe()}.'
+            log.info('speed %.1f s per 8 s chunk, model %.1f s, mode %s, gpu %s', secs / chunks,
+                     r.seconds / max(1, r.calls), r.mode, model.gpu_names())
             if r.fallbacks:
-                rep += f' تعذّر كرت الشاشة في {ar(r.fallbacks)} من الأجزاء فأكمل على المعالج.'
+                rep += ' تعذّر كرت الشاشة أثناء العمل فأكمل على المعالج بنفس الجودة.'
             if res['resumed']:
                 rep += ' أُكمل من حيث توقف سابقًا.'
             self._last_out = res['out']
