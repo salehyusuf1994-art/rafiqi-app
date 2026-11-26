@@ -1,0 +1,80 @@
+name: Separation comparison (encrypted, one clip)
+
+# يفصل مقطعًا واحدًا بالنموذج الأصلي بالدقة الكاملة بثلاث طرق (١×، ٢×، ٤×) ويقارن ناتج الجوال رقمًا برقم.
+# الخصوصية (المستودع عام):
+#  - الجهاز يولّد قفلًا لمرة واحدة وينشر جزأه العام فقط (فرع cmp-key-<tag>)؛
+#  - المقطع يُرفع مشفّرًا (فرع cmp-in-<tag>)، ومفتاحه مقفول بذلك القفل، فلا يفتحه إلا هذا الجهاز أثناء التشغيل؛
+#  - المفتاح الخاص لا يُكتب في السجل ولا يُرفع، ويزول بانتهاء التشغيل؛
+#  - النتائج تُشفّر بالمفتاح العام (ci/seal.sh) إلى فرع cmp-out-<tag>؛ السجل أرقام وأوقات فقط؛
+#  - فرعا الدخل يُحذفان في النهاية.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Random job tag (letters/digits)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      MODEL_TAG: sep-onnx-v1
+      MODEL_SHA: 64473bc1d1de94725b7cf71da4c5266f4c41d772efc66571ea8205d2bcba183b
+    steps:
+      - name: Check tag
+        run: '[[ "$TAG" =~ ^[a-z0-9]{8,32}$ ]] || { echo "::error::bad tag"; exit 1; }'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -q "numpy==2.2.6" "onnxruntime==1.24.4"
+          sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null
+      - name: Model (verified)
+        run: |
+          set -e
+          gh release download "$MODEL_TAG" -R "$GITHUB_REPOSITORY" -p bsroformer-vocals-fp32.onnx -D "$RUNNER_TEMP"
+          echo "$MODEL_SHA  $RUNNER_TEMP/bsroformer-vocals-fp32.onnx" | sha256sum -c -
+      - name: One-time lock, receive the clip
+        run: |
+          set -euo pipefail
+          K="$RUNNER_TEMP/lock"; mkdir -p "$K"; chmod 700 "$K"
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$K/priv.pem" 2>/dev/null
+          openssl pkey -in "$K/priv.pem" -pubout -out "$K/pub.pem"
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          ( cd "$K" && mkdir pubrepo && cp pub.pem pubrepo/ && cd pubrepo && git init -q -b "cmp-key-$TAG" && git add pub.pem \
+            && git -c user.name=ci -c user.email=ci@local commit -qm "one-time public lock" && git push -q "$REMOTE" "cmp-key-$TAG" )
+          echo "public lock published; waiting for the encrypted clip"
+          for i in $(seq 1 180); do
+            if git ls-remote --exit-code "$REMOTE" "refs/heads/cmp-in-$TAG" >/dev/null 2>&1; then break; fi
+            sleep 10
+          done
+          git ls-remote --exit-code "$REMOTE" "refs/heads/cmp-in-$TAG" >/dev/null || { echo "::error::no clip received"; exit 1; }
+          mkdir -p "$K/in" && cd "$K/in" && git init -q && git fetch -q --depth 1 "$REMOTE" "cmp-in-$TAG" && git checkout -q FETCH_HEAD
+          openssl pkeyutl -decrypt -inkey "$K/priv.pem" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in key.enc -out "$K/k.txt"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$K/k.txt" -in clip.enc -out "$K/clip.tgz"
+          mkdir -p "$RUNNER_TEMP/clip" && tar xzf "$K/clip.tgz" -C "$RUNNER_TEMP/clip"
+          shred -u "$K/priv.pem" "$K/k.txt" "$K/clip.tgz"
+          ls "$RUNNER_TEMP/clip" | wc -l
+      - name: Compare (x1 / x2 / x4 at full precision, phone vs x1)
+        run: |
+          mkdir -p out
+          python pc/naqa/tests/compare_overlap.py "$RUNNER_TEMP/clip/orig.mp4" "$RUNNER_TEMP/clip/phone.mp4" \
+            "$RUNNER_TEMP/bsroformer-vocals-fp32.onnx" out
+      - name: Seal outputs
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/clip"
+          mkdir -p out && bash ci/seal.sh out "cmp-out-$TAG"
+      - name: Remove input branches
+        if: always()
+        run: |
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}"
+          git push -q "$REMOTE" --delete "cmp-key-$TAG" "cmp-in-$TAG" 2>/dev/null || git push -q "$REMOTE" --delete "cmp-key-$TAG" 2>/dev/null || true
