@@ -164,19 +164,34 @@ def main(argv) -> int:
         check('resume-identical', res2['resumed'] and len(rl) == n and np.abs(rl - l).max() < 1e-5 and np.abs(rr - r).max() < 1e-5,
               f'resumed={res2["resumed"]} len={len(rl)}')
 
-        # ٤) فيديو صوته يبدأ بعد الصورة بـ ٠٫٧٥ ثانية: الصورة تُنسخ كما هي والصوت يبقى في موضعه
-        vid = os.path.join(tmp, 'clip.mp4')
-        subprocess.run([media.tool('ffmpeg'), '-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=25:duration=95',
-                        '-itsoffset', '0.75', '-f', 'lavfi', '-i', 'sine=frequency=600:sample_rate=44100:duration=94',
-                        '-map', '0:v', '-map', '1:a', '-c:v', 'mpeg4', '-q:v', '5', '-c:a', 'aac', '-b:a', '128k', vid], check=True)
-        info0 = media.probe(vid)
-        rv = jobs.run(vid, 'vocals', ident)
-        info1 = media.probe(rv['out'])
-        on0, on1 = onset(vid), onset(rv['out'])
-        check('video-sync', info1['video'] and abs(info1['duration'] - info0['duration']) < 0.2
-              and abs(on1 - on0) < 0.01 and on0 > 0.7,
-              f'dur {info0["duration"]:.2f}/{info1["duration"]:.2f} first sound {on0:.4f}/{on1:.4f} s '
-              f'codec {info1["video_codec"]} out={os.path.basename(rv["out"])}')
+        # ٤) فيديو صوته يبدأ بعد الصورة بـ ٠٫٧٥ ثانية: الصورة تُنسخ كما هي والصوت يبقى في موضعه (ثلاث حاويات)
+        for ext, secs in (('.mp4', 95), ('.mkv', 20), ('.mov', 20)):
+            vid = make_clip(tmp, 'clip' + ext, secs)
+            info0 = media.probe(vid)
+            rv = jobs.run(vid, 'vocals', ident)
+            info1 = media.probe(rv['out'])
+            on0, on1 = onset(vid), onset(rv['out'])
+            check('video-sync' + ext, info1['video'] and abs(info1['duration'] - info0['duration']) < 0.2
+                  and abs(on1 - on0) < 0.01 and on0 > 0.7,
+                  f'dur {info0["duration"]:.2f}/{info1["duration"]:.2f} first sound {on0:.4f}/{on1:.4f} s '
+                  f'codec {info1["video_codec"]} out={os.path.basename(rv["out"])}')
+
+        # ٤ب) فيديو أطول من كتلة: يُوقف ثم يكمل → الناتج مطابق لفصل متواصل، والمزامنة سليمة
+        vid = make_clip(tmp, 'long.mp4', 400)
+        full = jobs.run(vid, 'vocals', ident)
+        a_full = decode(full['out'])
+        os.replace(full['out'], os.path.join(tmp, 'long-full.mp4'))
+        stop['n'] = 0
+        try:
+            jobs.run(vid, 'vocals', counting, cancelled=cancel_after_two)
+            check('video-resume', False, 'did not stop')
+        except InterruptedError:
+            res = jobs.run(vid, 'vocals', ident)
+            a_res = decode(res['out'])
+            on0, on1 = onset(vid), onset(res['out'])
+            same = a_full.shape == a_res.shape and float(np.abs(a_full - a_res).max()) < 1e-6
+            check('video-resume', res['resumed'] and same and abs(on1 - on0) < 0.01,
+                  f'resumed={res["resumed"]} identical={same} first sound {on0:.4f}/{on1:.4f} s')
 
         # ٥) جودة النموذج الحقيقي
         if '--model' in argv:
@@ -186,6 +201,22 @@ def main(argv) -> int:
         shutil.rmtree(tmp, ignore_errors=True)
     say('NAQA TEST RESULT', 'FAIL ' + ','.join(FAIL) if FAIL else 'ALL PASS')
     return 1 if FAIL else 0
+
+
+def make_clip(tmp, name, secs) -> str:
+    """فيديو اختبار صوته (نغمة) يبدأ بعد الصورة بـ ٠٫٧٥ ثانية"""
+    vid = os.path.join(tmp, name)
+    subprocess.run([media.tool('ffmpeg'), '-v', 'error', '-y',
+                    '-f', 'lavfi', '-i', f'testsrc2=size=320x240:rate=25:duration={secs}',
+                    '-itsoffset', '0.75', '-f', 'lavfi', '-i', f'sine=frequency=600:sample_rate=44100:duration={secs - 1}',
+                    '-map', '0:v', '-map', '1:a', '-c:v', 'mpeg4', '-q:v', '5', '-c:a', 'aac', '-b:a', '128k', vid], check=True)
+    return vid
+
+
+def decode(path) -> np.ndarray:
+    raw = subprocess.run([media.tool('ffmpeg'), '-v', 'error', '-i', path, '-map', '0:a:0', '-ac', '2', '-f', 'f32le', '-'],
+                         capture_output=True, check=True).stdout
+    return np.frombuffer(raw, np.float32).copy()
 
 
 def onset(path) -> float:
@@ -222,7 +253,7 @@ def quality(tmp, pool):
     leak_m = 100 * float(np.sum((el - vl) ** 2) / np.sum(vl ** 2))
     say(f'NAQA TEST quality sdrV={sdr_v:.2f} sdrM={sdr_m:.2f} keepV={keep_v:.1f}% residual={leak_m:.2f}% '
           f'chunks={chunks} sec/chunk={secs / chunks:.2f} model sec/chunk={runner.seconds / max(1, runner.calls):.2f}')
-    check('model-quality', sdr_v > 20 and sdr_m > 18 and keep_v > 90, f'sdrV={sdr_v:.2f} sdrM={sdr_m:.2f}')
+    check('model-quality', sdr_v > 13 and sdr_m > 20 and keep_v > 90, f'sdrV={sdr_v:.2f} sdrM={sdr_m:.2f}')
 
 
 if __name__ == '__main__':

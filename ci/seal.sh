@@ -9,7 +9,10 @@ if command -v brew >/dev/null 2>&1 && [ -x "$(brew --prefix openssl@3 2>/dev/nul
 W=$(mktemp -d)
 tar czf "$W/payload.tgz" -C "$DIR" .
 "$OSSL" rand -hex 32 > "$W/k.txt"
-"$OSSL" enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$W/k.txt" -in "$W/payload.tgz" -out "$W/payload.enc"
+KP="$W/k.txt"
+# ويندوز (Git Bash): openssl برنامج ويندوز لا يفهم مسار /tmp داخل «file:» — يُحوَّل لمسار ويندوز
+if command -v cygpath >/dev/null 2>&1; then KP="$(cygpath -m "$KP")"; fi
+"$OSSL" enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$KP" -in "$W/payload.tgz" -out "$W/payload.enc"
 "$OSSL" pkeyutl -encrypt -pubin -inkey "$GITHUB_WORKSPACE/ci/transport_pub.pem" -pkeyopt rsa_padding_mode:oaep -in "$W/k.txt" -out "$W/key.enc"
 rm -f "$W/k.txt" "$W/payload.tgz"
 mkdir -p "$W/pub" && cd "$W/pub"

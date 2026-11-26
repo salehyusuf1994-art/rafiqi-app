@@ -161,7 +161,7 @@ def run(src: str, keep: str, separate, fmt: str = 'm4a', progress=None, cancelle
             tail = (t[0], t[1])
 
     b = st.next_block
-    reader = media.Reader(src, max(0, b * BLOCK - CTX))
+    reader = media.Reader(src, max(0, b * BLOCK - CTX), timeline=info['video'])
     blocks_est = max(1, -(-est // BLOCK))
     try:
         with open(raw, 'ab') as hout:
@@ -236,12 +236,12 @@ def run(src: str, keep: str, separate, fmt: str = 'm4a', progress=None, cancelle
         out_ext = ext if ext in ('.mp4', '.m4v', '.mov', '.mkv') else '.mp4'
         out = media.output_path(src, SUFFIX[keep], out_ext)
         try:
-            media.mux_video(src, raw, out, st.audio_start, cancelled)
+            media.mux_video(src, raw, out, cancelled)
         except media.MediaError:
             if os.path.isfile(out):
                 os.remove(out)
             out = media.output_path(src, SUFFIX[keep], '.mkv')   # حاوية تقبل أي صيغة صورة
-            media.mux_video(src, raw, out, st.audio_start, cancelled)
+            media.mux_video(src, raw, out, cancelled)
     else:
         out = media.output_path(src, SUFFIX[keep], '.' + fmt)
         media.encode_audio(raw, out, fmt, cancelled)

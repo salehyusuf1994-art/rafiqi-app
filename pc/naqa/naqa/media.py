@@ -65,7 +65,11 @@ def probe(path: str) -> dict:
 class Reader:
     """يقرأ الصوت بالتتابع (ستيريو 44.1 كيلوهرتز، float32) من موضع معيّن — دون تحميل الملف كله في الذاكرة"""
 
-    def __init__(self, path: str, start_sample: int = 0):
+    def __init__(self, path: str, start_sample: int = 0, timeline: bool = False):
+        """
+        timeline=True (للفيديو): الصوت يُقرأ على خط زمن الملف نفسه من الثانية صفر — صمت قبل بداية الصوت إن تأخر،
+        وقصّ ما قبل الصفر إن سبق — فالعيّنة رقم n هي اللحظة n/44100 من الفيديو بالضبط، كما يعرضها أي مشغّل.
+        """
         self.base = start_sample
         self.l = np.zeros(0, np.float32)
         self.r = np.zeros(0, np.float32)
@@ -73,7 +77,10 @@ class Reader:
         args = [tool('ffmpeg'), '-nostdin', '-v', 'error']
         if start_sample > 0:
             args += ['-ss', f'{start_sample / SR:.6f}']
-        args += ['-i', path, '-map', '0:a:0', '-vn', '-sn', '-dn', '-ac', '2', '-ar', str(SR), '-f', 'f32le', '-']
+        args += ['-i', path, '-map', '0:a:0', '-vn', '-sn', '-dn']
+        if timeline:
+            args += ['-af', 'aresample=async=1:first_pts=0']
+        args += ['-ac', '2', '-ar', str(SR), '-f', 'f32le', '-']
         self.p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=NO_WINDOW)
         self._err = b''
         threading.Thread(target=self._drain, daemon=True).start()
@@ -160,14 +167,15 @@ def encode_audio(raw: str, out: str, fmt: str, cancelled=None) -> None:
     _run(args + [out], cancelled)
 
 
-def mux_video(src: str, raw: str, out: str, audio_start: float, cancelled=None) -> None:
-    """الصورة تُنسخ كما هي بلا إعادة ترميز، والصوت الجديد يبدأ من موضع الصوت الأصلي نفسه (مزامنة مطابقة)"""
-    args = [tool('ffmpeg'), '-nostdin', '-v', 'error', '-y', '-i', src]
-    if audio_start > 0.0005:
-        args += ['-itsoffset', f'{audio_start:.6f}']
-    args += ['-f', 'f32le', '-ar', str(SR), '-ac', '2', '-i', raw,
-             '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '0', '-c:v', 'copy',
-             '-c:a', 'aac', '-b:a', '256k']
+def mux_video(src: str, raw: str, out: str, cancelled=None) -> None:
+    """
+    الصورة تُنسخ كما هي بلا إعادة ترميز. الصوت الجديد مقروء على خط زمن الفيديو من الصفر (Reader timeline)،
+    فيوضع من الصفر بلا إزاحة — مزامنة مطابقة في كل إصدارات ffmpeg وكل الحاويات.
+    """
+    args = [tool('ffmpeg'), '-nostdin', '-v', 'error', '-y', '-i', src,
+            '-f', 'f32le', '-ar', str(SR), '-ac', '2', '-i', raw,
+            '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '0', '-c:v', 'copy',
+            '-c:a', 'aac', '-b:a', '256k']
     if out.lower().endswith(('.mp4', '.m4v', '.mov')):
         args += ['-movflags', '+faststart']
     _run(args + [out], cancelled)
