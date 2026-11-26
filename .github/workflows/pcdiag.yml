@@ -1,0 +1,46 @@
+name: PC tool (Naqa) video sync diagnostic
+
+# تشخيص سريع لمزامنة الفيديو مع ffmpeg الذي يُشحن مع الأداة (بلا نموذج، بلا مخرجات)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -q "numpy==2.2.6"
+      - name: ffmpeg (same build as shipped)
+        run: |
+          set -e
+          if [ "$RUNNER_OS" = Windows ]; then PAT='^ffmpeg-n[0-9.]+-latest-win64-lgpl-shared-[0-9.]+\\.zip$'; else PAT='^ffmpeg-n[0-9.]+-latest-linux64-lgpl-[0-9.]+\\.tar\\.xz$'; fi
+          URL=$(gh api repos/BtbN/FFmpeg-Builds/releases/latest --jq ".assets[] | select(.name|test(\"$PAT\")) | .browser_download_url" | sort -V | tail -1)
+          echo "$URL"
+          mkdir -p ffx pc/naqa/ffmpeg
+          if [ "$RUNNER_OS" = Windows ]; then
+            curl -sSfL "$URL" -o ff.zip && unzip -q ff.zip -d ffx
+            cp ffx/*/bin/ffmpeg.exe ffx/*/bin/ffprobe.exe ffx/*/bin/*.dll pc/naqa/ffmpeg/
+          else
+            curl -sSfL "$URL" -o ff.tar.xz && tar xf ff.tar.xz -C ffx
+            cp ffx/*/bin/ffmpeg ffx/*/bin/ffprobe pc/naqa/ffmpeg/
+          fi
+      - name: Diagnose
+        run: python pc/naqa/tests/syncdiag.py
