@@ -74,7 +74,7 @@ jobs:
         run: |
           cd pc/naqa
           export NAQA_TEST_LOG="$GITHUB_WORKSPACE/out/exe-selftest.log"
-          ./dist/Naqa/Naqa.exe --selftest; echo "exit $?"
+          timeout 1500 ./dist/Naqa/Naqa.exe --selftest; echo "exit $?"
           cat "$NAQA_TEST_LOG"
           grep -q "NAQA TEST RESULT ALL PASS" "$NAQA_TEST_LOG"
       - name: Built app window smoke test

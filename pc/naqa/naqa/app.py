@@ -272,12 +272,28 @@ def _bind_drop(window, api: Api):
     doc.events.drop += DOMEventHandler(on_drop, True, True)
 
 
+def _utf8_stdio():
+    """النص العربي لا يُسقط البرنامج إن وُجدت نافذة أوامر بترميز قديم (ويندوز cp1252)"""
+    for s in (sys.stdout, sys.stderr):
+        try:
+            if s is not None:
+                s.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
 def main():
+    _utf8_stdio()
     logging.basicConfig(filename=os.path.join(paths.data_dir(), 'naqa.log'), level=logging.INFO,
                         format='%(asctime)s %(levelname)s %(message)s', encoding='utf-8')
     if '--selftest' in sys.argv:
         from . import selftest
-        sys.exit(selftest.main(sys.argv))
+        try:
+            code = selftest.main(sys.argv)
+        except BaseException:  # noqa: BLE001 — لا نافذة خطأ تنتظر أحدًا: يُسجَّل ويخرج برمز فشل
+            logging.exception('selftest crashed')
+            code = 3
+        sys.exit(code)
     import webview
     api = Api()
     window = webview.create_window('نقاء — فصل الصوت البشري عن الموسيقى', url=paths.resource('ui', 'index.html'),

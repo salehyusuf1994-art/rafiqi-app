@@ -8,7 +8,8 @@ OSSL=openssl
 if command -v brew >/dev/null 2>&1 && [ -x "$(brew --prefix openssl@3 2>/dev/null)/bin/openssl" ]; then OSSL="$(brew --prefix openssl@3)/bin/openssl"; fi
 W=$(mktemp -d)
 tar czf "$W/payload.tgz" -C "$DIR" .
-"$OSSL" rand -hex 32 > "$W/k.txt"
+# بلا سطر جديد: openssl في ويندوز يكتب \r\n فيختلف المفتاح عند الفتح
+"$OSSL" rand -hex 32 | tr -d '\r\n' > "$W/k.txt"
 KP="$W/k.txt"
 # ويندوز (Git Bash): openssl برنامج ويندوز لا يفهم مسار /tmp داخل «file:» — يُحوَّل لمسار ويندوز
 if command -v cygpath >/dev/null 2>&1; then KP="$(cygpath -m "$KP")"; fi
